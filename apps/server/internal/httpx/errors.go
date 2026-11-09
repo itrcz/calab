@@ -2,8 +2,10 @@
 package httpx
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -107,13 +109,31 @@ func IsDenial(err error) bool {
 	return false
 }
 
-// AsError extracts an *Error from err; unknown errors become 500 INTERNAL.
+// AsError extracts an *Error from err; a dependency that did not answer in time or could not
+// be reached (a database stall: a deadline, a network timeout, a failed dial) becomes 503
+// UNAVAILABLE — an outage the client waits out, not a bug (ADR-0166); other unknown errors
+// become 500 INTERNAL.
 func AsError(err error) *Error {
 	var e *Error
 	if errors.As(err, &e) {
 		return e
 	}
+	if dependencyDown(err) {
+		return Unavailable(err)
+	}
 	return &Error{Status: http.StatusInternalServerError, Code: v1.ErrorCode_ERROR_CODE_INTERNAL, Message: "internal error", Err: err}
+}
+
+func dependencyDown(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	var op *net.OpError
+	return errors.As(err, &op) && op.Op == "dial"
 }
 
 func newErr(status int, code v1.ErrorCode, msg string) *Error {
