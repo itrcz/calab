@@ -791,6 +791,8 @@ export interface MockServer {
   addSound(workspaceId: string, name: string, emoji: string): string;
   /** ADR-0036: `userId` pressed `soundId` (`builtin:<id>` or a workspace sound) in `roomId` → SOUND_PLAY to the room's call. */
   playSound(roomId: string, userId: string, soundId: string): void;
+  /** The LiveKit URL the join responses carry (ADR-0149 mock host: native room audio accepts only `wss://`). */
+  setLivekitUrl(url: string): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -1055,6 +1057,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     addBackground: (w, name, colors) => impl.addBackground(w, name, colors),
     addSound: (w, name, emoji) => impl.addSound(w, name, emoji),
     playSound: (roomId, u, soundId) => impl.playSound(roomId, u, soundId),
+    setLivekitUrl: (url) => impl.setLivekitUrl(url),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
@@ -2596,6 +2599,10 @@ class MockImpl {
     this.state.sounds.set(sound.id, sound);
     this.toWorkspace(workspaceId, { event: { case: 'soundCreate', value: { sound } } });
     return sound.id;
+  }
+
+  setLivekitUrl(url: string): void {
+    this.lk.url = url;
   }
 
   playSound(roomId: string, userId: string, soundId: string): void {
