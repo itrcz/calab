@@ -20,7 +20,7 @@ import { roomAudioEnabled, roomAudioOperation, roomAudioReply, subscribeRoomAudi
 import { ActivityProtocol, activityBootstrap, activityReady, linkEvent, mediaSessionEvent } from './activityProtocol';
 import { clearMediaSession, mediaSessionEnabled, setMediaSession, subscribeMediaSession } from './mediaSession';
 import { appUrlForLink } from './links';
-import { acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, setNotificationsDocument, subscribeNotifications, testNotification, notificationTestReply } from './notifications';
+import { setNotificationBadge, acknowledgeNotification, hostChannelEnabled, notificationReply, notificationState, setNotificationsDocument, subscribeNotifications, testNotification, notificationTestReply } from './notifications';
 import { endSessionActivity, publishSessionActivity, sessionActivityEnabled } from './sessionActivity';
 import { permissionsOperation, permissionsReply, subscribePermissions } from './mediaPermissions';
 import { SHELL_UA_MARKER } from '../../desktop/src/shared/nativeShell';
@@ -139,6 +139,7 @@ function Host({ origin }: { origin: string }) {
     } else if (action?.type === 'publish') publishSessionActivity(action.document, action.snapshot);
     else if (action?.type === 'media') setMediaSession(action.document, action.session, action.language);
     else if (action?.type === 'end') { endSessionActivity(); clearMediaSession(); setNotificationsDocument(null, action.reason === 'logout'); }
+    else if (action?.type === 'notifications' && action.operation === 'badge' && action.count !== undefined) setNotificationBadge(action.document, action.count);
     else if (action?.type === 'notifications' && action.operation === 'ack' && action.eventId) acknowledgeNotification(action.document, action.eventId);
     else if (action?.type === 'notifications' && action.operation === 'test' && action.body) {
       void testNotification(action.document, action.body).then(result => {

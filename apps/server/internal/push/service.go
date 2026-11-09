@@ -25,6 +25,7 @@ import (
 
 // Payload carries opaque routing and authorized, bounded presentation (ADR-0072).
 type Payload struct {
+	Badge             *int   `json:"-"` // absolute app-icon count; nil preserves the current badge
 	MissedCall        bool   `json:"missedCall,omitempty"`
 	Version           int    `json:"v"`
 	Binding           string `json:"binding"`
@@ -82,6 +83,8 @@ type Service struct {
 	// DeviceLimit bounds endpoint registration/removal per user (each takes the global
 	// registry lock); ResolveLimit bounds notification-tap resolution. nil = none (tests).
 	DeviceLimit, ResolveLimit *redisx.RateLimiter
+	badgeMu                   sync.Mutex
+	badgePending              map[uuid.UUID]bool
 	db                        *db.DB
 	providers                 map[v1.PushProvider]Provider
 }

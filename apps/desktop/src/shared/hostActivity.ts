@@ -36,7 +36,7 @@ export type HostActivityMessage =
   | ({ v: 1; type: 'roomAudio'; host: number; document: string; seq: number; request: number } & HostRoomAudioOperation)
   | { v: 1; type: 'hello'; host: number; document: string }
   | { v: 1; type: 'revoke'; host: number; document: string; seq: number; reason?: 'logout' }
-  | { v: 1; type: 'notifications'; host: number; document: string; seq: number; request: number; operation: 'status' | 'request' | 'clear' | 'ack' | 'test'; eventId?: string; body?: string }
+  | { v: 1; type: 'notifications'; host: number; document: string; seq: number; request: number; operation: 'status' | 'request' | 'clear' | 'ack' | 'test' | 'badge'; eventId?: string; body?: string; count?: number }
   | { v: 1; type: 'activity'; host: number; document: string; seq: number; snapshot: SessionActivitySnapshot }
   | { v: 1; type: 'media'; host: number; document: string; seq: number; session: HostMediaSession; language: 'ru' | 'en' };
 
@@ -90,6 +90,7 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
     const fields = Object.fromEntries(Object.entries(value).filter(([key]) => ![...base, 'seq', 'request'].includes(key)));
     return parseRoomAudioOperation(fields) ? value as unknown as HostActivityMessage : null;
   }
+  if (value.type === 'notifications' && value.operation === 'badge' && keys(value, [...base, 'seq', 'request', 'operation', 'count']) && counter(value.request) && value.request > 0 && counter(value.count) && value.count <= 99999) return value as unknown as HostActivityMessage;
   if (value.type === 'notifications' && value.operation === 'ack' && keys(value, [...base, 'seq', 'request', 'operation', 'eventId']) && counter(value.request) && value.request > 0 && typeof value.eventId === 'string' && /^[0-9a-f-]{36}$/i.test(value.eventId)) return value as unknown as HostActivityMessage;
   if (value.type === 'notifications' && value.operation === 'test' && keys(value, [...base, 'seq', 'request', 'operation', 'body']) && counter(value.request) && value.request > 0 && typeof value.body === 'string' && value.body.trim().length > 0 && value.body.length <= 512) return value as unknown as HostActivityMessage;
   if (value.type === 'notifications' && keys(value, [...base, 'seq', 'request', 'operation']) && counter(value.request) && value.request > 0 &&
@@ -141,6 +142,8 @@ export interface HostNotificationState {
  tap?: HostPushTap;
 }
 export interface HostNotificationsCapability {
+ /** Absolute app-icon count; zero clears. iOS hosts advertising badge v1 only. */
+ setBadge?: (count: number) => void;
  /** A local OS banner only; does not prove remote APNs delivery. Absent on older binaries. */
  test?: (body: string) => Promise<HostNotificationTestResult>;
  state: (requestPermission?: boolean) => Promise<HostNotificationState>;

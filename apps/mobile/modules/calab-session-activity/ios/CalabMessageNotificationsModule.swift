@@ -13,6 +13,9 @@ public class CalabMessageNotificationsModule: Module {
         }
       }
     }
+    AsyncFunction("setBadge") { (document: String, count: Int) in
+      await CalabMessagePush.shared.setBadge(document: document, count: count)
+    }
     AsyncFunction("acknowledgePush") { (document: String, eventId: String) in
       await CalabMessagePush.shared.acknowledge(document: document, eventId: eventId)
     }
@@ -52,6 +55,9 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
   private var testing = false
   private static let testIdentifier = "calab-notification-test"
   private let center = UNUserNotificationCenter.current()
+  private let badge = CalabBadgeWriter { count in
+    try? await UNUserNotificationCenter.current().setBadgeCount(count)
+  }
   private var environment: String? {
     let value = Bundle.main.object(forInfoDictionaryKey: "CalabMessagePushEnvironment") as? String
     return value == "development" || value == "production" ? value : nil
@@ -78,6 +84,7 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
       MainActor.assumeIsolated {
         if let view = notice.object as AnyObject?, self.owner === view {
           self.pendingTap = nil
+          self.badge.set(0)
           // UserNotifications scopes this to Calab. Reload only invalidates the document.
           self.center.removeAllDeliveredNotifications()
           CalabCommunication.clear()
@@ -147,6 +154,10 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
       return "scheduled"
     } catch { return "failed" }
   }
+  func setBadge(document: String, count: Int) {
+    guard current(document), configured else { return }
+    badge.set(count)
+  }
   func acknowledge(document: String, eventId: String) {
     guard current(document), pendingTap?["eventId"] as? String == eventId else { return }
     pendingTap = nil
@@ -192,7 +203,7 @@ private final class CalabMessagePush: NSObject, UNUserNotificationCenterDelegate
   // The common renderer owns foreground sounds/alerts, so remote APNs never duplicates them.
   nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
     let localTest = notification.request.identifier == "calab-notification-test" && !(notification.request.trigger is UNPushNotificationTrigger)
-    completionHandler(localTest ? [.banner, .sound] : [])
+    completionHandler(localTest ? [.banner, .sound] : [.badge])
   }
   nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
     let data = response.notification.request.content.userInfo

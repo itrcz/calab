@@ -13,7 +13,7 @@ export type ActivityAction =
   | { type: 'publish'; document: string; snapshot: SessionActivitySnapshot }
   | { type: 'end'; reason?: 'logout' }
   | { type: 'media'; document: string; session: HostMediaSession; language: 'ru' | 'en' }
-  | { type: 'notifications'; document: string; request: number; operation: 'status' | 'request' | 'clear' | 'ack' | 'test'; eventId?: string; body?: string };
+  | { type: 'notifications'; document: string; request: number; operation: 'status' | 'request' | 'clear' | 'ack' | 'test' | 'badge'; eventId?: string; body?: string; count?: number };
 
 /**
  * Native has already proved frame and origin: on iOS the WebView patch checks WKFrameInfo and the
@@ -59,7 +59,7 @@ export class ActivityProtocol {
     }
     if (message.type === 'calendarWidget') return { ...message, type: 'calendarWidget' };
     if (message.type === 'permissions') return { ...message, type: 'permissions' };
-    if (message.type === 'notifications') return { type: 'notifications', document: message.document, request: message.request, operation: message.operation, ...(message.eventId ? { eventId: message.eventId } : {}), ...(message.body ? { body: message.body } : {}) };
+    if (message.type === 'notifications') return { type: 'notifications', document: message.document, request: message.request, operation: message.operation, ...(message.eventId ? { eventId: message.eventId } : {}), ...(message.body ? { body: message.body } : {}), ...(message.count !== undefined ? { count: message.count } : {}) };
     if (message.snapshot.generation < this.generation) return null;
     this.generation = message.snapshot.generation;
     return { type: 'publish', document: message.document, snapshot: message.snapshot };
@@ -86,7 +86,7 @@ export interface ActivityBootstrapOptions {
 
 export function activityBootstrap(host: number, { platform = null, nativeAudio = false, calendarWidget = false, mediaSession = false, roomAudio = false }: ActivityBootstrapOptions = {}): string {
   const ios = platform !== 'android';
-  const capabilities = ios ? `mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''}${roomAudio ? ' roomAudioVersion: 1,' : ''}`
+  const capabilities = ios ? `notificationsBadgeVersion: 1, mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${nativeAudio ? 'callsAudioVersion: 1,' : ''}${roomAudio ? ' roomAudioVersion: 1,' : ''}`
     : mediaSession ? 'mediaSessionVersion: 1,' : '';
   return `(() => {
     if (window !== window.top || !window.ReactNativeWebView || !window.crypto?.randomUUID) return;
