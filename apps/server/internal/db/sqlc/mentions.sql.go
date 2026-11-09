@@ -21,6 +21,16 @@ func (q *Queries) DeleteEveryoneMention(ctx context.Context, messageID uuid.UUID
 	return err
 }
 
+const deleteMentionDismissals = `-- name: DeleteMentionDismissals :exec
+DELETE FROM mention_dismissals WHERE message_id = $1
+`
+
+// A deleted message leaves every inbox for good: its dismissals go with its mention rows.
+func (q *Queries) DeleteMentionDismissals(ctx context.Context, messageID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteMentionDismissals, messageID)
+	return err
+}
+
 const deleteMentions = `-- name: DeleteMentions :exec
 DELETE FROM message_mentions WHERE message_id = $1
 `
@@ -55,6 +65,28 @@ type DeleteWorkspaceNotificationSettingsParams struct {
 
 func (q *Queries) DeleteWorkspaceNotificationSettings(ctx context.Context, arg DeleteWorkspaceNotificationSettingsParams) error {
 	_, err := q.db.Exec(ctx, deleteWorkspaceNotificationSettings, arg.UserID, arg.WorkspaceID)
+	return err
+}
+
+const dismissMentions = `-- name: DismissMentions :exec
+INSERT INTO mention_dismissals (user_id, message_id)
+SELECT $1::uuid, m.id FROM messages m
+WHERE m.id = ANY($2::uuid[])
+  AND (EXISTS (SELECT 1 FROM message_mentions mm WHERE mm.message_id = m.id AND mm.user_id = $1::uuid)
+       OR EXISTS (SELECT 1 FROM message_everyone_mentions e WHERE e.message_id = m.id))
+ON CONFLICT DO NOTHING
+`
+
+type DismissMentionsParams struct {
+	UserID     uuid.UUID
+	MessageIds []uuid.UUID
+}
+
+// The ✕ on inbox cards (CBF-155, ADR-0163): only messages that mention the caller now (directly
+// or @everyone) — an unknown or foreign id is skipped, never a foreign-key error that would tell
+// it exists, and no row is written about a message the caller was never shown.
+func (q *Queries) DismissMentions(ctx context.Context, arg DismissMentionsParams) error {
+	_, err := q.db.Exec(ctx, dismissMentions, arg.UserID, arg.MessageIds)
 	return err
 }
 
@@ -127,12 +159,14 @@ WITH ids AS (
     (SELECT mm.message_id AS id FROM message_mentions mm
      WHERE mm.user_id = $2::uuid AND mm.room_id = ANY($3::uuid[])
        AND ($4::uuid IS NULL OR mm.message_id < $4::uuid)
+       AND NOT EXISTS (SELECT 1 FROM mention_dismissals d WHERE d.user_id = $2::uuid AND d.message_id = mm.message_id)
      ORDER BY mm.message_id DESC LIMIT $1)
     UNION
     (SELECT e.message_id FROM message_everyone_mentions e
      JOIN messages em ON em.id = e.message_id AND em.author_id <> $2::uuid
      WHERE e.room_id = ANY($3::uuid[])
        AND ($4::uuid IS NULL OR e.message_id < $4::uuid)
+       AND NOT EXISTS (SELECT 1 FROM mention_dismissals d WHERE d.user_id = $2::uuid AND d.message_id = e.message_id)
      ORDER BY e.message_id DESC LIMIT $1)
 )
 SELECT m.id, m.room_id, m.author_id, m.content, m.reply_to_id, m.nonce, m.created_at, m.edited_at, m.deleted_at, m.pinned_at, m.pinned_by, m.embeds_hidden, m.kind, m.payload, m.sticker_id, m.forwarded_from, m.forward_author_id, m.forward_sent_at, m.inline_keyboard, m.keyboard_revision, m.via_bot_id, m.via FROM messages m
@@ -151,6 +185,7 @@ type ListMentionsParams struct {
 
 // Newest first. Each branch is an index range scan limited to one page; own messages and
 // deleted ones are excluded (mention rows are removed on delete, the filter is a safety net).
+// Dismissed ones (CBF-155) are skipped inside each branch, so a page stays full.
 func (q *Queries) ListMentions(ctx context.Context, arg ListMentionsParams) ([]Message, error) {
 	rows, err := q.db.Query(ctx, listMentions,
 		arg.Lim,

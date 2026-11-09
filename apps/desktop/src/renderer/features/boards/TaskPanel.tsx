@@ -99,6 +99,25 @@ const DESCRIPTION_MAX = 20000;
 /** Attachments of a task (the server's limit). */
 const ATTACH_MAX = 20;
 
+/** A «light» task: the server counts files, none are loaded (a board list, an event with another count). */
+export function lacksFiles(task: Task | undefined): boolean {
+  return !!task && task.attachmentCount > 0 && task.attachments.length === 0;
+}
+
+/**
+ * CBF-160 safety net: the open card lost its files to a light copy (the count diverged) — fetch it
+ * again. Only on the change to «light» while the same task stays open: the open itself is loaded
+ * by the caller (no double GET / mark-read), and a server answer that stays empty is no new change (no loop).
+ */
+export function useRefetchLostFiles(taskId: string, lacks: boolean): void {
+  const prev = useRef({ taskId, lacks });
+  useEffect(() => {
+    const was = prev.current;
+    prev.current = { taskId, lacks };
+    if (lacks && !was.lacks && was.taskId === taskId) void loadTask(taskId);
+  }, [taskId, lacks]);
+}
+
 /**
  * The task on the phone (ADR-0042 §5, ADR-0073): a full-screen pushed page with «←». One scroll:
  * title (inline), description (markdown-lite with attachments), properties — status, priority,
@@ -111,6 +130,7 @@ export function TaskPanel({ taskId }: { taskId: string }): ReactNode {
   useEffect(() => {
     void loadTask(taskId);
   }, [taskId]);
+  useRefetchLostFiles(taskId, lacksFiles(task));
   const close = (): void => useBoardsUi.getState().openTask(null);
   const shell = 'mat-content fixed inset-0 z-[var(--z-modal)] flex min-w-0 flex-col pt-[var(--safe-top)]';
   if (!task) {
@@ -660,7 +680,8 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
   const statuses = useBoards((s) => s.boards[task.boardId]?.statuses);
   const status = statuses?.find((x) => x.id === task.statusId);
   // ADR-0049: statuses «further» are disabled while the task waits for approval.
-  const blocked = useMemo(() => blockedStatusIds(task, statuses ?? []), [task, statuses]);
+  const gate = useBoards((s) => s.boards[task.boardId]?.approvalGate);
+  const blocked = useMemo(() => blockedStatusIds(task, statuses ?? [], gate), [task, statuses, gate]);
   // Why they are disabled: «1/3» or «rejected» instead of the bare «approval needed».
   const reason = gateReason(task);
   const gateKey = !reason ? '' : reason.kind === 'rejected' ? 'r' : `${reason.n}/${reason.m}`;

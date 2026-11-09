@@ -1,4 +1,4 @@
-import { ApproverState, BoardFeature, BoardStatusType, TaskApprovalState, type BoardStatus, type Task } from '@calaba/protocol';
+import { ApprovalGate, ApproverState, BoardFeature, BoardStatusType, TaskApprovalState, type BoardStatus, type Task } from '@calaba/protocol';
 
 /**
  * Task approvals on the client (ADR-0049 §6, «Контракт для клиента»): the quorum caption, the
@@ -47,10 +47,21 @@ export function mayMoveTo(t: Pick<Task, 'approvalState'>, from: Pick<BoardStatus
   return !from || to.position <= from.position;
 }
 
-/** Status ids a task may not move to now (the kanban's dimmed columns, the disabled menu rows). */
-export function blockedStatusIds(t: Pick<Task, 'approvalState' | 'statusId'>, statuses: readonly BoardStatus[]): Set<string> {
+/**
+ * The board's approval holds status changes (`Board.approvalGate`, ADR-0160): HOLD — the default,
+ * and UNSPECIFIED from an older server — or OFF, when the approval never holds a move.
+ */
+export function gateHolds(gate: ApprovalGate | undefined): boolean {
+  return gate !== ApprovalGate.OFF;
+}
+
+/**
+ * Status ids a task may not move to now (the kanban's dimmed columns, the disabled menu rows);
+ * none on a board whose gate is off (`gate` = `Board.approvalGate`, ADR-0160).
+ */
+export function blockedStatusIds(t: Pick<Task, 'approvalState' | 'statusId'>, statuses: readonly BoardStatus[], gate?: ApprovalGate): Set<string> {
   const out = new Set<string>();
-  if (!approvalBlocks(t)) return out;
+  if (!approvalBlocks(t) || !gateHolds(gate)) return out;
   const from = statuses.find((s) => s.id === t.statusId);
   for (const s of statuses) if (!mayMoveTo(t, from, s)) out.add(s.id);
   return out;
@@ -63,9 +74,9 @@ export function blockedStatusIds(t: Pick<Task, 'approvalState' | 'statusId'>, st
  */
 export type StatusPick = 'same' | 'move' | 'override' | 'blocked';
 
-export function statusPick(t: Pick<Task, 'approvalState' | 'statusId'>, statuses: readonly BoardStatus[], to: string, manage: boolean): StatusPick {
+export function statusPick(t: Pick<Task, 'approvalState' | 'statusId'>, statuses: readonly BoardStatus[], to: string, manage: boolean, gate?: ApprovalGate): StatusPick {
   if (to === t.statusId) return 'same';
-  if (!blockedStatusIds(t, statuses).has(to)) return 'move';
+  if (!blockedStatusIds(t, statuses, gate).has(to)) return 'move';
   return manage ? 'override' : 'blocked';
 }
 

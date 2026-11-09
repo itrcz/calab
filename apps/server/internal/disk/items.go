@@ -679,11 +679,12 @@ func (s *Service) restore(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			if err != nil || p.TrashedAt != nil {
+				// DISK_WRITE on the root (everything for a workspace-level DISK_MANAGE): an
+				// item's own MANAGE (its owner, «Управление» above it; ADR-0161) says nothing
+				// about the root.
 				parent = nil
-				if !a.manage() {
-					if _, err := addable(r, q, ws, a.c, nil); err != nil {
-						return httpx.Conflict("restore the folder it was in first")
-					}
+				if _, err := addable(r, q, ws, a.c, nil); err != nil {
+					return httpx.Conflict("restore the folder it was in first")
 				}
 			}
 		}

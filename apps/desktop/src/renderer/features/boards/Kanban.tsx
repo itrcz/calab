@@ -45,7 +45,8 @@ const NO_BLOCK: ReadonlySet<string> = new Set();
 function blockedFor(taskId: string): ReadonlySet<string> {
   const s = useBoards.getState();
   const task = s.tasks[taskId];
-  return task ? blockedStatusIds(task, s.boards[task.boardId]?.statuses ?? []) : NO_BLOCK;
+  const board = task ? s.boards[task.boardId] : undefined;
+  return task ? blockedStatusIds(task, board?.statuses ?? [], board?.approvalGate) : NO_BLOCK;
 }
 interface CardTarget {
   statusId: string;

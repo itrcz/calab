@@ -122,7 +122,8 @@ export function createDiskApi(rest: Rest) {
     permissions: (itemId: string): Promise<DiskPermissionsResponse> => rest.call(DiskPermissionsResponseSchema, 'GET', `${itemPath(itemId)}/permissions`),
     /**
      * Replaces the item's overrides (the owner or DISK_MANAGE): «Просмотр» = DISK_BITS.VIEW,
-     * «Правка» = DISK_BITS.VIEW | DISK_BITS.WRITE; `restricted` omitted = unchanged.
+     * «Правка» = DISK_BITS.VIEW | DISK_BITS.WRITE, «Управление» (a person, not a guest; ADR-0161) =
+     * DISK_BITS.VIEW | DISK_BITS.WRITE | DISK_BITS.MANAGE; `restricted` omitted = unchanged.
      */
     share: (itemId: string, entries: MessageInitShape<typeof UpdateDiskPermissionsRequestSchema>['entries'], restricted?: boolean): Promise<DiskPermissionsResponse> =>
       rest.call(DiskPermissionsResponseSchema, 'PUT', `${itemPath(itemId)}/permissions`, {

@@ -1,6 +1,6 @@
 import * as ContextMenu from '../../components/radix/context-menu';
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { Archive, BrushCleaning, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailCheck, MailOpen, MessageSquareShare, PanelLeft, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Archive, BrushCleaning, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailCheck, MailOpen, MessageSquareShare, PanelLeft, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert } from 'lucide-react';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
@@ -357,22 +357,13 @@ function SearchBar(): ReactNode {
           }}
           placeholder={t('mbox.search')}
           aria-label={t('mbox.search')}
-          className="pr-7 [&::-webkit-search-cancel-button]:hidden"
+          onClear={() => {
+            setText('');
+            setQuery('');
+          }}
+          clearLabel={t('mbox.clearSearch')}
           data-testid="mail-search"
         />
-        {text ? (
-          <button
-            type="button"
-            aria-label={t('mbox.clearSearch')}
-            onClick={() => {
-              setText('');
-              setQuery('');
-            }}
-            className="absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-full text-muted hover:text-fg"
-          >
-            <X className="size-3.5" aria-hidden />
-          </button>
-        ) : null}
       </div>
       <IconButton label={t('mbox.unreadOnly')} active={unreadOnly} onClick={() => setUnreadOnly(!unreadOnly)} data-testid="mail-unread-filter">
         <ListFilter className="size-4" strokeWidth={1.75} />

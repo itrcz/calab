@@ -46,6 +46,50 @@ describe('useInbox task notices (ADR-0141)', () => {
   });
 });
 
+describe('useInbox dismiss (CBF-155)', () => {
+  beforeEach(() => useInbox.getState().reset());
+
+  it('removes mentions and notices by id and keeps them out of later pages, live events and edits', () => {
+    const s = useInbox.getState();
+    s.addPage([mention('03'), mention('01')], false, false);
+    s.addNotices([notice('02', 't1')], false, false);
+    const before = useInbox.getState().items;
+    s.dismiss(['03', '02']);
+    expect(useInbox.getState().items.map((m) => m.id)).toEqual(['01']);
+    expect(useInbox.getState().notices).toEqual([]);
+    // A history page that raced the dismissal, a live copy and an edit re-mentioning me.
+    useInbox.getState().addPage([mention('03')], false, false);
+    useInbox.getState().addNotices([notice('02', 't1')], false, false);
+    useInbox.getState().addLive(mention('03'));
+    useInbox.getState().addLiveNotice(notice('02', 't1'));
+    useInbox.getState().update(mention('03'), true);
+    expect(useInbox.getState().items.map((m) => m.id)).toEqual(['01']);
+    expect(useInbox.getState().notices).toEqual([]);
+    // Dismissing again (the INBOX_DISMISS echo) changes nothing.
+    const st = useInbox.getState();
+    st.dismiss(['03']);
+    expect(useInbox.getState().items).toBe(st.items);
+    expect(useInbox.getState().dismissed).toBe(st.dismissed);
+    expect(before).not.toBe(st.items);
+  });
+
+  it('undismiss brings the items back in order; reset forgets the dismissals', () => {
+    const s = useInbox.getState();
+    const m = mention('03');
+    const e = notice('02', 't1');
+    s.addPage([m, mention('01')], false, false);
+    s.addLiveNotice(e);
+    s.dismiss(['03', '02']);
+    useInbox.getState().undismiss([m], [e]);
+    expect(useInbox.getState().items.map((x) => x.id)).toEqual(['03', '01']);
+    expect(useInbox.getState().notices.map((x) => x.id)).toEqual(['02']);
+    useInbox.getState().dismiss(['01']);
+    useInbox.getState().reset();
+    useInbox.getState().addLive(mention('01'));
+    expect(useInbox.getState().items.map((x) => x.id)).toEqual(['01']);
+  });
+});
+
 describe('unreadNoticeTasks (bug #146)', () => {
   it('counts the tasks with a notice that are still unread, once per task', () => {
     const notices = [{ taskId: 't1' }, { taskId: 't1' }, { taskId: 't2' }, { taskId: 't3' }];

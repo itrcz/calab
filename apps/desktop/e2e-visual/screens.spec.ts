@@ -97,6 +97,7 @@ const KEY = new Set([
   'voice-soundboard',
   'main-members-toggled',
   'main-members-birthday',
+  'main-members-roles',
   'members-menu',
   'members-profile-switch',
   'profile-dialog',
@@ -212,6 +213,8 @@ const KEY = new Set([
   'toast-single',
   'join-confirm',
   'join-confirm-switch',
+  // «Войти через Calab» of a workspace app's site (ADR-0159).
+  'app-sign-in',
 ]);
 
 // Non-key screens: skipped unless CALABA_VISUAL_ALL=1 (before any fixture, so no app launch).
@@ -734,6 +737,30 @@ test('dm-list', async ({ open, win, shot }) => {
   await expect(win.getByTestId('dm-pick')).toBeVisible();
   await settle(win);
   await checkpoint(shot, 'dm-list');
+
+  // CBF-159: the message search above the list. «ер» — Вера by name («Чаты») and the messages with it in «Сообщения»; a click opens the chat on the message, the results stay.
+  const field = win.getByTestId('dm-search');
+  await field.fill('ер');
+  const hits = win.getByTestId('dm-search-hits');
+  await expect(win.getByTestId('dm-search-chats').getByRole('button', { name: /Вера/ })).toBeVisible();
+  await expect(hits.getByTestId('dm-hit').first()).toBeVisible();
+  await expect(win.getByTestId('dm-list')).toBeHidden();
+  await settle(win);
+  await checkpoint(shot, 'dm-search');
+  await hits.getByRole('button', { name: /Супер/ }).click();
+  await expect(win.getByTestId('dm-search-results')).toBeVisible();
+  await expect(win.getByText('Макеты рейла готовы')).toBeVisible();
+  await field.fill('ре');
+  await expect(hits.getByTestId('dm-hit').first()).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'dm-search-hits');
+  await field.fill('qzxw');
+  await expect(win.getByTestId('dm-search-empty')).toBeVisible();
+  await checkpoint(shot, 'dm-search-empty');
+  // Esc clears the query: the list is back.
+  await field.press('Escape');
+  await expect(field).toHaveValue('');
+  await expect(win.getByTestId('dm-list')).toBeVisible();
 });
 
 // Count badges (owner 07.10): 1 and 2 digits are perfect circles, 99+ is a pill; the rail tile and the DM rows.
@@ -999,6 +1026,18 @@ test('main-members-toggled', async ({ open, win, mock, shot }) => {
   await expect(sidebar.getByRole('listitem', { name: /Борис Петров/ }).locator('[data-voice-icon="muted"]')).toHaveCount(1);
   await expect(win.getByRole('complementary', { name: 'Участники' }).locator('[data-voice-icon="connection-lost"]')).toHaveCount(1);
   await checkpoint(shot, 'main-members-voice-lost');
+  // CBF-154: custom roles with light colours (white, pale yellow, mid blue) stay readable in both themes.
+  const json = { 'content-type': 'application/json' };
+  const login = await fetch(`${mock.url}/api/auth/login`, { method: 'POST', headers: json, body: JSON.stringify({ email: 'owner@calaba.test', password: PASSWORD }) });
+  const auth = { ...json, authorization: `Bearer ${((await login.json()) as { tokens: { accessToken: string } }).tokens.accessToken}` };
+  const roleIds: string[] = [];
+  for (const [name, color] of [['Белая', 0xffffff], ['Бледно-жёлтая', 0xffeb99], ['Синяя', 0x3a86ff]] as const) {
+    const created = await fetch(`${mock.url}/api/workspaces/${IDS.workspaces.main}/roles`, { method: 'POST', headers: auth, body: JSON.stringify({ name, color, permissions: '0' }) });
+    expect(created.status, `create role ${name}`).toBe(201);
+    roleIds.push(((await created.json()) as { role: { id: string } }).role.id);
+  }
+  [IDS.users.vera, IDS.users.grigory, IDS.users.dina].forEach((uid, i) => mock.setMemberRoles(IDS.workspaces.main, uid, roleIds.slice(i, i + 1)));
+  await checkpoint(shot, 'main-members-roles');
 });
 
 test('members-profile', async ({ open, win, mock, shot }) => {
@@ -1222,6 +1261,27 @@ test('quick-switcher', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('task-search-row')).toHaveCount(2);
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'quick-switcher-tasks');
+  // CBF-149: ⌘-click on a result is a background tab in the title bar; ⌘K stays open with its text.
+  await win.getByTestId('task-search-row').first().click({ modifiers: [MOD] });
+  await expect(win.getByTestId('task-tab')).toHaveCount(1);
+  await expect(win.getByTestId('quick-switcher')).toBeVisible();
+  await expect(win.getByRole('combobox')).toHaveValue('доск');
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'quick-switcher-tasks-tab', { axe: false });
+  await win.getByTestId('task-tab-close').dispatchEvent('click');
+  await expect(win.getByTestId('task-tab')).toHaveCount(0);
+  // CBF-157: «×» empties the text only — focus stays, the «Доска» chip and the list stay, the dialog stays.
+  await expect(win.getByTestId('search-clear')).toBeVisible();
+  await checkpoint(shot, 'quick-switcher-tasks-clear', { axe: false });
+  await win.getByTestId('search-clear').click();
+  await expect(win.getByRole('combobox')).toHaveValue('');
+  await expect(win.getByRole('combobox')).toBeFocused();
+  await expect(win.getByTestId('search-clear')).toHaveCount(0);
+  await expect(win.getByTestId('filter-chip')).toHaveCount(1);
+  await expect(win.getByTestId('quick-switcher')).toBeVisible();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'quick-switcher-tasks-cleared');
+  await win.keyboard.type('доск');
   // A typed key comes first as «Открыть CAL-3».
   const field = win.getByRole('combobox');
   await field.press(`${MOD}+a`);
@@ -1279,6 +1339,21 @@ test('chat-context-menu', async ({ open, win, mock, shot }) => {
   await win.getByTestId('message-read-by').click();
   await expect(win.getByRole('menu').getByTestId('read-by-row')).toHaveCount(2);
   await checkpoint(shot, 'chat-read-by-menu');
+  // ADR-0162: «Изменить» on a message of my own bot («Погода»), not on someone else's («Деплой»).
+  await win.keyboard.press('Escape');
+  await expect(win.getByRole('menu')).toHaveCount(0);
+  mock.seedBots();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.deploy, content: 'Выкатил ветку на стенд.' });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.weather, content: 'Завтра +3, без осадков.' });
+  await win.getByTestId('message-bubble').filter({ hasText: 'Выкатил ветку' }).getByText('Выкатил ветку').click({ button: 'right' });
+  await expect(win.getByRole('menu')).toBeVisible();
+  await expect(win.getByTestId('message-edit')).toHaveCount(0);
+  await win.keyboard.press('Escape');
+  await win.getByTestId('message-bubble').filter({ hasText: 'Завтра +3' }).getByText('Завтра +3').click({ button: 'right' });
+  await expect(win.getByTestId('message-edit')).toBeVisible();
+  await checkpoint(shot, 'chat-context-menu-bot');
+  await win.getByTestId('message-edit').click();
+  await expect(win.getByTestId('composer')).toContainText('Завтра +3');
 });
 
 test('chat-emoji-picker', async ({ open, win, mock, shot }) => {
@@ -1483,6 +1558,14 @@ test('inbox-popover', async ({ open, win, mock, shot }) => {
   await expect(pop.getByText(/разработка · /).first()).toBeVisible();
   await settle(win);
   await checkpoint(shot, 'inbox-popover');
+  // CBF-155: the ✕ in a card's corner removes it; the popover stays open, the rest stay.
+  const card = pop.getByRole('listitem').filter({ hasText: 'CAL-3 · Эхо в звонке при включённых колонках' }).first();
+  const rows = await pop.getByRole('listitem').count();
+  await card.getByRole('button', { name: 'Убрать из списка' }).click();
+  await expect(pop.getByRole('listitem')).toHaveCount(rows - 1);
+  await expect(pop).toBeVisible();
+  await settle(win);
+  await checkpoint(shot, 'inbox-popover-dismissed');
 });
 
 // Bug #146: a room with an unread @mention looks different from plain unread (the count badge), and the
@@ -2434,6 +2517,24 @@ test('join-confirm-switch', async ({ open, win, mock, shot }) => {
   await askJoin(win, mock);
   await expect(win.getByTestId('join-confirm-warn')).toContainText('Вы сейчас в комнате «Переговорка»');
   await checkpoint(shot, 'join-confirm-switch');
+});
+
+// ADR-0159: the first «Sign in with Calab» of an app's site — main sends what the provider's consent
+// request returned, the Calab dialog shows it; «Запретить» has the focus, Esc denies and closes.
+test('app-sign-in', async ({ open, win, mock, env, shot }) => {
+  await open();
+  await mainWindow(win, mock);
+  const ask = { id: 'ask-1', client: 'Поддержка', workspace: 'Calab Team', account: 'Анна Смирнова', site: 'support.example.com', scopes: ['openid', 'profile', 'email'] };
+  await env.app.evaluate(({ BrowserWindow }, [url, a]) => {
+    BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === url)?.webContents.send('webapp:sign-in-ask', a);
+  }, [win.url(), ask] as const);
+  const dialog = win.getByTestId('app-sign-in');
+  await expect(dialog).toContainText('support.example.com');
+  await expect(win.getByRole('dialog')).toContainText('«Поддержка» просит войти через Calab');
+  await expect(win.getByTestId('app-sign-in-deny')).toBeFocused();
+  await checkpoint(shot, 'app-sign-in');
+  await win.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------- voice (needs the dev LiveKit)
@@ -4355,6 +4456,11 @@ test('settings-calendar', async ({ open, win, mock, shot }) => {
   await openSettingsTab(win, openAppSettings(win), appTab('calendar'));
   await expect(win.getByTestId('caldav-connect')).toBeVisible();
   await checkpoint(shot, 'settings-calendar');
+  // CBF-165: «Первый день недели» — Monday by default, Sunday on choice (the work days follow).
+  await expect(win.getByRole('radio', { name: 'Понедельник' })).toBeChecked();
+  await win.getByRole('radio', { name: 'Воскресенье' }).click();
+  await expect(win.getByTestId('wh-days').getByRole('button').first()).toHaveText(/вс/i);
+  await checkpoint(shot, 'settings-calendar-sunday');
 });
 
 /**
@@ -5178,6 +5284,23 @@ test('boards-features', async ({ open, win, mock, shot }) => {
   await win.getByRole('tab', { name: 'Фичи' }).click();
   await expect(win.getByTestId('board-features').getByRole('switch')).toHaveCount(16);
   await checkpoint(shot, 'boards-features');
+  // CBF-156 (ADR-0160): «Согласование держит переходы» in the approvals card, on by default; off,
+  // a task waiting for approval moves to any status — no disabled rows in its status menu.
+  const gate = win.getByRole('switch', { name: 'Согласование держит переходы' });
+  await gate.scrollIntoViewIfNeeded();
+  await expect(gate).toBeChecked();
+  await checkpoint(shot, 'boards-features-approval-gate');
+  await gate.click();
+  await expect(gate).not.toBeChecked();
+  await checkpoint(shot, 'boards-features-approval-gate-off');
+  await win.keyboard.press('Escape');
+  await win.getByTestId('task-card').filter({ hasText: 'Ревью: права досок' }).getByTestId('card-status').click();
+  const statusMenu = win.getByTestId('status-menu');
+  await expect(statusMenu.getByTestId('picker-option').first()).toBeVisible();
+  await expect(statusMenu).not.toContainText('нужно согласование');
+  await expect(statusMenu.locator('[data-testid="picker-option"][aria-disabled="true"]')).toHaveCount(0);
+  await checkpoint(shot, 'boards-status-menu-gate-off', { axe: false });
+  await win.keyboard.press('Escape');
 });
 
 /** Create-task dialog (owner 07.10): the start date next to the due date. */

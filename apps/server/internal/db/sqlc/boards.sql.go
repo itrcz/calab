@@ -60,6 +60,18 @@ func (q *Queries) ArchiveTasks(ctx context.Context, ids []uuid.UUID) ([]ArchiveT
 	return items, nil
 }
 
+const boardApprovalGateOff = `-- name: BoardApprovalGateOff :one
+SELECT approval_gate_off FROM boards WHERE id = $1
+`
+
+// ADR-0160: the board's approval does not hold status changes.
+func (q *Queries) BoardApprovalGateOff(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, boardApprovalGateOff, id)
+	var approval_gate_off bool
+	err := row.Scan(&approval_gate_off)
+	return approval_gate_off, err
+}
+
 const boardApprovalNotifyDelay = `-- name: BoardApprovalNotifyDelay :one
 SELECT approval_notify_delay_seconds FROM boards WHERE id = $1
 `
@@ -400,7 +412,7 @@ VALUES ($1, $2, $3, $4, $5,
         $6, $7, $7,
         (SELECT coalesce(max(position) + 1, 0) FROM boards WHERE workspace_id = $1),
         $8)
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates, approval_gate_off
 `
 
 type CreateBoardParams struct {
@@ -449,6 +461,7 @@ func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Board
 		&i.ApprovalNotifyDelaySeconds,
 		&i.AiInstruction,
 		&i.AiFindDuplicates,
+		&i.ApprovalGateOff,
 	)
 	return i, err
 }
@@ -1027,7 +1040,7 @@ func (q *Queries) FilesByID(ctx context.Context, ids []uuid.UUID) ([]FilesByIDRo
 }
 
 const getBoard = `-- name: GetBoard :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates FROM boards WHERE id = $1
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates, approval_gate_off FROM boards WHERE id = $1
 `
 
 func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -1056,6 +1069,7 @@ func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
 		&i.ApprovalNotifyDelaySeconds,
 		&i.AiInstruction,
 		&i.AiFindDuplicates,
+		&i.ApprovalGateOff,
 	)
 	return i, err
 }
@@ -1167,7 +1181,7 @@ func (q *Queries) GetBoardAccess(ctx context.Context, arg GetBoardAccessParams) 
 }
 
 const getBoardForUpdate = `-- name: GetBoardForUpdate :one
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates FROM boards WHERE id = $1 FOR UPDATE
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates, approval_gate_off FROM boards WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, error) {
@@ -1196,6 +1210,7 @@ func (q *Queries) GetBoardForUpdate(ctx context.Context, id uuid.UUID) (Board, e
 		&i.ApprovalNotifyDelaySeconds,
 		&i.AiInstruction,
 		&i.AiFindDuplicates,
+		&i.ApprovalGateOff,
 	)
 	return i, err
 }
@@ -2047,7 +2062,7 @@ func (q *Queries) ListBoardViews(ctx context.Context, arg ListBoardViewsParams) 
 }
 
 const listBoards = `-- name: ListBoards :many
-SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
+SELECT id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates, approval_gate_off FROM boards WHERE workspace_id = $1 AND (archived_at IS NOT NULL) = $2::boolean
 ORDER BY position, id
 `
 
@@ -2088,6 +2103,7 @@ func (q *Queries) ListBoards(ctx context.Context, arg ListBoardsParams) ([]Board
 			&i.ApprovalNotifyDelaySeconds,
 			&i.AiInstruction,
 			&i.AiFindDuplicates,
+			&i.ApprovalGateOff,
 		); err != nil {
 			return nil, err
 		}
@@ -2921,7 +2937,7 @@ func (q *Queries) SetApproverVote(ctx context.Context, arg SetApproverVoteParams
 const setBoardArchived = `-- name: SetBoardArchived :one
 UPDATE boards SET archived_at = CASE WHEN $1::boolean THEN now() ELSE NULL END
 WHERE id = $2
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates, approval_gate_off
 `
 
 type SetBoardArchivedParams struct {
@@ -2955,12 +2971,13 @@ func (q *Queries) SetBoardArchived(ctx context.Context, arg SetBoardArchivedPara
 		&i.ApprovalNotifyDelaySeconds,
 		&i.AiInstruction,
 		&i.AiFindDuplicates,
+		&i.ApprovalGateOff,
 	)
 	return i, err
 }
 
 const setBoardCreator = `-- name: SetBoardCreator :one
-UPDATE boards SET created_by = $1 WHERE id = $2 RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
+UPDATE boards SET created_by = $1 WHERE id = $2 RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates, approval_gate_off
 `
 
 type SetBoardCreatorParams struct {
@@ -2996,6 +3013,7 @@ func (q *Queries) SetBoardCreator(ctx context.Context, arg SetBoardCreatorParams
 		&i.ApprovalNotifyDelaySeconds,
 		&i.AiInstruction,
 		&i.AiFindDuplicates,
+		&i.ApprovalGateOff,
 	)
 	return i, err
 }
@@ -3005,7 +3023,7 @@ UPDATE boards SET
     disabled_features = coalesce($1, disabled_features),
     estimate_scale    = coalesce($2, estimate_scale)
 WHERE id = $3
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates, approval_gate_off
 `
 
 type SetBoardFeaturesParams struct {
@@ -3041,6 +3059,7 @@ func (q *Queries) SetBoardFeatures(ctx context.Context, arg SetBoardFeaturesPara
 		&i.ApprovalNotifyDelaySeconds,
 		&i.AiInstruction,
 		&i.AiFindDuplicates,
+		&i.ApprovalGateOff,
 	)
 	return i, err
 }
@@ -3434,9 +3453,10 @@ UPDATE boards SET
     restricted        = coalesce($11, restricted),
     approval_notify_delay_seconds = coalesce($12, approval_notify_delay_seconds),
     ai_instruction    = coalesce($13, ai_instruction),
-    ai_find_duplicates = coalesce($14, ai_find_duplicates)
-WHERE id = $15
-RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates
+    ai_find_duplicates = coalesce($14, ai_find_duplicates),
+    approval_gate_off = coalesce($15, approval_gate_off)
+WHERE id = $16
+RETURNING id, workspace_id, name, key, emoji, icon_file_id, description, is_private, position, next_number, auto_archive_days, default_view_id, created_by, created_at, archived_at, restricted, category_id, disabled_features, estimate_scale, approval_notify_delay_seconds, ai_instruction, ai_find_duplicates, approval_gate_off
 `
 
 type UpdateBoardParams struct {
@@ -3454,6 +3474,7 @@ type UpdateBoardParams struct {
 	ApprovalNotifyDelaySeconds *int32
 	AiInstruction              *string
 	AiFindDuplicates           *bool
+	ApprovalGateOff            *bool
 	ID                         uuid.UUID
 }
 
@@ -3473,6 +3494,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		arg.ApprovalNotifyDelaySeconds,
 		arg.AiInstruction,
 		arg.AiFindDuplicates,
+		arg.ApprovalGateOff,
 		arg.ID,
 	)
 	var i Board
@@ -3499,6 +3521,7 @@ func (q *Queries) UpdateBoard(ctx context.Context, arg UpdateBoardParams) (Board
 		&i.ApprovalNotifyDelaySeconds,
 		&i.AiInstruction,
 		&i.AiFindDuplicates,
+		&i.ApprovalGateOff,
 	)
 	return i, err
 }

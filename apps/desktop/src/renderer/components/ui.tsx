@@ -320,37 +320,76 @@ function TipOverApp({ content }: { content: RefObject<HTMLDivElement | null> }):
 /**
  * Text field. `icon` (16 px glyph: search, #, mail…) is drawn inside at the start and the text keeps
  * clear of it at every size — the phone's wider padding (mobile:px-3) included, which a caller's
- * plain `pl-7` would lose to (issue #10).
+ * plain `pl-7` would lose to (issue #10). `onClear` (search fields, CBF-157): a «×» at the end,
+ * only while the field has text; the caller empties its state, focus stays in the field.
  */
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { icon?: ReactNode }>(function Input(
-  { className, autoFocus, icon, ...rest },
-  ref,
-) {
+export const Input = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement> & { icon?: ReactNode; onClear?: () => void; clearLabel?: string }
+>(function Input({ className, autoFocus, icon, onClear, clearLabel, ...rest }, ref) {
   const bar = useContext(BarContext);
+  const inner = useRef<HTMLInputElement | null>(null);
+  const setRef = useCallback(
+    (el: HTMLInputElement | null) => {
+      inner.current = el;
+      if (typeof ref === 'function') ref(el);
+      else if (ref) ref.current = el;
+    },
+    [ref],
+  );
+  const clearable = !!onClear && rest.value !== undefined && String(rest.value) !== '';
   const field = (
     <input
-      ref={ref}
+      ref={setRef}
       // Phones: a field is focused only by a tap (iOS would scroll to it and raise the keyboard).
       autoFocus={autoFocus && autoFocusAllowed()}
       className={cx(
         'selectable w-full min-w-0 rounded-[var(--radius-control)] border border-line bg-elev px-2 mobile:tap-h mobile:tap-px text-body text-fg shadow-[var(--shadow-card)] placeholder:text-faint disabled:opacity-50',
         bar ? 'h-(--control-h-bar)' : 'h-7',
         icon ? 'pl-7 mobile:pl-9' : null,
+        onClear ? 'pr-7 mobile:pr-10 [&::-webkit-search-cancel-button]:hidden' : null,
         className,
       )}
       {...rest}
     />
   );
-  if (!icon) return field;
+  if (!icon && !onClear) return field;
   return (
     <span className="relative flex w-full min-w-0 items-center">
-      <span className="pointer-events-none absolute left-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center text-muted mobile:left-3.5 [&>svg]:size-4" aria-hidden>
-        {icon}
-      </span>
+      {icon ? (
+        <span className="pointer-events-none absolute left-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center text-muted mobile:left-3.5 [&>svg]:size-4" aria-hidden>
+          {icon}
+        </span>
+      ) : null}
       {field}
+      {clearable ? <ClearButton label={clearLabel} onClick={onClear} onDone={() => inner.current?.focus()} className="absolute right-1 top-1/2 -translate-y-1/2" /> : null}
     </span>
   );
 });
+
+/** The «×» that empties a text field (CBF-157): a press keeps focus in the field (a keyboard press returns it there), a 44 px target on the phone. */
+export function ClearButton({ label, onClick, onDone, className }: { label?: string | undefined; onClick: () => void; onDone?: () => void; className?: string }): ReactNode {
+  return (
+    <button
+      type="button"
+      aria-label={label ?? t('common.clear')}
+      // The press must not take focus from the field (the caret stays, the keyboard stays up).
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => {
+        onClick();
+        onDone?.();
+      }}
+      // Phone: a 32 px disc, the 44 px target is the disc + 6 px on every side (docs/08, like `bar-hit`).
+      className={cx(
+        "relative grid size-5 shrink-0 place-items-center rounded-full text-muted hover:text-fg mobile:size-8 mobile:before:absolute mobile:before:-inset-1.5 mobile:before:content-[''] [&>svg]:pointer-events-none",
+        className,
+      )}
+      data-testid="search-clear"
+    >
+      <X className="size-3.5" aria-hidden />
+    </button>
+  );
+}
 
 /**
  * Multiline field: `Input`'s border / fill / text / padding on the card radius (docs/08 — multiline

@@ -8,6 +8,7 @@ The bot API only grows: new routes, fields and events are added, existing ones k
 
 | Server version | Date | What's new |
 |---|---|---|
+| next | — | The bot's current owner edits the text of the bot's messages from the app (`PATCH /api/messages/{id}` with their own session, in the bot's home workspace and its DMs): the author stays the bot, the keyboard stays, `keyboardRevision` grows, `MESSAGE_UPDATE` is unchanged — see [Messages](./rest-messages) |
 | next | — | MCP without a bot: a person connects an MCP client with their own account through OAuth 2.1 (metadata `/.well-known/oauth-protected-resource/api/mcp` and `/.well-known/oauth-authorization-server`, registration `POST /api/mcp/oauth/register`, PKCE S256); the connection's token works only on `/api/mcp` (`403 MCP_TOKEN` on other REST); the endpoint's `401` carries `WWW-Authenticate` — see [MCP server](./mcp#connecting-with-your-account-oauth) |
 | next | — | MCP on behalf of a person: `Calab-On-Behalf` on `/api/mcp`; the tools `list_tasks`, `update_task`, `assign`, Git links and releases in `read`, a board key in `create_task`; the field `via` (`"mcp"`) of `Message` and `TaskActivity` — see [MCP server](./mcp#a-bot-on-behalf-of-a-person) |
 | next | — | Inbound telephony: `offHours` and `viaFallback` in the call of `SIP_INBOUND_RING` / `SIP_CALL_UPDATE` (why the call rings the bot: off hours or a group's fallback), the reason `off_hours`, `PUT /api/workspaces/{id}/sip/schedule` (working hours of inbound calls, `MANAGE_INTEGRATIONS`) — see [Telephony](../telephony#bots-and-telephony) |

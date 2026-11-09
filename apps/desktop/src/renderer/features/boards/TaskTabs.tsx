@@ -5,28 +5,15 @@ import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { isMobileNow } from '../../lib/mobile';
 import { openTaskAnywhere } from '../../services/boards';
+import { entryOf, openInTab } from '../../services/taskTab';
 import { useBoards } from '../../stores/boards';
 import { useBoardsUi } from '../../stores/boardsUi';
 import { useUi } from '../../stores/ui';
-import { useTaskTabs, type TaskTab } from '../../stores/taskTabs';
+import { useTaskTabs } from '../../stores/taskTabs';
 import { closeFileTab, showFileTab } from '../disk/office/fileTabs';
 import { FileTypeIcon } from '../disk/visuals';
 
-/** A tab entry for a task: the store's task when loaded, else only where it lives. */
-function entryOf(id: string, workspaceId: string, boardId: string): TaskTab {
-  const task = useBoards.getState().tasks[id];
-  const prev = useTaskTabs.getState().tabs.find((x) => x.id === id);
-  return { id, ws: task?.workspaceId ?? prev?.ws ?? workspaceId, board: task?.boardId ?? prev?.board ?? boardId, key: task?.key ?? prev?.key ?? '', title: task?.title ?? prev?.title ?? '', at: Date.now() };
-}
-
-/**
- * «Открыть в новой вкладке» (Ctrl/⌘-click on a card, the card menu): the task joins the strip in
- * the background; the open one (if any) stays open and joins too, so it is not lost.
- */
-export function openInTab(id: string, workspaceId: string, boardId: string): void {
-  const open = useBoardsUi.getState().taskId;
-  useTaskTabs.getState().add(entryOf(id, workspaceId, boardId), open ? entryOf(open, workspaceId, boardId) : undefined);
-}
+export { openInTab };
 
 /**
  * Ctrl/⌘-click on a card or row opens a background tab (#93) — unless a selection is under way,

@@ -347,6 +347,7 @@ import {
   InviteBotDelegationRequestSchema,
   ListBlockedBotsResponseSchema,
   ListBlockedUsersResponseSchema,
+  InboxDismissSchema,
   CreateReportRequestSchema,
   CreateReportResponseSchema,
   ListReportsResponseSchema,
@@ -2114,6 +2115,8 @@ class MockImpl {
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
           // Guest accounts have no DMs (ADR-0020).
           dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
+          // ADR-0151 / ADR-0162: the recipient's own bots.
+          myBotIds: [...this.state.bots.values()].filter((b) => b.ownerUserId === u.user.id).map((b) => b.userId).sort(),
           // Notes shelves (ADR-0039): people only.
           notes: u.user.isGuest || u.user.isBot ? [] : this.notesOf(u.user.id),
           // ADR-0034: the user's ringing / active call.
@@ -4823,11 +4826,12 @@ class MockImpl {
       const limit = Math.min(100, Math.max(1, Number(q.get('limit') ?? '50') || 50));
       const before = q.get('before') ?? '';
       const only = q.get('workspace_id') ?? '';
+      const dismissed = s().dismissedMentions.get(me);
       const hits = [...this.state.rooms.values()]
         .filter((r) => (!only || r.workspaceId === only) && this.member(r.workspaceId, me) && this.canView(r, me))
         .flatMap((r) =>
           (s().messages.get(r.id) ?? []).filter((m) => {
-            if (m.authorId === me || (before && m.id >= before)) return false;
+            if (m.authorId === me || (before && m.id >= before) || dismissed?.has(m.id)) return false;
             const { users, everyone } = parseMentions(m.content);
             return users.includes(me) || (everyone && this.mayMentionAll(r, m.authorId));
           }),
@@ -4837,6 +4841,20 @@ class MockImpl {
         messages: hits.slice(0, limit).map((m) => this.msgOut(m, me)),
         hasMore: hits.length > limit,
       });
+    });
+
+    // CBF-155: the ✕ on «Упоминания» cards — own rows only, INBOX_DISMISS to my sessions.
+    this.route('POST', '/api/me/inbox/dismiss', (c) => {
+      const me = this.uid(c);
+      const b = parseBody(c, InboxDismissSchema);
+      if (!b.messageIds.length && !b.noticeIds.length) throw invalid('messageIds', 'nothing to dismiss');
+      if (b.messageIds.length > 100 || b.noticeIds.length > 100) throw invalid('messageIds', 'too many ids');
+      const set = s().dismissedMentions.get(me) ?? new Set<string>();
+      for (const id of b.messageIds) set.add(id);
+      s().dismissedMentions.set(me, set);
+      this.boards.dismissNotices(me, b.noticeIds);
+      this.toUser(me, { event: { case: 'inboxDismiss', value: { messageIds: b.messageIds, noticeIds: b.noticeIds } } });
+      noContent(c.res);
     });
 
     this.route('PUT', '/api/rooms/:id/notifications', (c) => {
@@ -9354,6 +9372,28 @@ class MockImpl {
         const hits = this.canvas.search(q(c, 'scope'), me, q(c, 'q'), limit);
         sendMsg(c.res, 200, SearchResponseSchema, {
           sections: [{ type: SearchType.CANVAS, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: markHit(h.preview || h.name, q(c, 'q')), title: h.name, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'canvas' as const, value: { itemId: h.id, parentId: h.parentId, folder: h.kind === CanvasItemKind.FOLDER, path: this.canvas.ancestorNames(h) } } })) }],
+        });
+        return;
+      }
+      if (type === 'messages' && q(c, 'scope') === 'dms') {
+        // The «Личные» column's search (CBF-159): the messages of my DMs, newest first, the cursor is an offset.
+        const words = q(c, 'q').trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length === 0) throw invalid('q', 'search query has no words');
+        const start = Number(q(c, 'cursor')) || 0;
+        const found = this.dmsOf(me)
+          .flatMap((d) => this.visibleMessages(me, d.room?.id ?? ''))
+          .filter((m) => words.every((x) => m.content.toLowerCase().includes(x)))
+          .sort((a, b) => (a.id < b.id ? 1 : -1));
+        const page = found.slice(start, start + limit);
+        sendMsg(c.res, 200, SearchResponseSchema, {
+          sections: [
+            {
+              type: SearchType.MESSAGES,
+              totalEstimate: found.length,
+              nextCursor: start + limit < found.length ? String(start + limit) : '',
+              items: page.map((m) => ({ snippet: markHit(m.content, words[0] ?? ''), authorId: m.authorId, ...(m.createdAt ? { at: m.createdAt } : {}), ref: { case: 'message' as const, value: { messageId: m.id, roomId: m.roomId } } })),
+            },
+          ],
         });
         return;
       }

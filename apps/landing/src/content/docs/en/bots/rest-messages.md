@@ -26,7 +26,7 @@ Permissions are checked per room, exactly as for a person:
 | `GET` | `/api/rooms/{id}/messages/{messageId}/readers` | Which people saw **your** message and when → `{readers: [{userId, readAt}]}`; someone else's — `403` |
 | `POST` | `/api/rooms/{id}/messages` | Send a message → `201 {message}` (`SEND_MESSAGES`) |
 | `POST` | `/api/rooms/{id}/messages/{mid}/forward` | Forward to another room `{toRoomId}` → `201 {message}` with `forward` set |
-| `PATCH` | `/api/messages/{id}` | Edit your message: text and/or inline keyboard → `{message}` |
+| `PATCH` | `/api/messages/{id}` | Edit your message: text and/or inline keyboard → `{message}`. The bot's current owner may also edit the text of the bot's messages from the app (the author stays the bot, the keyboard stays) |
 | `DELETE` | `/api/messages/{id}` | Delete your own, or anyone's with `MANAGE_MESSAGES` → `204` |
 | `GET` | `/api/messages/{id}/reactions/{emoji}` | Who reacted with an emoji: `?after=&limit=` (1..100, default 25) → `{users, hasMore}` |
 | `PUT` | `/api/messages/{id}/reactions/{emoji}` | Add a reaction (URL-encoded emoji) → `204` |

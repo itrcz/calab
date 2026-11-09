@@ -539,7 +539,7 @@ GET    /api/rooms/{id}/messages?before=|after=&limit=   ListMessagesResponse (VI
 GET    /api/rooms/{id}/messages/{messageId}             Message (без обёртки; VIEW_ROOM; 404: чужое/удалённое/очищенная история DM; автору — `read_by`, ADR-0140)
 GET    /api/rooms/{id}/messages/{messageId}/readers     ListMessageReadersResponse {readers: [{user_id, read_at}]} (ADR-0140: только автору, иначе 403; гостю — люди его комнат)
 POST   /api/rooms/{id}/messages        CreateMessageRequest → 201 | 200 при повторе nonce   (SEND_MESSAGES; вложения — ATTACH_FILES)
-PATCH  /api/messages/{id}              UpdateMessageRequest                (только автор)
+PATCH  /api/messages/{id}              UpdateMessageRequest                (автор или текущий владелец бота-автора, ADR-0162)
 DELETE /api/messages/{id}              204                                 (автор или MANAGE_MESSAGES; мягкое удаление)
 GET    /api/messages/{id}/reactions/{emoji}?after=&limit=   ListReactionUsersResponse   (VIEW_ROOM; кто поставил эмодзи — тултип реакции, по запросу; по user id, after — последний id страницы; limit 1..100, 25; 404 — как у чтения сообщения)
 PUT    /api/rooms/{id}/read            UpdateReadStateRequest → 204        (маркер только вперёд; `seen` — ещё и маркер «увидел» → READ_RECEIPT другим, docs/09 #92, ADR-0140)

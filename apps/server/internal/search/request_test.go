@@ -39,6 +39,10 @@ func TestParseRequest(t *testing.T) {
 	if !r.all || !r.notesAllowed(false) || r.notesAllowed(true) {
 		t.Fatalf("scope=all: notes for people only")
 	}
+	r, _ = parse(t, "q=x&scope=dms&types=notes")
+	if !r.all || !r.dms || r.notesAllowed(false) || r.hash() == mustParse(t, "q=x&scope=all").hash() {
+		t.Fatalf("scope=dms: DMs only, no notes, own cursor hash")
+	}
 	r, _ = parse(t, "q=x&scope="+ws+"&types=notes,tasks")
 	if len(r.types) != 2 || !r.notesAllowed(false) || r.notesAllowed(true) {
 		t.Fatalf("explicit notes: %+v", r.types)
@@ -139,4 +143,13 @@ func TestMarkWords(t *testing.T) {
 			t.Errorf("%q: %q", in, got)
 		}
 	}
+}
+
+func mustParse(t *testing.T, qs string) *request {
+	t.Helper()
+	r, err := parse(t, qs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }

@@ -258,6 +258,14 @@
   accent-color: var(--color-accent);
 }
 
+/* Custom role name colour (MemberBits roleTextStyle): contrast-adjusted per theme, CBF-154. */
+.role-tint {
+  color: var(--rc-d);
+}
+:root[data-theme='light'] .role-tint {
+  color: var(--rc-l);
+}
+
 :root[data-theme='light'] {
   --color-bg: #ffffff;
   --color-bg-elevated: #ffffff;

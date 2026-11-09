@@ -137,6 +137,35 @@ func Forward(from, to sqlc.BoardStatus) bool {
 	return to.Type == "completed" || to.Position > from.Position
 }
 
+// approvalGates: UpdateBoardRequest.approval_gate → boards.approval_gate_off (ADR-0160).
+var approvalGates = map[v1.ApprovalGate]bool{v1.ApprovalGate_APPROVAL_GATE_HOLD: false, v1.ApprovalGate_APPROVAL_GATE_OFF: true}
+
+// ApprovalGateProto is Board.approval_gate of boards.approval_gate_off.
+func ApprovalGateProto(off bool) v1.ApprovalGate {
+	if off {
+		return v1.ApprovalGate_APPROVAL_GATE_OFF
+	}
+	return v1.ApprovalGate_APPROVAL_GATE_HOLD
+}
+
+// boardGate is checkApprovalGate on board boardID (the task's board, or the target board of a
+// move): nil when the board's approval does not hold status changes (approval_gate_off,
+// ADR-0160). The board is read only when the gate would refuse.
+func boardGate(ctx context.Context, q *sqlc.Queries, boardID uuid.UUID, t Tally, from, to sqlc.BoardStatus) error {
+	err := checkApprovalGate(t, from, to)
+	if err == nil {
+		return nil
+	}
+	off, qerr := q.BoardApprovalGateOff(ctx, boardID)
+	if qerr != nil {
+		return qerr
+	}
+	if off {
+		return nil
+	}
+	return err
+}
+
 // checkApprovalGate is the one approval check of every status change (PATCH incl. kanban
 // moves and list bulk actions, bots, moving to another board, deleting a status with
 // move_to): 409 TASK_APPROVAL_REQUIRED when a task that is pending or rejected goes forward.
@@ -148,9 +177,10 @@ func checkApprovalGate(t Tally, from, to sqlc.BoardStatus) error {
 }
 
 // checkCreateGate: a new task with approvers cannot start in a COMPLETED status — its votes are
-// all pending, the same 409 as the gate (lead decision on ADR-0049 §2).
-func checkCreateGate(approvers int, required int16, st sqlc.BoardStatus) error {
-	if approvers == 0 || st.Type != "completed" {
+// all pending, the same 409 as the gate (lead decision on ADR-0049 §2) — unless the board's gate
+// is off (ADR-0160).
+func checkCreateGate(approvers int, required int16, st sqlc.BoardStatus, gateOff bool) error {
+	if approvers == 0 || st.Type != "completed" || gateOff {
 		return nil
 	}
 	return approvalRequired(TallyOf(make([]string, approvers), int(required)))

@@ -1,6 +1,7 @@
 import { timestampMs, type Timestamp } from '@bufbuild/protobuf/wkt';
 import type { CalendarEvent } from '@calaba/protocol';
-import { getLocale, t, type Locale } from '../../i18n';
+import { t } from '../../i18n';
+import { usePrefs } from '../../stores/prefs';
 import { dateTimeFormat } from '../format';
 
 /*
@@ -70,8 +71,11 @@ export function addMonths(month: string, n: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 }
 
-/** First weekday of the calendar grid: Sunday for English, Monday for the other languages. */
-export const weekStart = (locale: Locale = getLocale()): 0 | 1 => (locale === 'en' ? 0 : 1);
+/** The first weekday of every calendar grid (Settings → Календарь, CBF-165): 1 = Monday (default for every language), 0 = Sunday. */
+export const weekStart = (): 0 | 1 => usePrefs.getState().weekStartsOn;
+
+/** Reactive `weekStart` for components: a change in settings redraws the grids. */
+export const useWeekStart = (): 0 | 1 => usePrefs((s) => s.weekStartsOn);
 
 /** The 6 × 7 day keys of a month's grid (leading / trailing days of the neighbours included). */
 export function monthGrid(month: string, first: 0 | 1 = weekStart()): string[] {

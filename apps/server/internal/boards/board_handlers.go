@@ -454,6 +454,13 @@ func (s *Service) updateBoard(w http.ResponseWriter, r *http.Request) error {
 		p.AiInstruction = &in
 	}
 	p.AiFindDuplicates = req.AiFindDuplicates
+	if req.ApprovalGate != nil {
+		off, ok := approvalGates[req.GetApprovalGate()]
+		if !ok {
+			return httpx.Validation("approvalGate", "approval gate must be HOLD or OFF")
+		}
+		p.ApprovalGateOff = &off
+	}
 	if req.Emoji != nil {
 		e, err := validEmoji(req.GetEmoji())
 		if err != nil {
@@ -1047,6 +1054,9 @@ func statusCompletionGate(r *http.Request, q *sqlc.Queries, tx pgx.Tx, boardID, 
 	if Disabled(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) || mayManageApprovals(r, acc, "") == nil {
 		return nil
 	}
+	if off, err := q.BoardApprovalGateOff(r.Context(), boardID); err != nil || off { // ADR-0160
+		return err
+	}
 	ss, err := q.ListBoardStatuses(r.Context(), []uuid.UUID{boardID})
 	if err != nil {
 		return err
@@ -1097,7 +1107,8 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 	var moved []uuid.UUID
 	var c change
 	err = s.taskTx(r.Context(), &c, func(q *sqlc.Queries, tx pgx.Tx) error {
-		if _, err := q.GetBoardForUpdate(r.Context(), id); err != nil {
+		bd, err := q.GetBoardForUpdate(r.Context(), id)
+		if err != nil {
 			return err
 		}
 		ss, err := q.ListBoardStatuses(r.Context(), []uuid.UUID{id})
@@ -1123,8 +1134,8 @@ func (s *Service) deleteStatus(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Conflict("the default status cannot be deleted; make another one the default first")
 		}
 		// Moving the tasks forward is a status change like any other (ADR-0049 §2): refused
-		// while one of them waits for approval — pick another move_to.
-		if Forward(*from, *dst) && !Disabled(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) {
+		// while one of them waits for approval — pick another move_to; never when the board's gate is off (ADR-0160).
+		if Forward(*from, *dst) && !Disabled(acc.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) && !bd.ApprovalGateOff {
 			// Row locks: a vote / approvers change (which lock the task) cannot slip in
 			// between this check and the move.
 			rows, err := queryTasks(r.Context(), tx, "WHERE t.status_id = $1 ORDER BY t.id FOR UPDATE OF t", sid)

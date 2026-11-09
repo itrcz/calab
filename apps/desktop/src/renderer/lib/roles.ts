@@ -97,6 +97,59 @@ export function roleColorCss(color: number): string {
   return `#${(color & 0xffffff).toString(16).padStart(6, '0')}`;
 }
 
+const lin = (c: number): number => {
+  const v = c / 255;
+  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+const luminance = (r: number, g: number, b: number): number => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+const contrast = (l1: number, l2: number): number => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+
+/**
+ * Worst-case surfaces a name sits on (styles.css): the selected row on the light sidebar (selection
+ * 7 % black over #f2f2f5 = #e1e1e4) and the hover / selected rows and cards in dark (fill over the
+ * sheet or popover, ~#3e3e43 - the --color-label-secondary reference); the plain surfaces are easier.
+ */
+const SURFACE_LUM = { light: luminance(0xe1, 0xe1, 0xe4), dark: luminance(0x3e, 0x3e, 0x43) };
+const readableCache = new Map<string, string>();
+/** Role colours are few (a workspace's roles); the cap only guards against a pathological stream. */
+const READABLE_CACHE_MAX = 512;
+
+/**
+ * A role colour made readable as text (WCAG >= 4.5:1) on the theme's surface: mixed toward black
+ * (light) or white (dark) just enough, so the hue stays recognisable. Memoized per colour+theme;
+ * a colour that already passes is returned as is.
+ */
+export function readableRoleColor(color: number, theme: 'light' | 'dark'): string {
+  const key = `${theme}${color & 0xffffff}`;
+  const hit = readableCache.get(key);
+  if (hit) return hit;
+  const rgb = [(color >> 16) & 255, (color >> 8) & 255, color & 255] as const;
+  const target = theme === 'light' ? 0 : 255;
+  const surface = SURFACE_LUM[theme];
+  const mixed = (t: number): [number, number, number] => [
+    Math.round(rgb[0] + (target - rgb[0]) * t),
+    Math.round(rgb[1] + (target - rgb[1]) * t),
+    Math.round(rgb[2] + (target - rgb[2]) * t),
+  ];
+  const ok = (t: number): boolean => contrast(luminance(...mixed(t)), surface) >= 4.5;
+  let t = 0;
+  if (!ok(0)) {
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 8; i++) {
+      const mid = (lo + hi) / 2;
+      if (ok(mid)) hi = mid;
+      else lo = mid;
+    }
+    t = hi;
+  }
+  const [r, g, b] = mixed(t);
+  const css = roleColorCss((r << 16) | (g << 8) | b);
+  if (readableCache.size >= READABLE_CACHE_MAX) readableCache.clear();
+  readableCache.set(key, css);
+  return css;
+}
+
 /** «#rrggbb» (or «rrggbb», «#rgb») → 0xRRGGBB; null when it is no colour. */
 export function parseRoleColor(s: string): number | null {
   let h = s.trim().replace(/^#/, '');

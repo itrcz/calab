@@ -12,6 +12,7 @@ import { SEARCH_STATES, hasConditions, isModified, nextSort, queryKey, soleBoard
 import { log } from '../../lib/log';
 import { useMobile } from '../../lib/mobile';
 import { openFoundTask, saveSearch, searchTasksPage, updateSavedSearch } from '../../services/taskSearch';
+import type { TabClickEvent } from '../../services/taskTab';
 import { useBoards } from '../../stores/boards';
 import { prefsOf, useBoardsUi } from '../../stores/boardsUi';
 import { queryOf, useTaskSearch } from '../../stores/taskSearch';
@@ -144,8 +145,9 @@ export const TaskSearch = forwardRef<
   const text = query.q.trim();
 
   const open = useCallback(
-    (task: Task) => {
-      openFoundTask(task, variant === 'page' ? text : '');
+    (task: Task, e?: TabClickEvent) => {
+      // Ctrl/⌘-click: a background tab; the search / ⌘K stays open with its query.
+      if (openFoundTask(task, variant === 'page' ? text : '', e)) return;
       onOpened?.();
     },
     [variant, text, onOpened],
@@ -177,9 +179,9 @@ export const TaskSearch = forwardRef<
       return false;
     },
   }));
-  const pick = useCallback((id: string) => {
+  const pick = useCallback((id: string, e?: TabClickEvent) => {
     const task = id === keyTask?.id ? keyTask : (useBoards.getState().tasks[id] ?? res?.byId[id]);
-    if (task) open(task);
+    if (task) open(task, e);
   }, [keyTask, res, open]);
 
   // Infinite load: the sentinel under the last row (an observer, no timer).
@@ -280,6 +282,7 @@ function SearchBar({ workspaceId, boardId, query, onQuery, variant, busy }: { wo
               type="search"
               value={query.q}
               onChange={(e) => onQuery({ ...query, q: e.target.value })}
+              onClear={() => onQuery({ ...query, q: '' })}
               maxLength={200}
               autoFocus
               placeholder={t('ts.placeholder')}
@@ -430,12 +433,12 @@ const HeaderRow = memo(function HeaderRow({ sorting, onSort, showBoard }: { sort
   );
 });
 
-const KeyRow = memo(function KeyRow({ task, selected, onPick, onHover }: { task: Task; selected: boolean; onPick: (id: string) => void; onHover: () => void }): ReactNode {
+const KeyRow = memo(function KeyRow({ task, selected, onPick, onHover }: { task: Task; selected: boolean; onPick: (id: string, e?: TabClickEvent) => void; onHover: () => void }): ReactNode {
   return (
     <div
       role="option"
       aria-selected={selected}
-      onClick={() => onPick(task.id)}
+      onClick={(e) => onPick(task.id, e)}
       onMouseMove={selected ? undefined : onHover}
       className={cx('mx-1.5 my-1 flex h-9 cursor-default items-center gap-2 rounded-[var(--radius-row)] px-2.5 text-body hover:bg-hover mobile:h-12', selected && 'bg-hover')}
       data-testid="task-search-key"
@@ -482,7 +485,7 @@ const ResultRow = memo(function ResultRow({
   showBoard: boolean;
   card: boolean;
   selected: boolean;
-  onPick: (id: string) => void;
+  onPick: (id: string, e?: TabClickEvent) => void;
   onHover: (i: number) => void;
 }): ReactNode {
   const live = useBoards((s) => s.tasks[id]);
@@ -523,7 +526,7 @@ const ResultRow = memo(function ResultRow({
   );
   if (card) {
     return (
-      <div role="option" aria-selected={selected} onClick={() => onPick(id)} className="flex cursor-default flex-col gap-1 border-b border-line px-4 py-3 active:bg-hover" data-testid="task-search-row" data-archived={archived || undefined}>
+      <div role="option" aria-selected={selected} onClick={(e) => onPick(id, e)} className="flex cursor-default flex-col gap-1 border-b border-line px-4 py-3 active:bg-hover" data-testid="task-search-row" data-archived={archived || undefined}>
         <span className="flex min-w-0 items-center gap-2 text-caption text-muted">
           <span className="shrink-0 font-medium tabular-nums text-fg">
             <Words text={task.key} q={q} />
@@ -556,7 +559,7 @@ const ResultRow = memo(function ResultRow({
     <div
       role="option"
       aria-selected={selected}
-      onClick={() => onPick(id)}
+      onClick={(e) => onPick(id, e)}
       onMouseMove={selected ? undefined : () => onHover(index)}
       className={cx(showBoard ? GRID : GRID_NO_BOARD, 'min-h-9 cursor-default border-b border-line py-1.5 text-body hover:bg-hover', selected && 'bg-hover [&_mark]:text-fg [&_mark]:underline')}
       data-testid="task-search-row"
@@ -649,6 +652,7 @@ export function BoardSearchField({ boardId, phone = false }: { boardId: string; 
           value={value}
           maxLength={200}
           onChange={(e) => useTaskSearch.getState().setBoardText(boardId, e.target.value)}
+          onClear={() => useTaskSearch.getState().setBoardText(boardId, '')}
           onBlur={() => setOpened(false)}
           onKeyDown={(e) => {
             e.stopPropagation(); // board hotkeys (C, F, 1–3…) stay out of the field

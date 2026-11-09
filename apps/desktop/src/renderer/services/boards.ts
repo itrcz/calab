@@ -499,6 +499,15 @@ export async function loadTask(taskId: string): Promise<Task | null> {
   }
 }
 
+/** Clears a task's unread mark by id (the inbox ✕, CBF-155): a no-op for a read task. */
+export function markTaskReadById(taskId: string): void {
+  const s = useBoards.getState();
+  if (s.unread[taskId] === undefined) return;
+  const task = s.tasks[taskId];
+  if (task) void markTaskRead(task);
+  else void boardsApi.tasks.markRead(taskId).catch((e: unknown) => log.warn('task read failed', e));
+}
+
 async function markTaskRead(task: Task): Promise<void> {
   useBoards.getState().upsertTask({ ...task, unread: false, viewerState: true });
   try {
@@ -705,8 +714,8 @@ export function gateText(task: Pick<Task, 'workspaceId' | 'approvers' | 'approva
 /** A status change the approval gate refuses: a toast, nothing is sent (the server would say 409). */
 function gated(task: Task, statusId: string): boolean {
   if (statusId === task.statusId) return false;
-  const statuses = useBoards.getState().boards[task.boardId]?.statuses ?? [];
-  if (!blockedStatusIds(task, statuses).has(statusId)) return false;
+  const board = useBoards.getState().boards[task.boardId];
+  if (!blockedStatusIds(task, board?.statuses ?? [], board?.approvalGate).has(statusId)) return false;
   toast.error(gateText(task));
   return true;
 }
@@ -741,7 +750,7 @@ export async function pickStatus(taskId: string, statusId: string, manage: boole
   const task = s.tasks[taskId];
   if (!task) return;
   const statuses = s.boards[task.boardId]?.statuses ?? [];
-  const how = statusPick(task, statuses, statusId, manage);
+  const how = statusPick(task, statuses, statusId, manage, s.boards[task.boardId]?.approvalGate);
   if (how === 'same') return;
   if (how !== 'override') return updateTask(taskId, { statusId });
   const to = statuses.find((x) => x.id === statusId)?.name ?? '';
@@ -909,14 +918,24 @@ export function duplicateStatusId(src: Pick<Task, 'statusId' | 'boardId'>, statu
   return st && (st.type === BoardStatusType.COMPLETED || st.type === BoardStatusType.CANCELLED) ? undefined : src.statusId;
 }
 
+/**
+ * Where the copy goes: right after the source — only while it lands in the source's own status. In
+ * the initial status (a finished source, CBF #103) the source is not in that column, and the server
+ * refuses a neighbour from another status (400 afterTaskId) — the copy then goes to the column's end (CBF #158).
+ */
+export function duplicateAfterId(src: Pick<Task, 'id' | 'statusId'>, statusId: string | undefined): string | undefined {
+  return statusId === src.statusId ? src.id : undefined;
+}
+
 /** «Дублировать»: a copy with the same properties, «(копия)» in the title, right after it. */
 export async function duplicateTask(taskId: string): Promise<Task | null> {
   const src = useBoards.getState().tasks[taskId];
   if (!src) return null;
+  const statusId = duplicateStatusId(src, useBoards.getState().boards[src.boardId]?.statuses ?? []);
   return createTask(src.boardId, {
     title: t('boards.copyTitle', { title: src.title }).slice(0, 200),
     description: src.description,
-    statusId: duplicateStatusId(src, useBoards.getState().boards[src.boardId]?.statuses ?? []),
+    statusId,
     priority: src.priority,
     assignees: src.assignees.map((a) => ({ userId: a.userId, isLead: a.isLead, note: a.note })),
     labelIds: src.labelIds,
@@ -925,7 +944,7 @@ export async function duplicateTask(taskId: string): Promise<Task | null> {
     estimate: src.estimate,
     parentId: src.parentId,
     milestoneId: src.milestoneId,
-    afterTaskId: src.id,
+    afterTaskId: duplicateAfterId(src, statusId),
   });
 }
 
@@ -1022,7 +1041,7 @@ export async function bulkUpdate(ids: readonly string[], patch: TaskPatch): Prom
   const s = useBoards.getState();
   const held = patch.statusId === undefined ? [] : ids.filter((id) => {
     const x = s.tasks[id];
-    return !!x && x.statusId !== patch.statusId && blockedStatusIds(x, s.boards[x.boardId]?.statuses ?? []).has(patch.statusId ?? '');
+    return !!x && x.statusId !== patch.statusId && blockedStatusIds(x, s.boards[x.boardId]?.statuses ?? [], s.boards[x.boardId]?.approvalGate).has(patch.statusId ?? '');
   });
   if (held.length) toast.error(t('boards.gate.bulk', { keys: held.map((id) => s.tasks[id]?.key ?? '').join(', ') }));
   await Promise.all(ids.filter((id) => !held.includes(id)).map((id) => updateTask(id, patch)));

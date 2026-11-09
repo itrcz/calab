@@ -127,7 +127,7 @@ Buttons call only their author bot. Forwarded copies of the message have no acti
 - `inlineKeyboard` omitted — the keyboard stays; `{"inlineKeyboard": {}}` or empty `rows` — remove it.
 - To change only the keyboard, send `"preserveContent": true` without `content`. The flag requires a keyboard in the request and rejects non-empty text.
 - Without the flag, `content` keeps its usual meaning: omitted or empty means empty text (allowed only with attachments).
-- Every text or keyboard edit changes the server-owned `keyboardRevision`.
+- Every text or keyboard edit changes the server-owned `keyboardRevision` — including the bot owner's text edit from the app: the keyboard stays, older presses get `409 KEYBOARD_STALE`.
 
 ```js tab="JavaScript"
 await bot.edit(message.id, { inlineKeyboard: { rows: [] } });           // remove, keep the text

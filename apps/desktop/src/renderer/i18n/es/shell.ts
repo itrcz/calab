@@ -23,6 +23,8 @@ export const esShell: DictShape<typeof enShell> = {
   'shell.inboxTasks': 'Tareas',
   'shell.inboxCount': { one: '{n} mención', many: '{n} menciones', other: '{n} menciones' },
   'shell.inboxMarkRead': 'Marcar como leído',
+  'shell.inboxDismiss': 'Quitar de la lista',
+  'shell.inboxDismissFailed': 'No se pudo quitar la notificación',
   'shell.help': 'Atajos de teclado',
   'shell.kbd.search': 'Cambio rápido y búsqueda',
   'shell.kbd.back': 'Atrás',

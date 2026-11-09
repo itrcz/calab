@@ -24,6 +24,9 @@ export interface TaskQuery {
 
 export const EMPTY_QUERY: TaskQuery = { q: '', state: 'all', filter: EMPTY_FILTER, sort: '' };
 
+/** The «×» of the search field (CBF-157): the text goes, the state, the filter and the sort stay («Сбросить» is for them). */
+export const clearQueryText = (q: TaskQuery): TaskQuery => (q.q === '' ? q : { ...q, q: '' });
+
 export function isSearchState(v: unknown): v is SearchState {
   return v === 'all' || v === 'open' || v === 'done' || v === 'archived';
 }

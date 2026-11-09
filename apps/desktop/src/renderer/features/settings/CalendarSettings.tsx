@@ -10,10 +10,12 @@ import { t, useLocale } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import type { WorkHours } from '../../lib/calendar/freebusy';
 import { freebusyApi, workHoursOf, type CalDavAccount, type ShareLevel } from '../../lib/calendar/freebusyApi';
-import { formatMinutes, viewerZone, weekStart } from '../../lib/calendar/time';
+import { formatMinutes, viewerZone, useWeekStart } from '../../lib/calendar/time';
 import { MAX_EXTRA_ZONES, ZONE_LABEL_MAX, moveUp, parseZonesSig, zoneCity, zoneOffsetLabel, zoneOptions, zoneTime, zonesSig, type ExtraZone, type ZoneOption } from '../../lib/calendar/zones';
 import { WORK_ENDS, WORK_STARTS, toggleWeekday, validateWorkHours, weekdayOrder, withStart } from '../../lib/calendar/workHours';
 import { dateTimeFormat } from '../../lib/format';
+import { refetchLoadedMonths } from '../../services/calendar';
+import { usePrefs } from '../../stores/prefs';
 import { loadCalDav, saveCalendarZones, saveMyWorkHours, setCalDav, setExternalReminders, setShareLevel } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
 import { useSession } from '../../stores/session';
@@ -28,6 +30,7 @@ import { toast } from '../../stores/toasts';
 export function CalendarTab(): ReactNode {
   return (
     <>
+      <WeekStartCard />
       <WorkHoursCard />
       <ZonesCard />
       <RemindersLink />
@@ -36,8 +39,32 @@ export function CalendarTab(): ReactNode {
   );
 }
 
+/** «Первый день недели» (CBF-165): a device preference, every week grid and picker follows it. */
+function WeekStartCard(): ReactNode {
+  const first = useWeekStart();
+  const setPrefs = usePrefs((s) => s.setPrefs);
+  return (
+    <Card>
+      <Row label={t('fb.week.first')} hint={t('fb.week.firstHint')}>
+        <Segmented<'1' | '0'>
+          label={t('fb.week.first')}
+          value={first === 0 ? '0' : '1'}
+          onChange={(v) => {
+            setPrefs({ weekStartsOn: v === '0' ? 0 : 1 });
+            refetchLoadedMonths();
+          }}
+          options={[
+            { value: '1', label: t('fb.week.mon') },
+            { value: '0', label: t('fb.week.sun') },
+          ]}
+        />
+      </Row>
+    </Card>
+  );
+}
+
 function WorkHoursCard(): ReactNode {
-  const locale = useLocale();
+  const first = useWeekStart();
   // Me.settings.work_hours (the default until set); a change shows at once, the saved Me follows.
   const stored = useSession((s) => s.me?.settings?.workHours);
   const saved = useMemo(() => workHoursOf(stored), [stored]);
@@ -72,7 +99,7 @@ function WorkHoursCard(): ReactNode {
       </Row>
       <Row label={t('fb.wh.days')} hint={error ? <span className="text-danger-text">{t(error)}</span> : undefined}>
         <div role="group" aria-label={t('fb.wh.days')} className="flex flex-wrap justify-end gap-1" data-testid="wh-days">
-          {weekdayOrder(weekStart(locale)).map((d) => {
+          {weekdayOrder(first).map((d) => {
             const on = wh.days.includes(d);
             // 2026-01-05 is a Monday: ISO day d → 4 + d.
             const label = names.format(new Date(2026, 0, 4 + d));

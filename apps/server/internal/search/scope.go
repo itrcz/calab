@@ -68,7 +68,9 @@ func (s *Service) buildScope(ctx context.Context, req *request, user uuid.UUID, 
 	sc := &scope{user: user, bot: bot}
 	res := perm.FromContext(ctx)
 	var wss []uuid.UUID
-	if req.all {
+	if req.dms {
+		wss = nil // scope=dms: personal rooms only
+	} else if req.all {
 		ids, err := s.db.Q.ListUserWorkspaceIDs(ctx, user)
 		if err != nil {
 			return nil, err

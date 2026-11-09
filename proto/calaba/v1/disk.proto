@@ -10,9 +10,10 @@ import "calaba/v1/room.proto";
 // file links, trash and storage usage.
 //
 // Access: workspace bits DISK_VIEW (1 << 35), DISK_WRITE (1 << 36), DISK_MANAGE (1 << 37), then
-// the overrides of every ancestor and the item itself (disk_permissions, VIEW / WRITE only); a
-// restricted item drops what the roles and the ancestors gave; the item's owner always has
-// VIEW | WRITE on it; DISK_MANAGE and ADMINISTRATOR see everything. Go perm.ComputeDiskItem,
+// the overrides of every ancestor and the item itself (disk_permissions, VIEW / WRITE; a person's
+// may also carry MANAGE, «Управление», ADR-0161); a restricted item drops what the roles and
+// the ancestors gave; the item's owner always has all three on it (a guest owner VIEW | WRITE)
+// and so manages everything inside; DISK_MANAGE and ADMINISTRATOR see everything. Go perm.ComputeDiskItem,
 // TS diskItemPermissions. No DISK_VIEW on an item → 404.
 
 enum DiskItemKind {
@@ -58,7 +59,8 @@ message DiskItem {
 }
 
 // One override of an item (disk_permissions): «Просмотр» = DISK_VIEW, «Правка» = DISK_VIEW |
-// DISK_WRITE. A guest can be given access only as a USER target.
+// DISK_WRITE, «Управление» (USER targets only, not guests; ADR-0161) = DISK_VIEW | DISK_WRITE |
+// DISK_MANAGE. A guest can be given access only as a USER target.
 message DiskPermissionEntry {
   PermissionTargetType target_type = 1;
   string target_id = 2; // role id or user id
@@ -168,7 +170,8 @@ message DiskPermissionsResponse {
 }
 
 // PUT /api/disk/items/{id}/permissions — replaces the item's overrides (allow / deny within
-// DISK_VIEW | DISK_WRITE) and optionally the restricted switch.
+// DISK_VIEW | DISK_WRITE, plus DISK_MANAGE for a person) and optionally the restricted switch.
+// The owner or DISK_MANAGE on the item; a manager does not change the owner's own row.
 message UpdateDiskPermissionsRequest {
   repeated DiskPermissionEntry entries = 1;
   optional bool restricted = 2;

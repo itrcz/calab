@@ -23,6 +23,8 @@ export const zhShell: DictShape<typeof enShell> = {
   'shell.inboxTasks': '任务',
   'shell.inboxCount': { other: '{n}条提及' },
   'shell.inboxMarkRead': '标为已读',
+  'shell.inboxDismiss': '从列表中移除',
+  'shell.inboxDismissFailed': '无法移除通知',
   'shell.help': '快捷键',
   'shell.kbd.search': '快速切换与搜索',
   'shell.kbd.back': '后退',

@@ -149,6 +149,8 @@ export interface Prefs {
   /** «Диск» (ADR-0094 §8): «Плитки | Список» and the sort, per device. */
   diskView: DiskView;
   diskSort: DiskSort;
+  /** «Первый день недели» (Settings → Календарь, CBF-165): 1 = Monday (default), 0 = Sunday; every week grid and date picker. */
+  weekStartsOn: 0 | 1;
 }
 
 const DEFAULTS: Prefs = {
@@ -214,6 +216,7 @@ const DEFAULTS: Prefs = {
   phoneTabOrder: normalizeOrder(undefined, DEFAULT_PINNED),
   diskView: 'tiles',
   diskSort: 'name',
+  weekStartsOn: 1,
 };
 
 interface PrefsState extends Prefs {
@@ -250,6 +253,7 @@ export const usePrefs = create<PrefsState>()(
         phoneTabOrder: normalizeOrder(p.phoneTabOrder),
         diskView: isDiskView(p.diskView) ? p.diskView : current.diskView,
         diskSort: isDiskSort(p.diskSort) ? p.diskSort : current.diskSort,
+        weekStartsOn: p.weekStartsOn === 0 ? 0 : 1,
       };
     },
     // Musician mode is never stored on (ADR-0052: it lasts until I leave voice).

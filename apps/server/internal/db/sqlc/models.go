@@ -398,6 +398,7 @@ type Board struct {
 	ApprovalNotifyDelaySeconds int32
 	AiInstruction              string
 	AiFindDuplicates           bool
+	ApprovalGateOff            bool
 }
 
 type BoardCategory struct {
@@ -1165,6 +1166,12 @@ type MemberRole struct {
 	WorkspaceID uuid.UUID
 	UserID      uuid.UUID
 	RoleID      uuid.UUID
+}
+
+type MentionDismissal struct {
+	UserID    uuid.UUID
+	MessageID uuid.UUID
+	CreatedAt time.Time
 }
 
 type Message struct {

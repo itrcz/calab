@@ -262,14 +262,16 @@ export const MilestoneBadge = memo(function MilestoneBadge({ id }: { id: string 
 });
 
 /**
- * Statuses a task waiting for approval may not go to (ADR-0049), stable while its approval state,
- * status and the board's statuses stay (the status menu memoizes on it).
+ * Statuses a task waiting for approval may not go to (ADR-0049; none when the board's gate is off,
+ * ADR-0160), stable while its approval state, status and the board's statuses / gate stay (the
+ * status menu memoizes on it).
  */
 export function useBlockedStatuses(task: Task | undefined, boardId: string): ReadonlySet<string> | undefined {
   const statuses = useBoards((s) => s.boards[boardId]?.statuses);
+  const gate = useBoards((s) => s.boards[boardId]?.approvalGate);
   const state = task?.approvalState ?? 0;
   const statusId = task?.statusId ?? '';
-  return useMemo(() => (statuses ? blockedStatusIds({ approvalState: state, statusId }, statuses) : undefined), [statuses, state, statusId]);
+  return useMemo(() => (statuses ? blockedStatusIds({ approvalState: state, statusId }, statuses, gate) : undefined), [statuses, state, statusId, gate]);
 }
 
 function CardLabels({ task, boardId, canEdit, canCreate, req }: { task: Task; boardId: string; canEdit: boolean; canCreate: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void } }): ReactNode {

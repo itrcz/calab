@@ -163,6 +163,14 @@ export const IPC = {
   /** A tooltip over the shown app: drawn by a native overlay above it (WebAppTip; ADR-0053 «Поправка 1»). */
   webAppTipShow: 'webapp:tip-show',
   webAppTipHide: 'webapp:tip-hide',
+  /** A still picture of the shown app (JPEG data URL, '' if none): laid under a menu or dialog while the view steps aside (ADR-0053 «Поправка 2»). */
+  webAppSnapshot: 'webapp:snapshot',
+  /** The pointer came back from the shown app to Calab: take its picture ahead (a capture waits for a frame). */
+  webAppSnapshotPrepare: 'webapp:snapshot-prepare',
+  /** main → renderer: a WebAppSignInAsk to answer with a Calab dialog, or null to close it (ADR-0159). */
+  webAppSignInAsk: 'webapp:sign-in-ask',
+  /** renderer → main: { id, allow } — the person's answer to the shown WebAppSignInAsk. */
+  webAppSignInAnswer: 'webapp:sign-in-answer',
 
   // ---- mail (ADR-0088 §7): main relays to the mail engine utilityProcess ----
   /** renderer → main: a MailCall → MailReply (shared/mail.ts). */
@@ -198,6 +206,22 @@ export interface WebAppTip {
 }
 
 /** A view's state for the navigation strip (updated by events, no polling). */
+/**
+ * A consent «Sign in with Calab» of an app's site (ADR-0159): what the provider's consent request
+ * returned, shown in a Calab dialog. Texts are the server's; the renderer only displays them.
+ */
+export interface WebAppSignInAsk {
+  id: string;
+  /** The client's name the workspace gave it. */
+  client: string;
+  workspace: string;
+  /** The account's display name. */
+  account: string;
+  /** Host of the client's redirect_uri: the site that gets the sign-in. */
+  site: string;
+  scopes: string[];
+}
+
 export interface WebAppNavState {
   appId: string;
   /** The current page (the strip shows its host). */

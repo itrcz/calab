@@ -5,8 +5,8 @@ import { BarContext, cx } from '../../components/ui';
 /**
  * The desktop sidebar column's header (docs/08 «Колонка», owner 07.10, Codex reference): one 48 px
  * row without a divider — the large title (the workspace switcher, or «Личные») on the left, the
- * section's actions and accent «+» on the right (no search: the title bar's is enough, owner
- * 07.10). The same row on every section (Команда, Личные, Календарь, Доски); the phone keeps its
+ * section's actions and accent «+» on the right (no search in the header row itself: «Личные»
+ * has its message search field right under it, CBF-159, owner 07.11). The same row on every section (Команда, Личные, Календарь, Доски); the phone keeps its
  * own headers.
  */
 export function ColumnHeader({ title, children }: { title: ReactNode; children?: ReactNode }): ReactNode {

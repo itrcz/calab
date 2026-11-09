@@ -21,6 +21,8 @@ export const ruShell = {
   'shell.inboxTasks': 'Задачи',
   'shell.inboxCount': { one: '{n} с упоминанием', few: '{n} с упоминанием', many: '{n} с упоминанием', other: '{n} с упоминанием' },
   'shell.inboxMarkRead': 'Отметить прочитанными',
+  'shell.inboxDismiss': 'Убрать из списка',
+  'shell.inboxDismissFailed': 'Не удалось убрать уведомление',
   'shell.help': 'Горячие клавиши',
   'shell.kbd.search': 'Быстрый переход и поиск',
   'shell.kbd.back': 'Назад',

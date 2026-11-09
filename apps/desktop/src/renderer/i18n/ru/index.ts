@@ -123,6 +123,7 @@ export const ru = {
   'common.delete': 'Удалить',
   'common.save': 'Сохранить',
   'common.saved': 'Сохранено',
+  'common.clear': 'Очистить',
   'common.reset': 'Сбросить',
   'common.retry': 'Повторить',
   'common.search': 'Поиск',

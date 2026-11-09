@@ -11,7 +11,8 @@ import { panelRequest, paramsKey, type PanelFilters, type Period, type RoomKindO
 import { debouncedSearch } from '../../lib/search/runner';
 import { scopeParam, writeScope } from '../../lib/search/scope';
 import { SECTION_ORDER, hitId, messageLike, orderedSections, sectionTotal, type SectionName } from '../../lib/search/sections';
-import { openHit } from '../../services/searchNav';
+import { openHit, openHitInTab } from '../../services/searchNav';
+import type { TabClickEvent } from '../../services/taskTab';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { HOME } from '../../stores/dms';
 import { useRooms } from '../../stores/rooms';
@@ -183,7 +184,9 @@ export function SearchResultsPanel({ floating = false, page = false }: { floatin
 
   // A phone shows the results full screen: they give way to what was opened.
   const onOpen = useCallback(
-    (h: SearchHit) => {
+    (h: SearchHit, e: TabClickEvent) => {
+      // Ctrl/⌘-click on a task hit: a background tab, the results stay.
+      if (openHitInTab(h, e)) return;
       if (page) useSearchPanel.getState().close();
       openHit(h);
     },
@@ -436,12 +439,12 @@ const ResultRow = memo(function ResultRow({
   section: SectionName;
   q: string;
   activeWs: string | null;
-  onOpen: (h: SearchHit) => void;
+  onOpen: (h: SearchHit, e: TabClickEvent) => void;
 }): ReactNode {
   const place = hitPlace(hit, activeWs);
   return (
     <li>
-      <button type="button" onClick={() => onOpen(hit)} className="flex w-full gap-2.5 rounded-[var(--radius-row)] px-2.5 py-2 text-left hover:bg-hover" data-testid="search-result">
+      <button type="button" onClick={(e) => onOpen(hit, e)} className="flex w-full gap-2.5 rounded-[var(--radius-row)] px-2.5 py-2 text-left hover:bg-hover" data-testid="search-result">
         <HitIcon section={section} hit={hit} className="mt-0.5 size-4 shrink-0 text-muted" />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="line-clamp-2 break-words text-body text-fg">

@@ -8,6 +8,7 @@ API ботов только расширяется: новые маршруты,
 
 | Версия сервера | Дата | Что появилось |
 |---|---|---|
+| следующая | — | Текущий владелец бота правит текст сообщений бота из приложения (`PATCH /api/messages/{id}` своей сессией, в домашнем пространстве бота и в его DM): автор остаётся ботом, клавиатура сохраняется, `keyboardRevision` растёт, `MESSAGE_UPDATE` прежний — см. [Сообщения](./rest-messages) |
 | следующая | — | MCP без бота: человек подключает MCP-клиент под своим аккаунтом через OAuth 2.1 (метаданные `/.well-known/oauth-protected-resource/api/mcp` и `/.well-known/oauth-authorization-server`, регистрация `POST /api/mcp/oauth/register`, PKCE S256); токен подключения действует только на `/api/mcp` (`403 MCP_TOKEN` на остальном REST); `401` эндпоинта — с `WWW-Authenticate` — см. [MCP-сервер](./mcp#подключение-под-своим-аккаунтом-oauth) |
 | следующая | — | MCP от имени человека: `Calab-On-Behalf` на `/api/mcp`; инструменты `list_tasks`, `update_task`, `assign`, Git-связи и релизы в `read`, ключ доски в `create_task`; поле `via` (`"mcp"`) у `Message` и `TaskActivity` — см. [MCP-сервер](./mcp#бот-от-имени-человека) |
 | следующая | — | Входящая телефония: `offHours` и `viaFallback` в звонке `SIP_INBOUND_RING` / `SIP_CALL_UPDATE` (почему звонок пришёл боту: нерабочее время или переадресация группы), причина `off_hours`, `PUT /api/workspaces/{id}/sip/schedule` (рабочие часы входящих, `MANAGE_INTEGRATIONS`) — см. [Телефония](../telephony#боты-и-телефония) |

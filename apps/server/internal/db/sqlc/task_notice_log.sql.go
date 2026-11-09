@@ -12,6 +12,22 @@ import (
 	"github.com/google/uuid"
 )
 
+const dismissTaskNotices = `-- name: DismissTaskNotices :exec
+DELETE FROM task_notice_log
+WHERE user_id = $1::uuid AND id = ANY($2::uuid[])
+`
+
+type DismissTaskNoticesParams struct {
+	UserID uuid.UUID
+	Ids    []uuid.UUID
+}
+
+// The ✕ on inbox cards (CBF-155, ADR-0163): the caller's own history rows only.
+func (q *Queries) DismissTaskNotices(ctx context.Context, arg DismissTaskNoticesParams) error {
+	_, err := q.db.Exec(ctx, dismissTaskNotices, arg.UserID, arg.Ids)
+	return err
+}
+
 const insertTaskNotices = `-- name: InsertTaskNotices :exec
 INSERT INTO task_notice_log (id, user_id, task_id, kind, actor_id, message_id, text, rule_id, re_requested, due_on, days_left)
 SELECT n.id, n.user_id, $1::uuid, n.kind,

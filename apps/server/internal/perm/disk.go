@@ -6,8 +6,9 @@ package perm
 //   - ADMINISTRATOR includes them (DiskOf), although All stops at bit 31 (room and board rules
 //     never see them);
 //   - per-item overrides (disk_permissions) carry DiskView and DiskWrite (DiskOverride) and
-//     nothing else; room and board overrides never carry them (RoomOnly / BoardOnly are within
-//     All);
+//     nothing else, except a person's override, which may also carry DiskManage — the level
+//     «Управление» (ADR-0161, DiskPersonal); room and board overrides never carry them
+//     (RoomOnly / BoardOnly are within All);
 //   - guests get nothing from their roles, only from an explicit user override on an item (or
 //     by owning it); bots are members like people (addendum 2026-10-14).
 //
@@ -24,12 +25,16 @@ const (
 
 	// Disk are the three disk bits.
 	Disk = DiskView | DiskWrite | DiskManage
-	// DiskOverride are the bits a disk_permissions row may allow or deny.
+	// DiskOverride are the bits a disk_permissions row of a role may allow or deny.
 	DiskOverride = DiskView | DiskWrite
+	// DiskPersonal are the bits a disk_permissions row of a person may allow or deny: also
+	// DiskManage, allowed only with View and Write («Управление», ADR-0161; not for guests).
+	DiskPersonal = Disk
 )
 
-// DiskTree are the Disk's bits for the tree rule.
-var DiskTree = TreeBits{View: DiskView, Write: DiskWrite, Manage: DiskManage}
+// DiskTree are the Disk's bits for the tree rule; a person's override may carry DiskManage
+// (ADR-0161).
+var DiskTree = TreeBits{View: DiskView, Write: DiskWrite, Manage: DiskManage, PersonalManage: true}
 
 // DiskLevel is one item on the way from the root to the item being checked.
 type DiskLevel = TreeLevel
@@ -53,6 +58,13 @@ func ComputeDiskItemIn(m Member, chain []DiskNode) Bits {
 	return ComputeTreeIn(DiskTree, m, chain)
 }
 
-// ValidDiskOverride reports whether an allow / deny pair may be stored in disk_permissions:
-// only DISK_VIEW and DISK_WRITE (never DISK_MANAGE, billing or room bits), not both ways.
+// ValidDiskOverride reports whether an allow / deny pair may be stored in disk_permissions for
+// a role: only DISK_VIEW and DISK_WRITE (never DISK_MANAGE, billing or room bits), not both ways.
 func ValidDiskOverride(allow, deny Bits) bool { return ValidTreeOverride(DiskTree, allow, deny) }
+
+// ValidDiskPersonalOverride is ValidDiskOverride for a person (not a guest: the caller checks):
+// DISK_MANAGE may be denied, and allowed only with DISK_VIEW | DISK_WRITE («Управление»,
+// ADR-0161).
+func ValidDiskPersonalOverride(allow, deny Bits) bool {
+	return ValidTreePersonalOverride(DiskTree, allow, deny)
+}
