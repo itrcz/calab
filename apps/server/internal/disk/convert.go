@@ -91,15 +91,14 @@ func decorated(ctx context.Context, q *sqlc.Queries, c caller, items []sqlc.Disk
 	for _, id := range sharedIDs {
 		shared[id] = true
 	}
+	// Files and folders (ADR-0165) alike.
 	links := map[uuid.UUID]*sqlc.DiskLink{}
-	if fileIDs != nil {
-		ls, err := q.ListDiskLinksForItems(ctx, ids)
-		if err != nil {
-			return nil, err
-		}
-		for i := range ls {
-			links[ls[i].ItemID] = &ls[i]
-		}
+	ls, err := q.ListDiskLinksForItems(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range ls {
+		links[ls[i].ItemID] = &ls[i]
 	}
 	out := make([]*v1.DiskItem, len(items))
 	for i, it := range items {

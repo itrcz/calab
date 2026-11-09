@@ -235,13 +235,18 @@ RETURNING *;
 SELECT * FROM disk_links WHERE item_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now());
 
 -- name: GetDiskLinkByCode :one
--- An anonymous visit: the live link with its item and file. A file in the trash or restricted
--- still answers (ADR-0094 §3); one deleted forever is gone with its rows.
-SELECT sqlc.embed(l), sqlc.embed(di), sqlc.embed(f)
+-- An anonymous visit: the live link with its item (a file or a folder, ADR-0165). A file in the
+-- trash or restricted still answers (ADR-0094 §3); one deleted forever is gone with its rows.
+SELECT sqlc.embed(l), sqlc.embed(di)
 FROM disk_links l
 JOIN disk_items di ON di.id = l.item_id
-JOIN files f ON f.id = di.file_id
 WHERE l.code = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expires_at > now());
+
+-- name: ListDiskDenyViewItems :many
+-- Which of the items carry an override that denies DISK_VIEW (bit 35) to a role or a person: a
+-- public folder link leaves them out with their subtrees (ADR-0165).
+SELECT DISTINCT item_id FROM disk_permissions
+WHERE item_id = ANY(sqlc.arg('ids')::uuid[]) AND (deny & (1::bigint << 35)) <> 0;
 
 -- name: RevokeDiskLink :execrows
 UPDATE disk_links SET revoked_at = now() WHERE item_id = $1 AND revoked_at IS NULL;

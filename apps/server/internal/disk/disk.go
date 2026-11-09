@@ -54,6 +54,13 @@ type Service struct {
 	// LinkReadLimit: anonymous link metadata and thumbnails per client IP; LinkDownloadLimit:
 	// anonymous downloads (each Range request counts) per client IP. nil = none.
 	LinkReadLimit, LinkDownloadLimit Limiter
+	// LinkArchiveLimit: «Скачать всё» of a folder link per client IP (ADR-0165). nil = none.
+	LinkArchiveLimit Limiter
+	// ArchiveMaxBytes / ArchiveMaxItems bound «Скачать всё»; 0 = ArchiveMaxBytes / ArchiveMaxItems.
+	ArchiveMaxBytes int64
+	ArchiveMaxItems int
+	// Office opens files of public links in the read-only office viewer; nil = off.
+	Office PublicOffice
 	// Editing: who edits a file item in the office editor now (ADR-0143); nil = off.
 	Editing Editors
 	// Now is the clock (tests move it).
@@ -98,6 +105,11 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	mux.Handle("GET /api/public/disk/{code}", httpx.HandlerFunc(s.publicFile))
 	mux.Handle("GET /api/public/disk/{code}/content", httpx.HandlerFunc(s.publicContent))
 	mux.Handle("GET /api/public/disk/{code}/thumbnail", httpx.HandlerFunc(s.publicThumbnail))
+	mux.Handle("GET /api/public/disk/{code}/office", httpx.HandlerFunc(s.publicOffice))
+	mux.Handle("GET /api/public/disk/{code}/items", httpx.HandlerFunc(s.publicItems))
+	mux.Handle("GET /api/public/disk/{code}/items/{id}/content", httpx.HandlerFunc(s.publicItemContent))
+	mux.Handle("GET /api/public/disk/{code}/items/{id}/thumbnail", httpx.HandlerFunc(s.publicItemThumbnail))
+	mux.Handle("GET /api/public/disk/{code}/archive", httpx.HandlerFunc(s.publicArchive))
 }
 
 // ---- callers and access ----

@@ -237,8 +237,9 @@ func newCode() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// createLink: POST /api/disk/items/{id}/link — turns the public link of a file on (the owner or
-// DISK_MANAGE); a live link is answered as is (200), a new one with 201.
+// createLink: POST /api/disk/items/{id}/link — turns the public link of a file or a folder
+// (ADR-0165) on (the owner or MANAGE on the item); a live link is answered as is (200), a new one
+// with 201.
 func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathUUID(r, "id", "item")
 	if err != nil {
@@ -270,9 +271,6 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 		}
 		if err := writable(ctx, q, a.item.WorkspaceID); err != nil {
 			return err
-		}
-		if a.item.Kind != "file" {
-			return httpx.Conflict("only files can have a public link")
 		}
 		if !a.mayChange() {
 			return errNotSharer

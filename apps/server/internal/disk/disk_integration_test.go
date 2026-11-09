@@ -493,8 +493,6 @@ func TestDiskPublicLink(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	doc := e.upload(e.alice, "", "report.txt", 50)
-	folder := e.folder(e.alice, "", "Dir")
-	e.must(409, e.alice, "POST", item(folder.GetId())+"/link", &v1.CreateDiskLinkRequest{}, nil)
 	e.must(403, e.bob, "POST", item(doc.GetId())+"/link", &v1.CreateDiskLinkRequest{}, nil)
 	e.must(422, e.alice, "POST", item(doc.GetId())+"/link", &v1.CreateDiskLinkRequest{ExpiresAt: timestamppb.New(time.Now().Add(-time.Hour))}, nil)
 	var link v1.DiskLinkResponse

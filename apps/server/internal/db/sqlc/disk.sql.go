@@ -491,21 +491,19 @@ func (q *Queries) GetDiskItemForUpdate(ctx context.Context, id uuid.UUID) (DiskI
 }
 
 const getDiskLinkByCode = `-- name: GetDiskLinkByCode :one
-SELECT l.id, l.item_id, l.code, l.created_by, l.created_at, l.expires_at, l.revoked_at, l.downloads, di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root, f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform
+SELECT l.id, l.item_id, l.code, l.created_by, l.created_at, l.expires_at, l.revoked_at, l.downloads, di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root
 FROM disk_links l
 JOIN disk_items di ON di.id = l.item_id
-JOIN files f ON f.id = di.file_id
 WHERE l.code = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expires_at > now())
 `
 
 type GetDiskLinkByCodeRow struct {
 	DiskLink DiskLink
 	DiskItem DiskItem
-	File     File
 }
 
-// An anonymous visit: the live link with its item and file. A file in the trash or restricted
-// still answers (ADR-0094 §3); one deleted forever is gone with its rows.
+// An anonymous visit: the live link with its item (a file or a folder, ADR-0165). A file in the
+// trash or restricted still answers (ADR-0094 §3); one deleted forever is gone with its rows.
 func (q *Queries) GetDiskLinkByCode(ctx context.Context, code string) (GetDiskLinkByCodeRow, error) {
 	row := q.db.QueryRow(ctx, getDiskLinkByCode, code)
 	var i GetDiskLinkByCodeRow
@@ -531,20 +529,6 @@ func (q *Queries) GetDiskLinkByCode(ctx context.Context, code string) (GetDiskLi
 		&i.DiskItem.TrashedAt,
 		&i.DiskItem.TrashedBy,
 		&i.DiskItem.TrashedRoot,
-		&i.File.ID,
-		&i.File.WorkspaceID,
-		&i.File.UploaderID,
-		&i.File.Key,
-		&i.File.ThumbnailKey,
-		&i.File.Name,
-		&i.File.Mime,
-		&i.File.Size,
-		&i.File.Width,
-		&i.File.Height,
-		&i.File.Sha256,
-		&i.File.CreatedAt,
-		&i.File.VoiceDurationMs,
-		&i.File.VoiceWaveform,
 	)
 	return i, err
 }
@@ -749,6 +733,33 @@ func (q *Queries) LastDiskFileVersion(ctx context.Context, itemID uuid.UUID) (uu
 	var file_id uuid.UUID
 	err := row.Scan(&file_id)
 	return file_id, err
+}
+
+const listDiskDenyViewItems = `-- name: ListDiskDenyViewItems :many
+SELECT DISTINCT item_id FROM disk_permissions
+WHERE item_id = ANY($1::uuid[]) AND (deny & (1::bigint << 35)) <> 0
+`
+
+// Which of the items carry an override that denies DISK_VIEW (bit 35) to a role or a person: a
+// public folder link leaves them out with their subtrees (ADR-0165).
+func (q *Queries) ListDiskDenyViewItems(ctx context.Context, ids []uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listDiskDenyViewItems, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var item_id uuid.UUID
+		if err := rows.Scan(&item_id); err != nil {
+			return nil, err
+		}
+		items = append(items, item_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listDiskFiles = `-- name: ListDiskFiles :many

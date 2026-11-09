@@ -16,11 +16,13 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/disk.proto.
  */
 export const file_calaba_v1_disk: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvZGlzay5wcm90bxIJY2FsYWJhLnYxIrABCghEaXNrTGluaxIMCgRjb2RlGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmNyZWF0ZWRfYnkYAyABKAkSLgoKY3JlYXRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJZG93bmxvYWRzGAUgASgNEg8KB2l0ZW1faWQYBiABKAki/QMKCERpc2tJdGVtEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIRCglwYXJlbnRfaWQYAyABKAkSJQoEa2luZBgEIAEoDjIXLmNhbGFiYS52MS5EaXNrSXRlbUtpbmQSDAoEbmFtZRgFIAEoCRIhCgRmaWxlGAYgASgLMhMuY2FsYWJhLnYxLkZpbGVNZXRhEhAKCG93bmVyX2lkGAcgASgJEhIKCnJlc3RyaWN0ZWQYCCABKAgSDgoGc2hhcmVkGAkgASgIEiEKBGxpbmsYCiABKAsyEy5jYWxhYmEudjEuRGlza0xpbmsSLgoKdHJhc2hlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHbXlfYml0cxgOIAEoBBISCgp0cmFzaGVkX2J5GA8gASgJEhQKDHRyYXNoZWRfcm9vdBgQIAEoCBIUCgxmb2xkZXJfZmlsZXMYESABKA0SFgoOZm9sZGVyX2ZvbGRlcnMYEiABKA0SEgoKZWRpdG9yX2lkcxgTIAMoCSJ7ChNEaXNrUGVybWlzc2lvbkVudHJ5EjQKC3RhcmdldF90eXBlGAEgASgOMh8uY2FsYWJhLnYxLlBlcm1pc3Npb25UYXJnZXRUeXBlEhEKCXRhcmdldF9pZBgCIAEoCRINCgVhbGxvdxgDIAEoBBIMCgRkZW55GAQgASgEItkBCglEaXNrVXNhZ2USEwoLcXVvdGFfYnl0ZXMYASABKAQSEgoKcGxhbl9ieXRlcxgCIAEoBBITCgthZGRvbl9ieXRlcxgDIAEoBBISCgp1c2VkX2J5dGVzGAQgASgEEhIKCmRpc2tfYnl0ZXMYBSABKAQSEwoLdHJhc2hfYnl0ZXMYBiABKAQSEwoLb3RoZXJfYnl0ZXMYByABKAQSEgoKY2hhdF9ieXRlcxgIIAEoBBIUCgxib2FyZHNfYnl0ZXMYCSABKAQSEgoKd2lraV9ieXRlcxgKIAEoBCKSAgoMRGlza0FjdGl2aXR5EgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIPCgdpdGVtX2lkGAMgASgJEhAKCGFjdG9yX2lkGAQgASgJEikKBGtpbmQYBSABKA4yGy5jYWxhYmEudjEuRGlza0FjdGl2aXR5S2luZBInCgZiZWZvcmUYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiYKBWFmdGVyGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglpdGVtX25hbWUYCSABKAkiUAoVTGlzdERpc2tJdGVtc1Jlc3BvbnNlEiIKBWl0ZW1zGAEgAygLMhMuY2FsYWJhLnYxLkRpc2tJdGVtEhMKC25leHRfY3Vyc29yGAIgASgJIjoKF0NyZWF0ZURpc2tGb2xkZXJSZXF1ZXN0EhEKCXBhcmVudF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJIkkKFUltcG9ydERpc2tGaWxlUmVxdWVzdBIPCgdmaWxlX2lkGAEgASgJEhEKCXBhcmVudF9pZBgCIAEoCRIMCgRuYW1lGAMgASgJIjUKEERpc2tJdGVtUmVzcG9uc2USIQoEaXRlbRgBIAEoCzITLmNhbGFiYS52MS5EaXNrSXRlbSKBAQoVVXBkYXRlRGlza0l0ZW1SZXF1ZXN0EhEKBG5hbWUYASABKAlIAIgBARIWCglwYXJlbnRfaWQYAiABKAlIAYgBARIXCgpyZXN0cmljdGVkGAMgASgISAKIAQFCBwoFX25hbWVCDAoKX3BhcmVudF9pZEINCgtfcmVzdHJpY3RlZCI+ChZFbXB0eURpc2tUcmFzaFJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKA0SEwoLZnJlZWRfYnl0ZXMYAiABKAQiNgoQRGlza1BhdGhSZXNwb25zZRIiCgVpdGVtcxgBIAMoCzITLmNhbGFiYS52MS5EaXNrSXRlbSJeChdEaXNrUGVybWlzc2lvbnNSZXNwb25zZRIvCgdlbnRyaWVzGAEgAygLMh4uY2FsYWJhLnYxLkRpc2tQZXJtaXNzaW9uRW50cnkSEgoKcmVzdHJpY3RlZBgCIAEoCCJ3ChxVcGRhdGVEaXNrUGVybWlzc2lvbnNSZXF1ZXN0Ei8KB2VudHJpZXMYASADKAsyHi5jYWxhYmEudjEuRGlza1Blcm1pc3Npb25FbnRyeRIXCgpyZXN0cmljdGVkGAIgASgISACIAQFCDQoLX3Jlc3RyaWN0ZWQiRwoVQ3JlYXRlRGlza0xpbmtSZXF1ZXN0Ei4KCmV4cGlyZXNfYXQYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkIKEERpc2tMaW5rUmVzcG9uc2USIQoEbGluaxgBIAEoCzITLmNhbGFiYS52MS5EaXNrTGluaxILCgN1cmwYAiABKAkiVAoQRGlza0FjdGl2aXR5UGFnZRIrCgphY3Rpdml0aWVzGAEgAygLMhcuY2FsYWJhLnYxLkRpc2tBY3Rpdml0eRITCgtuZXh0X2N1cnNvchgCIAEoCSKgAQoOUHVibGljRGlza0ZpbGUSDAoEbmFtZRgBIAEoCRIMCgRzaXplGAIgASgEEgwKBG1pbWUYAyABKAkSDQoFd2lkdGgYBCABKA0SDgoGaGVpZ2h0GAUgASgNEhUKDWhhc190aHVtYm5haWwYBiABKAgSLgoKZXhwaXJlc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiIgoMRGlza1NldHRpbmdzEhIKCnRyYXNoX2RheXMYASABKA0iagoPRGlza0FjY2Vzc0xldmVsEhIKCnJlc3RyaWN0ZWQYASABKAgSEAoIb3duZXJfaWQYAiABKAkSMQoJb3ZlcnJpZGVzGAMgAygLMh4uY2FsYWJhLnYxLkRpc2tQZXJtaXNzaW9uRW50cnkiqAEKDkRpc2tJdGVtVXBzZXJ0EhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIhCgRpdGVtGAIgASgLMhMuY2FsYWJhLnYxLkRpc2tJdGVtEioKBmFjY2VzcxgDIAMoCzIaLmNhbGFiYS52MS5EaXNrQWNjZXNzTGV2ZWwSMQoNYWNjZXNzX2JlZm9yZRgEIAMoCzIaLmNhbGFiYS52MS5EaXNrQWNjZXNzTGV2ZWwidgoORGlza0l0ZW1SZW1vdmUSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB2l0ZW1faWQYAiABKAkSEQoJcGFyZW50X2lkGAMgASgJEioKBmFjY2VzcxgEIAMoCzIaLmNhbGFiYS52MS5EaXNrQWNjZXNzTGV2ZWwqYgoMRGlza0l0ZW1LaW5kEh4KGkRJU0tfSVRFTV9LSU5EX1VOU1BFQ0lGSUVEEAASGQoVRElTS19JVEVNX0tJTkRfRk9MREVSEAESFwoTRElTS19JVEVNX0tJTkRfRklMRRACKokDChBEaXNrQWN0aXZpdHlLaW5kEiIKHkRJU0tfQUNUSVZJVFlfS0lORF9VTlNQRUNJRklFRBAAEh0KGURJU0tfQUNUSVZJVFlfS0lORF9DUkVBVEUQARIdChlESVNLX0FDVElWSVRZX0tJTkRfVVBMT0FEEAISHQoZRElTS19BQ1RJVklUWV9LSU5EX1JFTkFNRRADEhsKF0RJU0tfQUNUSVZJVFlfS0lORF9NT1ZFEAQSHAoYRElTS19BQ1RJVklUWV9LSU5EX1NIQVJFEAUSHgoaRElTS19BQ1RJVklUWV9LSU5EX0xJTktfT04QBhIfChtESVNLX0FDVElWSVRZX0tJTkRfTElOS19PRkYQBxIcChhESVNLX0FDVElWSVRZX0tJTkRfVFJBU0gQCBIeChpESVNLX0FDVElWSVRZX0tJTkRfUkVTVE9SRRAJEh0KGURJU0tfQUNUSVZJVFlfS0lORF9ERUxFVEUQChIbChdESVNLX0FDVElWSVRZX0tJTkRfRURJVBALQpcBCg1jb20uY2FsYWJhLnYxQglEaXNrUHJvdG9QAVo2Z2l0aHViLmNvbS9jYWxhYmEvY2FsYWJhL3NlcnZlci9nZW4vY2FsYWJhL3YxO2NhbGFiYXYxogIDQ1hYqgIJQ2FsYWJhLlYxygIJQ2FsYWJhXFYx4gIVQ2FsYWJhXFYxXEdQQk1ldGFkYXRh6gIKQ2FsYWJhOjpWMWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp, file_calaba_v1_file, file_calaba_v1_room]);
+  fileDesc("ChRjYWxhYmEvdjEvZGlzay5wcm90bxIJY2FsYWJhLnYxIrABCghEaXNrTGluaxIMCgRjb2RlGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmNyZWF0ZWRfYnkYAyABKAkSLgoKY3JlYXRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJZG93bmxvYWRzGAUgASgNEg8KB2l0ZW1faWQYBiABKAki/QMKCERpc2tJdGVtEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIRCglwYXJlbnRfaWQYAyABKAkSJQoEa2luZBgEIAEoDjIXLmNhbGFiYS52MS5EaXNrSXRlbUtpbmQSDAoEbmFtZRgFIAEoCRIhCgRmaWxlGAYgASgLMhMuY2FsYWJhLnYxLkZpbGVNZXRhEhAKCG93bmVyX2lkGAcgASgJEhIKCnJlc3RyaWN0ZWQYCCABKAgSDgoGc2hhcmVkGAkgASgIEiEKBGxpbmsYCiABKAsyEy5jYWxhYmEudjEuRGlza0xpbmsSLgoKdHJhc2hlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHbXlfYml0cxgOIAEoBBISCgp0cmFzaGVkX2J5GA8gASgJEhQKDHRyYXNoZWRfcm9vdBgQIAEoCBIUCgxmb2xkZXJfZmlsZXMYESABKA0SFgoOZm9sZGVyX2ZvbGRlcnMYEiABKA0SEgoKZWRpdG9yX2lkcxgTIAMoCSJ7ChNEaXNrUGVybWlzc2lvbkVudHJ5EjQKC3RhcmdldF90eXBlGAEgASgOMh8uY2FsYWJhLnYxLlBlcm1pc3Npb25UYXJnZXRUeXBlEhEKCXRhcmdldF9pZBgCIAEoCRINCgVhbGxvdxgDIAEoBBIMCgRkZW55GAQgASgEItkBCglEaXNrVXNhZ2USEwoLcXVvdGFfYnl0ZXMYASABKAQSEgoKcGxhbl9ieXRlcxgCIAEoBBITCgthZGRvbl9ieXRlcxgDIAEoBBISCgp1c2VkX2J5dGVzGAQgASgEEhIKCmRpc2tfYnl0ZXMYBSABKAQSEwoLdHJhc2hfYnl0ZXMYBiABKAQSEwoLb3RoZXJfYnl0ZXMYByABKAQSEgoKY2hhdF9ieXRlcxgIIAEoBBIUCgxib2FyZHNfYnl0ZXMYCSABKAQSEgoKd2lraV9ieXRlcxgKIAEoBCKSAgoMRGlza0FjdGl2aXR5EgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIPCgdpdGVtX2lkGAMgASgJEhAKCGFjdG9yX2lkGAQgASgJEikKBGtpbmQYBSABKA4yGy5jYWxhYmEudjEuRGlza0FjdGl2aXR5S2luZBInCgZiZWZvcmUYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiYKBWFmdGVyGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglpdGVtX25hbWUYCSABKAkiUAoVTGlzdERpc2tJdGVtc1Jlc3BvbnNlEiIKBWl0ZW1zGAEgAygLMhMuY2FsYWJhLnYxLkRpc2tJdGVtEhMKC25leHRfY3Vyc29yGAIgASgJIjoKF0NyZWF0ZURpc2tGb2xkZXJSZXF1ZXN0EhEKCXBhcmVudF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJIkkKFUltcG9ydERpc2tGaWxlUmVxdWVzdBIPCgdmaWxlX2lkGAEgASgJEhEKCXBhcmVudF9pZBgCIAEoCRIMCgRuYW1lGAMgASgJIjUKEERpc2tJdGVtUmVzcG9uc2USIQoEaXRlbRgBIAEoCzITLmNhbGFiYS52MS5EaXNrSXRlbSKBAQoVVXBkYXRlRGlza0l0ZW1SZXF1ZXN0EhEKBG5hbWUYASABKAlIAIgBARIWCglwYXJlbnRfaWQYAiABKAlIAYgBARIXCgpyZXN0cmljdGVkGAMgASgISAKIAQFCBwoFX25hbWVCDAoKX3BhcmVudF9pZEINCgtfcmVzdHJpY3RlZCI+ChZFbXB0eURpc2tUcmFzaFJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKA0SEwoLZnJlZWRfYnl0ZXMYAiABKAQiNgoQRGlza1BhdGhSZXNwb25zZRIiCgVpdGVtcxgBIAMoCzITLmNhbGFiYS52MS5EaXNrSXRlbSJeChdEaXNrUGVybWlzc2lvbnNSZXNwb25zZRIvCgdlbnRyaWVzGAEgAygLMh4uY2FsYWJhLnYxLkRpc2tQZXJtaXNzaW9uRW50cnkSEgoKcmVzdHJpY3RlZBgCIAEoCCJ3ChxVcGRhdGVEaXNrUGVybWlzc2lvbnNSZXF1ZXN0Ei8KB2VudHJpZXMYASADKAsyHi5jYWxhYmEudjEuRGlza1Blcm1pc3Npb25FbnRyeRIXCgpyZXN0cmljdGVkGAIgASgISACIAQFCDQoLX3Jlc3RyaWN0ZWQiRwoVQ3JlYXRlRGlza0xpbmtSZXF1ZXN0Ei4KCmV4cGlyZXNfYXQYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkIKEERpc2tMaW5rUmVzcG9uc2USIQoEbGluaxgBIAEoCzITLmNhbGFiYS52MS5EaXNrTGluaxILCgN1cmwYAiABKAkiVAoQRGlza0FjdGl2aXR5UGFnZRIrCgphY3Rpdml0aWVzGAEgAygLMhcuY2FsYWJhLnYxLkRpc2tBY3Rpdml0eRITCgtuZXh0X2N1cnNvchgCIAEoCSLjAQoOUHVibGljRGlza0ZpbGUSDAoEbmFtZRgBIAEoCRIMCgRzaXplGAIgASgEEgwKBG1pbWUYAyABKAkSDQoFd2lkdGgYBCABKA0SDgoGaGVpZ2h0GAUgASgNEhUKDWhhc190aHVtYm5haWwYBiABKAgSLgoKZXhwaXJlc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJQoEa2luZBgIIAEoDjIXLmNhbGFiYS52MS5EaXNrSXRlbUtpbmQSDgoGb2ZmaWNlGAkgASgIEgoKAmlkGAogASgJIuQBCg9QdWJsaWNEaXNrRW50cnkSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIlCgRraW5kGAMgASgOMhcuY2FsYWJhLnYxLkRpc2tJdGVtS2luZBIMCgRzaXplGAQgASgEEgwKBG1pbWUYBSABKAkSDQoFd2lkdGgYBiABKA0SDgoGaGVpZ2h0GAcgASgNEhUKDWhhc190aHVtYm5haWwYCCABKAgSLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGb2ZmaWNlGAogASgIIisKD1B1YmxpY0Rpc2tDcnVtYhIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJIsYBChBQdWJsaWNEaXNrRm9sZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSKAoEcGF0aBgDIAMoCzIaLmNhbGFiYS52MS5QdWJsaWNEaXNrQ3J1bWISKQoFaXRlbXMYBCADKAsyGi5jYWxhYmEudjEuUHVibGljRGlza0VudHJ5EhMKC25leHRfY3Vyc29yGAUgASgJEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIiIKDERpc2tTZXR0aW5ncxISCgp0cmFzaF9kYXlzGAEgASgNImoKD0Rpc2tBY2Nlc3NMZXZlbBISCgpyZXN0cmljdGVkGAEgASgIEhAKCG93bmVyX2lkGAIgASgJEjEKCW92ZXJyaWRlcxgDIAMoCzIeLmNhbGFiYS52MS5EaXNrUGVybWlzc2lvbkVudHJ5IqgBCg5EaXNrSXRlbVVwc2VydBIUCgx3b3Jrc3BhY2VfaWQYASABKAkSIQoEaXRlbRgCIAEoCzITLmNhbGFiYS52MS5EaXNrSXRlbRIqCgZhY2Nlc3MYAyADKAsyGi5jYWxhYmEudjEuRGlza0FjY2Vzc0xldmVsEjEKDWFjY2Vzc19iZWZvcmUYBCADKAsyGi5jYWxhYmEudjEuRGlza0FjY2Vzc0xldmVsInYKDkRpc2tJdGVtUmVtb3ZlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdpdGVtX2lkGAIgASgJEhEKCXBhcmVudF9pZBgDIAEoCRIqCgZhY2Nlc3MYBCADKAsyGi5jYWxhYmEudjEuRGlza0FjY2Vzc0xldmVsKmIKDERpc2tJdGVtS2luZBIeChpESVNLX0lURU1fS0lORF9VTlNQRUNJRklFRBAAEhkKFURJU0tfSVRFTV9LSU5EX0ZPTERFUhABEhcKE0RJU0tfSVRFTV9LSU5EX0ZJTEUQAiqJAwoQRGlza0FjdGl2aXR5S2luZBIiCh5ESVNLX0FDVElWSVRZX0tJTkRfVU5TUEVDSUZJRUQQABIdChlESVNLX0FDVElWSVRZX0tJTkRfQ1JFQVRFEAESHQoZRElTS19BQ1RJVklUWV9LSU5EX1VQTE9BRBACEh0KGURJU0tfQUNUSVZJVFlfS0lORF9SRU5BTUUQAxIbChdESVNLX0FDVElWSVRZX0tJTkRfTU9WRRAEEhwKGERJU0tfQUNUSVZJVFlfS0lORF9TSEFSRRAFEh4KGkRJU0tfQUNUSVZJVFlfS0lORF9MSU5LX09OEAYSHwobRElTS19BQ1RJVklUWV9LSU5EX0xJTktfT0ZGEAcSHAoYRElTS19BQ1RJVklUWV9LSU5EX1RSQVNIEAgSHgoaRElTS19BQ1RJVklUWV9LSU5EX1JFU1RPUkUQCRIdChlESVNLX0FDVElWSVRZX0tJTkRfREVMRVRFEAoSGwoXRElTS19BQ1RJVklUWV9LSU5EX0VESVQQC0KXAQoNY29tLmNhbGFiYS52MUIJRGlza1Byb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp, file_calaba_v1_file, file_calaba_v1_room]);
 
 /**
- * A public link of a file (ADR-0094 §3). Anyone with the code reads the file without signing
- * in: GET /api/public/disk/{code} (PublicDiskFile) and /api/public/disk/{code}/content.
+ * A public link of a file (ADR-0094 §3) or a folder (ADR-0165). Anyone with the code reads the
+ * file without signing in: GET /api/public/disk/{code} (PublicDiskFile) and
+ * /api/public/disk/{code}/content; a folder link lists the folder's visible subtree
+ * (/api/public/disk/{code}/items, PublicDiskFolder) read-only.
  *
  * @generated from message calaba.v1.DiskLink
  */
@@ -131,7 +133,7 @@ export type DiskItem = Message<"calaba.v1.DiskItem"> & {
   shared: boolean;
 
   /**
-   * the live public link (files only), unset when none
+   * the live public link (a file or a folder), unset when none
    *
    * @generated from field: calaba.v1.DiskLink link = 10;
    */
@@ -618,8 +620,8 @@ export const UpdateDiskPermissionsRequestSchema: GenMessage<UpdateDiskPermission
   messageDesc(file_calaba_v1_disk, 13);
 
 /**
- * POST /api/disk/items/{id}/link (files only; owner of the file or DISK_MANAGE). A live link is
- * returned as is; expires_at unset = never.
+ * POST /api/disk/items/{id}/link (a file or a folder, ADR-0165; the item's owner or MANAGE on
+ * it). A live link is returned as is; expires_at unset = never.
  *
  * @generated from message calaba.v1.CreateDiskLinkRequest
  */
@@ -688,7 +690,9 @@ export const DiskActivityPageSchema: GenMessage<DiskActivityPage> = /*@__PURE__*
 
 /**
  * GET /api/public/disk/{code} — anonymous, X-Robots-Tag: noindex. 404 once the link is revoked,
- * expired or the file deleted forever.
+ * expired or the item deleted forever (a folder: also while it is in the trash). kind FOLDER:
+ * the link is to a folder, the rest of the file fields are unset; its contents are
+ * GET /api/public/disk/{code}/items (ADR-0165).
  *
  * @generated from message calaba.v1.PublicDiskFile
  */
@@ -731,6 +735,25 @@ export type PublicDiskFile = Message<"calaba.v1.PublicDiskFile"> & {
    * @generated from field: google.protobuf.Timestamp expires_at = 7;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: calaba.v1.DiskItemKind kind = 8;
+   */
+  kind: DiskItemKind;
+
+  /**
+   * the file opens read-only in the office viewer (GET …/office)
+   *
+   * @generated from field: bool office = 9;
+   */
+  office: boolean;
+
+  /**
+   * the linked item
+   *
+   * @generated from field: string id = 10;
+   */
+  id: string;
 };
 
 /**
@@ -739,6 +762,155 @@ export type PublicDiskFile = Message<"calaba.v1.PublicDiskFile"> & {
  */
 export const PublicDiskFileSchema: GenMessage<PublicDiskFile> = /*@__PURE__*/
   messageDesc(file_calaba_v1_disk, 17);
+
+/**
+ * One item of a public folder listing (ADR-0165): what an anonymous visitor may know.
+ *
+ * @generated from message calaba.v1.PublicDiskEntry
+ */
+export type PublicDiskEntry = Message<"calaba.v1.PublicDiskEntry"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: calaba.v1.DiskItemKind kind = 3;
+   */
+  kind: DiskItemKind;
+
+  /**
+   * files only
+   *
+   * @generated from field: uint64 size = 4;
+   */
+  size: bigint;
+
+  /**
+   * files only
+   *
+   * @generated from field: string mime = 5;
+   */
+  mime: string;
+
+  /**
+   * images only
+   *
+   * @generated from field: uint32 width = 6;
+   */
+  width: number;
+
+  /**
+   * images only
+   *
+   * @generated from field: uint32 height = 7;
+   */
+  height: number;
+
+  /**
+   * @generated from field: bool has_thumbnail = 8;
+   */
+  hasThumbnail: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 9;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * opens read-only in the office viewer
+   *
+   * @generated from field: bool office = 10;
+   */
+  office: boolean;
+};
+
+/**
+ * Describes the message calaba.v1.PublicDiskEntry.
+ * Use `create(PublicDiskEntrySchema)` to create a new message.
+ */
+export const PublicDiskEntrySchema: GenMessage<PublicDiskEntry> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_disk, 18);
+
+/**
+ * A folder on the way from the linked folder (first) to the listed one (last).
+ *
+ * @generated from message calaba.v1.PublicDiskCrumb
+ */
+export type PublicDiskCrumb = Message<"calaba.v1.PublicDiskCrumb"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message calaba.v1.PublicDiskCrumb.
+ * Use `create(PublicDiskCrumbSchema)` to create a new message.
+ */
+export const PublicDiskCrumbSchema: GenMessage<PublicDiskCrumb> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_disk, 19);
+
+/**
+ * GET /api/public/disk/{code}/items?parent=&cursor= — anonymous, a folder link only: the live
+ * items of the linked folder (parent unset) or of a folder below it, folders first, then by name.
+ * Never above the linked folder; a «Только выбранные» folder below it, an item a role or person is
+ * denied DISK_VIEW on, and what is under them are not listed and answer 404 (ADR-0165).
+ *
+ * @generated from message calaba.v1.PublicDiskFolder
+ */
+export type PublicDiskFolder = Message<"calaba.v1.PublicDiskFolder"> & {
+  /**
+   * the listed folder
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * the linked folder first, the listed folder last
+   *
+   * @generated from field: repeated calaba.v1.PublicDiskCrumb path = 3;
+   */
+  path: PublicDiskCrumb[];
+
+  /**
+   * @generated from field: repeated calaba.v1.PublicDiskEntry items = 4;
+   */
+  items: PublicDiskEntry[];
+
+  /**
+   * @generated from field: string next_cursor = 5;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 6;
+   */
+  expiresAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.PublicDiskFolder.
+ * Use `create(PublicDiskFolderSchema)` to create a new message.
+ */
+export const PublicDiskFolderSchema: GenMessage<PublicDiskFolder> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_disk, 20);
 
 /**
  * GET / PUT /api/workspaces/{id}/disk/settings (PUT: DISK_MANAGE).
@@ -759,7 +931,7 @@ export type DiskSettings = Message<"calaba.v1.DiskSettings"> & {
  * Use `create(DiskSettingsSchema)` to create a new message.
  */
 export const DiskSettingsSchema: GenMessage<DiskSettings> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 18);
+  messageDesc(file_calaba_v1_disk, 21);
 
 /**
  * One level of an item's access chain (the topmost ancestor first, the item last): what
@@ -790,7 +962,7 @@ export type DiskAccessLevel = Message<"calaba.v1.DiskAccessLevel"> & {
  * Use `create(DiskAccessLevelSchema)` to create a new message.
  */
 export const DiskAccessLevelSchema: GenMessage<DiskAccessLevel> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 19);
+  messageDesc(file_calaba_v1_disk, 22);
 
 /**
  * DISK_ITEM_UPSERT: an item was created or changed (renamed, moved, shared, trashed,
@@ -830,7 +1002,7 @@ export type DiskItemUpsert = Message<"calaba.v1.DiskItemUpsert"> & {
  * Use `create(DiskItemUpsertSchema)` to create a new message.
  */
 export const DiskItemUpsertSchema: GenMessage<DiskItemUpsert> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 20);
+  messageDesc(file_calaba_v1_disk, 23);
 
 /**
  * DISK_ITEM_REMOVE: an item was deleted forever or the recipient lost access to it.
@@ -867,7 +1039,7 @@ export type DiskItemRemove = Message<"calaba.v1.DiskItemRemove"> & {
  * Use `create(DiskItemRemoveSchema)` to create a new message.
  */
 export const DiskItemRemoveSchema: GenMessage<DiskItemRemove> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 21);
+  messageDesc(file_calaba_v1_disk, 24);
 
 /**
  * @generated from enum calaba.v1.DiskItemKind

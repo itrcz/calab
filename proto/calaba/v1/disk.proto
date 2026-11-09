@@ -22,8 +22,10 @@ enum DiskItemKind {
   DISK_ITEM_KIND_FILE = 2;
 }
 
-// A public link of a file (ADR-0094 §3). Anyone with the code reads the file without signing
-// in: GET /api/public/disk/{code} (PublicDiskFile) and /api/public/disk/{code}/content.
+// A public link of a file (ADR-0094 §3) or a folder (ADR-0165). Anyone with the code reads the
+// file without signing in: GET /api/public/disk/{code} (PublicDiskFile) and
+// /api/public/disk/{code}/content; a folder link lists the folder's visible subtree
+// (/api/public/disk/{code}/items, PublicDiskFolder) read-only.
 message DiskLink {
   string code = 1; // 43 characters, base64url of 32 random bytes
   google.protobuf.Timestamp expires_at = 2; // unset = never
@@ -44,7 +46,7 @@ message DiskItem {
   string owner_id = 7; // who created it; empty after the account is gone
   bool restricted = 8; // «Только выбранные»: the roles and the parent give no access
   bool shared = 9; // the item has its own overrides (disk_permissions)
-  DiskLink link = 10; // the live public link (files only), unset when none
+  DiskLink link = 10; // the live public link (a file or a folder), unset when none
   google.protobuf.Timestamp trashed_at = 11; // set while in the trash (with its subtree)
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp updated_at = 13;
@@ -177,8 +179,8 @@ message UpdateDiskPermissionsRequest {
   optional bool restricted = 2;
 }
 
-// POST /api/disk/items/{id}/link (files only; owner of the file or DISK_MANAGE). A live link is
-// returned as is; expires_at unset = never.
+// POST /api/disk/items/{id}/link (a file or a folder, ADR-0165; the item's owner or MANAGE on
+// it). A live link is returned as is; expires_at unset = never.
 message CreateDiskLinkRequest {
   google.protobuf.Timestamp expires_at = 1;
 }
@@ -196,7 +198,9 @@ message DiskActivityPage {
 }
 
 // GET /api/public/disk/{code} — anonymous, X-Robots-Tag: noindex. 404 once the link is revoked,
-// expired or the file deleted forever.
+// expired or the item deleted forever (a folder: also while it is in the trash). kind FOLDER:
+// the link is to a folder, the rest of the file fields are unset; its contents are
+// GET /api/public/disk/{code}/items (ADR-0165).
 message PublicDiskFile {
   string name = 1;
   uint64 size = 2;
@@ -205,6 +209,42 @@ message PublicDiskFile {
   uint32 height = 5; // images only
   bool has_thumbnail = 6;
   google.protobuf.Timestamp expires_at = 7;
+  DiskItemKind kind = 8;
+  bool office = 9; // the file opens read-only in the office viewer (GET …/office)
+  string id = 10; // the linked item
+}
+
+// One item of a public folder listing (ADR-0165): what an anonymous visitor may know.
+message PublicDiskEntry {
+  string id = 1;
+  string name = 2;
+  DiskItemKind kind = 3;
+  uint64 size = 4; // files only
+  string mime = 5; // files only
+  uint32 width = 6; // images only
+  uint32 height = 7; // images only
+  bool has_thumbnail = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  bool office = 10; // opens read-only in the office viewer
+}
+
+// A folder on the way from the linked folder (first) to the listed one (last).
+message PublicDiskCrumb {
+  string id = 1;
+  string name = 2;
+}
+
+// GET /api/public/disk/{code}/items?parent=&cursor= — anonymous, a folder link only: the live
+// items of the linked folder (parent unset) or of a folder below it, folders first, then by name.
+// Never above the linked folder; a «Только выбранные» folder below it, an item a role or person is
+// denied DISK_VIEW on, and what is under them are not listed and answer 404 (ADR-0165).
+message PublicDiskFolder {
+  string id = 1; // the listed folder
+  string name = 2;
+  repeated PublicDiskCrumb path = 3; // the linked folder first, the listed folder last
+  repeated PublicDiskEntry items = 4;
+  string next_cursor = 5;
+  google.protobuf.Timestamp expires_at = 6;
 }
 
 // GET / PUT /api/workspaces/{id}/disk/settings (PUT: DISK_MANAGE).

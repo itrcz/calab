@@ -507,6 +507,7 @@ func New(d Deps) *App {
 	diskSvc.PublicURL = d.Config.PublicAppURL
 	diskSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link:", 60, 60)        // public link page + thumbnail: 60 per minute per IP
 	diskSvc.LinkDownloadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-dl:", 30, 30) // public downloads (each Range request): 30 per minute per IP
+	diskSvc.LinkArchiveLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-zip:", 3, 0.2) // «Скачать всё» of a folder link: 3 at once, then one per 5 minutes per IP
 	diskSvc.Routes(mux, private)
 	// Office editing (ADR-0143): the routes are always registered (one route table); off = 404.
 	oc := d.Config.Office
@@ -522,6 +523,7 @@ func New(d Deps) *App {
 		SessionTTL: oc.SessionTTL,
 	}, &office.DiskStore{DB: d.DB, Files: filesSvc, Disk: diskSvc, PlanActive: planSvc.CheckActive}, officeSessions)
 	officeSvc.Announce = diskSvc
+	diskSvc.Office = officeSvc                                                          // the read-only viewer of public links (ADR-0165)
 	officeSvc.ConfigLimit = redisx.NewRateLimiter(d.Redis, "rl:office-config:", 30, 30) // opens: 30 at once, 30 per minute per user
 	officeSvc.ConvertLimit = redisx.NewRateLimiter(d.Redis, "rl:office-convert:", 5, 5) // «Сохранить как»: 5 per minute per user
 	officeSvc.DocsLimit = redisx.NewRateLimiter(d.Redis, "rl:office-ds:", 120, 120)     // Document Server file + callback requests: 120 per minute per item
