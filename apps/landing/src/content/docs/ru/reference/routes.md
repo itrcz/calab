@@ -402,6 +402,11 @@ order: 1
 | `GET` | `/api/public/disk/{code}` | без авторизации |
 | `GET` | `/api/public/disk/{code}/content` | без авторизации |
 | `GET` | `/api/public/disk/{code}/thumbnail` | без авторизации |
+| `GET` | `/api/public/disk/{code}/office` | без авторизации |
+| `GET` | `/api/public/disk/{code}/items` | без авторизации |
+| `GET` | `/api/public/disk/{code}/items/{id}/content` | без авторизации |
+| `GET` | `/api/public/disk/{code}/items/{id}/thumbnail` | без авторизации |
+| `GET` | `/api/public/disk/{code}/archive` | без авторизации |
 | `GET` | `/api/public/forms/{code}` | без авторизации |
 | `POST` | `/api/public/forms/{code}/submissions` | без авторизации |
 | `GET` | `/api/room-invites/{code}` | без авторизации |

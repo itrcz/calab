@@ -402,6 +402,11 @@ Available without a token. A bot may call them, but anonymously — its permissi
 | `GET` | `/api/public/disk/{code}` | no authentication |
 | `GET` | `/api/public/disk/{code}/content` | no authentication |
 | `GET` | `/api/public/disk/{code}/thumbnail` | no authentication |
+| `GET` | `/api/public/disk/{code}/office` | no authentication |
+| `GET` | `/api/public/disk/{code}/items` | no authentication |
+| `GET` | `/api/public/disk/{code}/items/{id}/content` | no authentication |
+| `GET` | `/api/public/disk/{code}/items/{id}/thumbnail` | no authentication |
+| `GET` | `/api/public/disk/{code}/archive` | no authentication |
 | `GET` | `/api/public/forms/{code}` | no authentication |
 | `POST` | `/api/public/forms/{code}/submissions` | no authentication |
 | `GET` | `/api/room-invites/{code}` | no authentication |
