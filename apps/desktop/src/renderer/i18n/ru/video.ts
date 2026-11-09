@@ -14,6 +14,8 @@ export const ruVideo = {
   'video.previewRow': 'Превью камеры',
   'video.checkShort': 'Проверить',
   'video.noPermission': 'Нет права включать камеру в этой комнате',
+  'video.audioOnly': 'На iPhone камера пока недоступна',
+  'video.audioOnlyRoom': 'Камеры и экраны на iPhone пока не показываются',
   'video.roomOff': 'Камеры в этой комнате выключены',
   'video.full': 'Камера — в комнате уже {n} из {max}',
   'video.noDevices': 'Камеры не найдены',

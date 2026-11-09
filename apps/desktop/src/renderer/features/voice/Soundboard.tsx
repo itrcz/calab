@@ -89,11 +89,13 @@ function SoundboardPanel({ onSettings }: { onSettings: () => void }): ReactNode 
   const locale = useLocale();
   const wsId = useVoice((s) => s.workspaceId);
   const wsSounds = useWorkspaceSounds(wsId);
+  // A native-audio join on iPhone (ADR-0149 §5): only built-in clips play there in v1.
+  const audioOnly = useVoice((s) => s.audioOnly);
   const favorites = usePrefs((s) => s.soundboardFavorites);
   const usage = usePrefs((s) => s.soundboardUsage);
   const openDialog = useUi((s) => s.openDialog);
   const [query, setQuery] = useState('');
-  const workspace = useMemo(() => wsSounds.map(toBoard), [wsSounds]);
+  const workspace = useMemo(() => (audioOnly ? [] : wsSounds.map(toBoard)), [wsSounds, audioOnly]);
   const sections = useMemo(
     () => boardSections({ builtin: builtinBoard(locale), workspace, favorites, usage, query }),
     [locale, workspace, favorites, usage, query],
@@ -130,6 +132,7 @@ function SoundboardPanel({ onSettings }: { onSettings: () => void }): ReactNode 
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" role="group" aria-busy={locked ? true : undefined} data-testid="soundboard-sections">
         {sections.length === 0 ? <p className="py-6 text-center text-caption text-muted">{t('snd.none')}</p> : null}
+        {audioOnly && wsSounds.length > 0 && !query.trim() ? <p className="pt-3 text-caption text-muted" data-testid="soundboard-audio-only">{t('snd.audioOnly')}</p> : null}
         {sections.map((sec) => (
           <section key={sec.id} aria-label={t(SECTION_TITLE[sec.id])}>
             <h3 className="pb-1.5 pt-3 text-micro font-semibold uppercase tracking-wide text-muted">{t(SECTION_TITLE[sec.id])}</h3>

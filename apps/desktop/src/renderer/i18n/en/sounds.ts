@@ -5,6 +5,7 @@ export const enSounds = {
   'snd.search': 'Search sounds',
   'snd.settings': 'Sound volume',
   'snd.none': 'Nothing found',
+  'snd.audioOnly': 'Workspace sounds don’t play on iPhone yet',
   'snd.favorites': 'Favorites',
   'snd.frequent': 'Frequently used',
   'snd.workspace': 'Workspace sounds',

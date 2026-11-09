@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VoiceDisconnectReason } from '@calaba/protocol';
 import type { HostCallAudioCapability, HostAudioConnect, HostAudioState } from '../../shared/hostCallAudio';
+import type { HostRoomAudioCapability, HostRoomAudioConnect, HostRoomAudioCue, HostRoomAudioState, HostRoomAudioStatus } from '../../shared/hostRoomAudio';
 
 /**
  * VoiceEngine with LiveKit, the API and the mic pipeline mocked (review test gaps: H1 room
@@ -338,7 +339,12 @@ vi.mock('../lib/media/opusTierPublish', () => ({
 const playSound = vi.fn((_name: string) => undefined);
 const phone = vi.hoisted(() => ({ on: false }));
 vi.mock('../lib/mobile', () => ({ isMobileNow: () => phone.on }));
-vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
+/** The cue route a native-audio room installs (lib/sounds routeCues). */
+const cues = vi.hoisted(() => ({ route: null as ((cue: string, volume: number) => void) | null }));
+vi.mock('../lib/sounds', () => ({
+  playSound: (name: string) => (cues.route ? cues.route(name, 1) : playSound(name)),
+  routeCues: (route: ((cue: string, volume: number) => void) | null) => { cues.route = route; },
+}));
 /** The toast store stand-in: what is on screen (ids), so «raised once while shown» can be told. */
 const shown = vi.hoisted(() => ({ ids: [] as number[], next: 1 }));
 const pushToast = vi.hoisted(() =>
@@ -363,11 +369,12 @@ vi.mock('./mediaErrors', () => ({
 }));
 /** platform.ptt.setBinding: the binding the engine asks main for (null = unbound). */
 const setBinding = vi.fn((_b: unknown) => Promise.resolve({}));
-const nativeHost = vi.hoisted(() => ({ audio: undefined as HostCallAudioCapability | undefined }));
+const nativeHost = vi.hoisted(() => ({ audio: undefined as HostCallAudioCapability | undefined, room: undefined as HostRoomAudioCapability | undefined }));
 vi.mock('../platform', () => ({
   platform: {
     kind: 'web',
     get incomingCalls() { return { audio: nativeHost.audio }; },
+    get roomAudio() { return nativeHost.room; },
     ptt: { onEvent: () => () => undefined, setBinding: (b: unknown) => setBinding(b) },
     tray: { setState: () => undefined },
     system: { metrics: () => Promise.resolve({ rendererCpu: null }) },
@@ -393,6 +400,8 @@ beforeEach(async () => {
   FakeRoom.disconnectGate = null;
   FakeRoom.onConnect = null;
   nativeHost.audio = undefined;
+  nativeHost.room = undefined;
+  cues.route = null;
   pipelines.length = 0;
   gate = null;
   micStarts.n = 0;
@@ -506,6 +515,259 @@ describe('native incoming call transport', () => {
     expect(voice.onServerDisconnect({ roomId: 'dm', sessionId: 'mine', reason: VoiceDisconnectReason.OTHER_DEVICE })).toBe(true);
     await settle();
     expect(voice.takenOverRoom).toBe('dm'); expect(useVoice.getState().phase).toBe('idle');
+  });
+});
+
+describe('native room audio (ADR-0149)', () => {
+  const doc = document as unknown as { hidden?: boolean };
+  const setHidden = (hidden: boolean): void => {
+    doc.hidden = hidden;
+    for (const fn of docListeners.get('visibilitychange') ?? []) fn({});
+  };
+  afterEach(() => {
+    doc.hidden = false;
+  });
+  function host() {
+    const inputs: HostRoomAudioConnect[] = [];
+    const listeners = new Set<(s: HostRoomAudioState) => void>();
+    const control = vi.fn((_id: string, _c: HostRoomAudioConnect['controls']) => Promise.resolve(true));
+    const cue = vi.fn((_id: string, _cue: HostRoomAudioCue, _v: number) => undefined);
+    const disconnect = vi.fn((_id: string) => undefined);
+    const state = (s: Partial<HostRoomAudioState> = {}): HostRoomAudioState => ({
+      connectionId: inputs.at(-1)?.connectionId ?? '', phase: 'connected', microphoneReady: true, muted: false, canSpeak: true,
+      speaking: false, speakers: [], route: 'speaker', phoneCall: false, ...s,
+    });
+    let reply: (input: HostRoomAudioConnect) => HostRoomAudioStatus = () => ({ supported: true, media: state() });
+    const capability: HostRoomAudioCapability = {
+      connect: (input) => { inputs.push(input); return Promise.resolve(reply(input)); },
+      status: () => Promise.resolve({ supported: true }),
+      control, cue, disconnect,
+      subscribe: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; },
+    };
+    nativeHost.room = capability;
+    return {
+      inputs, control, cue, disconnect, state,
+      emit: (s: Partial<HostRoomAudioState>) => { for (const fn of [...listeners]) fn(state(s)); },
+      replyWith: (fn: (input: HostRoomAudioConnect) => HostRoomAudioStatus) => { reply = fn; },
+      lastControls: () => control.mock.lastCall?.[1],
+    };
+  }
+
+  it('one owner per join: native audio, no WebKit capture, no LiveKit Room, no video', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    expect(h.inputs).toHaveLength(1);
+    expect(h.inputs[0]).toMatchObject({ roomId: 'A', url: 'wss://lk', canSpeak: true });
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(pipelines).toHaveLength(0);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected', audioOnly: true, canVideo: false, canStream: false });
+    await voice.startMicTest();
+    expect(pipelines).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.lastControls()?.levels).toBe(true);
+    await voice.leave();
+    expect(h.disconnect).toHaveBeenCalledWith(h.inputs[0]?.connectionId);
+    expect(useVoice.getState()).toMatchObject({ phase: 'idle', audioOnly: false });
+    expect(cues.route).toBeNull();
+    // No web cue after it: a WebKit <audio> would take the session native is releasing.
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('keeps calls and rooms without the capability on their own engines', async () => {
+    const h = host();
+    await voice.join('dm', '', { call: true });
+    expect(FakeRoom.all).toHaveLength(1);
+    expect(h.inputs).toHaveLength(0);
+  });
+
+  it('phone lines stay on the web path while the host reports roomAudioVersion 1 (ADR-0149 §1)', async () => {
+    const { setPhoneJoin } = await import('../lib/sipInbound');
+    const h = host();
+    // A workspace id and no call flag: only the phone room itself keeps native out. Then as the app joins them (a call).
+    for (const [roomId, call] of [['sipin:c1', false], ['sipout:c2', false], ['sipin:c3', true], ['sipout:c4', true]] as const) {
+      setPhoneJoin(roomId, { url: 'wss://lk', token: 'tok', identity: 'me', canSpeak: true } as never);
+      await voice.join(roomId, 'ws', call ? { call: true } : {});
+      expect(FakeRoom.all.at(-1)?.connectedWith, roomId).not.toBeNull();
+      expect(useVoice.getState(), roomId).toMatchObject({ roomId, audioOnly: false });
+      await voice.leave();
+    }
+    expect(FakeRoom.all).toHaveLength(4);
+    expect(h.inputs).toHaveLength(0);
+    // A one-to-one call with a workspace id too: callMode alone keeps native out.
+    await voice.join('dm', 'ws', { call: true });
+    expect(FakeRoom.all).toHaveLength(5);
+    expect(h.inputs).toHaveLength(0);
+    await voice.leave();
+    // The same host still takes an ordinary workspace room.
+    await voice.join('A', 'ws');
+    expect(h.inputs).toHaveLength(1);
+  });
+
+  it('controls follow the store: mute, deafen, PTT, volumes clamped to 1', async () => {
+    const h = host();
+    const peer = '55555555-5555-4555-8555-555555555555';
+    usePrefs.setState({ userVolumes: { [peer]: 1.8 }, outputVolume: 0.5 });
+    await voice.join('A', 'ws');
+    expect(h.inputs[0]?.controls).toMatchObject({ volume: 0.5, userVolumes: { [peer]: 0.9 } });
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.lastControls()).toMatchObject({ muted: true, deafened: false });
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.lastControls()).toMatchObject({ deafened: true });
+    usePrefs.setState({ userVolumes: { [peer]: 2 }, outputVolume: 1 });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.lastControls()).toMatchObject({ volume: 1, userVolumes: {} });
+    // UI cues went to native by name, never to an <audio>.
+    expect(h.cue.mock.calls.map((c) => c[1])).toEqual(['join', 'mute', 'deafen']);
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('maps native state into the store: reconnecting, the system holding the mic, speakers, a phone call, a kept mute', async () => {
+    const h = host();
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+    await voice.join('A', 'ws');
+    h.emit({ phase: 'reconnecting' });
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    h.emit({ phase: 'interrupted', microphoneReady: false, muted: true, muteOrigin: 'system', phoneCall: true });
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', micTrouble: 'recovering', muted: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updateSelf).toHaveBeenCalledWith(expect.objectContaining({ onPhone: true }));
+    h.emit({ muted: true, muteOrigin: 'system', speakers: ['66666666-6666-4666-8666-666666666666'] });
+    expect(useVoice.getState()).toMatchObject({ micTrouble: null, muted: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updateSelf).toHaveBeenCalledWith(expect.objectContaining({ onPhone: false }));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(useVoice.getState().speaking).toMatchObject({ '66666666-6666-4666-8666-666666666666': true });
+    expect(h.lastControls()?.muted).toBe(true);
+  });
+
+  it('keeps meter levels coming past native’s 30 s and shows silence when native sends none', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    await voice.startMicTest();
+    await vi.advanceTimersByTimeAsync(200);
+    h.control.mockClear();
+    await vi.advanceTimersByTimeAsync(25_000 + 200);
+    expect(h.control.mock.calls.map((c) => c[1].levels)).toEqual([false, true]);
+    h.emit({ level: 10, speaking: true });
+    expect(useVoice.getState()).toMatchObject({ levelDb: -40, gateOpen: true });
+    h.emit({ muted: true, muteOrigin: 'web' });
+    expect(useVoice.getState()).toMatchObject({ levelDb: -80, gateOpen: false });
+    voice.stopMicTest();
+    h.control.mockClear();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.control.mock.calls.every((c) => !c[1].levels)).toBe(true);
+  });
+
+  it('already muted when a phone call ends: the controls go again so native lets its hold go', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(200);
+    const sent = h.control.mock.calls.length;
+    h.emit({ phase: 'interrupted', microphoneReady: false, muted: true, muteOrigin: 'system', phoneCall: true });
+    h.emit({ muted: true, muteOrigin: 'system' });
+    h.emit({ muted: true, muteOrigin: 'system', speakers: ['66666666-6666-4666-8666-666666666666'] });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.control.mock.calls.length).toBe(sent + 1);
+    expect(h.lastControls()).toMatchObject({ muted: true });
+    expect(useVoice.getState().muted).toBe(true);
+  });
+
+  it('falls back to the web path once, before capture, after a drained native end', async () => {
+    const h = host();
+    h.replyWith((input) => ({ supported: true, media: h.state({ connectionId: input.connectionId, phase: 'failed', microphoneReady: false, error: 'connection' }) }));
+    await voice.join('A', 'ws');
+    expect(h.inputs).toHaveLength(1);
+    expect(FakeRoom.all).toHaveLength(1);
+    expect(pipelines).toHaveLength(1);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', audioOnly: false });
+    expect(joinVoice).toHaveBeenCalledOnce();
+  });
+
+  it('never falls back after a denied microphone or while the page is hidden', async () => {
+    const h = host();
+    h.replyWith((input) => ({ supported: true, media: h.state({ connectionId: input.connectionId, phase: 'failed', microphoneReady: false, error: 'permission' }) }));
+    await voice.join('A', 'ws');
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(useVoice.getState()).toMatchObject({ phase: 'idle', error: 'err' });
+    h.replyWith((input) => ({ supported: true, media: h.state({ connectionId: input.connectionId, phase: 'failed', microphoneReady: false, error: 'connection' }) }));
+    doc.hidden = true;
+    await voice.join('A', 'ws');
+    expect(FakeRoom.all).toHaveLength(0);
+  });
+
+  it('a lost connection rejoins through REST with a fresh connect in foreground', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    const first = h.inputs[0]?.connectionId;
+    h.emit({ phase: 'lost', error: 'network', microphoneReady: false });
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(h.inputs).toHaveLength(2);
+    expect(h.inputs[1]?.connectionId).not.toBe(first);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(h.cue.mock.calls.map((c) => c[1])).toEqual(['join', 'reconnect']);
+  });
+
+  it('a lost connection while hidden waits for the page, then rejoins', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    setHidden(true);
+    h.emit({ phase: 'lost', error: 'network', microphoneReady: false });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice).toHaveBeenCalledOnce();
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'reconnecting' });
+    setHidden(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState().phase).toBe('connected');
+  });
+
+  it('a page back long after the seat ended leaves instead of rejoining', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    setHidden(true);
+    h.emit({ phase: 'lost', error: 'network', microphoneReady: false });
+    await vi.advanceTimersByTimeAsync(120_000);
+    setHidden(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice).toHaveBeenCalledOnce();
+    expect(leaveVoice).toHaveBeenCalledWith('A');
+    expect(useVoice.getState().phase).toBe('idle');
+  });
+
+  it('skips the web recovery paths (#260): no rejoin under native reconnect, no seat-check rejoin, no page-back rejoin', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    setHidden(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    setHidden(false);
+    h.emit({ phase: 'reconnecting' });
+    voice.checkSeat();
+    voice.onPageShow(true);
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(joinVoice).toHaveBeenCalledOnce();
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(pipelines).toHaveLength(0);
+    expect(pushToast).not.toHaveBeenCalled();
+    h.emit({ phase: 'connected' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice).toHaveBeenCalledTimes(2); // the deferred seat check re-asserts the seat (idempotent /join)
+    expect(h.inputs).toHaveLength(1);
+  });
+
+  it('musician mode stays off on a native join, with the reason', async () => {
+    host();
+    const { toast } = await import('../stores/toasts');
+    await voice.join('A', 'ws');
+    usePrefs.getState().setPrefs({ musicianMode: true });
+    expect(usePrefs.getState().musicianMode).toBe(false);
+    expect(toast.info).toHaveBeenCalled();
   });
 });
 

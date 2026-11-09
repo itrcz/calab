@@ -112,7 +112,7 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
       )}
       {searchOpen ? <SearchPanel roomId={roomId} /> : <PinnedBar workspaceId={workspaceId} roomId={roomId} />}
 
-      {inThisVoice || isDm(room) || isNotes(room) ? null : <MeetingBanner workspaceId={workspaceId} room={room} perms={perms} />}
+      {isDm(room) || isNotes(room) ? null : <MeetingBanner workspaceId={workspaceId} room={room} perms={perms} />}
       {inThisVoice ? <StreamArea /> : null}
       {inThisVoice ? <StatsOverlay /> : null}
 
