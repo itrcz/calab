@@ -43,9 +43,9 @@ export function MeetingBanner({ workspaceId, room, perms }: { workspaceId: strin
   if (audioOnly) {
     if (cameras + screens === 0) return null;
     return (
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-1.5 text-body" role="status" data-testid="video-audio-only">
-        <Video className="size-4 shrink-0 text-muted" aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-muted">{t('video.audioOnlyRoom')}</span>
+      <div className="flex shrink-0 items-start gap-2 border-b border-line px-4 py-1.5 text-body" role="status" data-testid="video-audio-only">
+        <Video className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+        <span className="min-w-0 flex-1 text-muted">{t('video.audioOnlyRoom')}</span>
       </div>
     );
   }
