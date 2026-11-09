@@ -60,7 +60,7 @@ services:
     ports: ["127.0.0.1:${IDENTITY_TEST_REDIS_ENFORCEMENT_PORT}:6379"]
   oidc:
     profiles: [oidc]
-    image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:3879c623248408de29a5303178b5816c77e8dfef3890c361f8c0bbeaa979ba3b
     command: [start-dev, --import-realm, --http-enabled=false]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: fixture-admin
