@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Badge, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { viaText } from '../../lib/bots';
-import { roleColorCss } from '../../lib/roles';
+import { readableRoleColor, roleColorCss } from '../../lib/roles';
 import { useFormerInfo, useWorkspaces } from '../../stores/workspaces';
 
 /** «Гость» next to a name (ADR-0016): the shared badge (11/600, sentence case, radius 4). */
@@ -89,7 +89,7 @@ export function roleTextClass(role: WorkspaceRole | undefined, tone: RoleTone = 
   if (role === WorkspaceRole.OWNER) return 'text-role-owner';
   if (role === WorkspaceRole.ADMIN) return 'text-role-admin';
   // A custom role's colour comes inline (roleTextStyle).
-  if (custom?.color) return '';
+  if (custom?.color) return 'role-tint';
   return 'text-fg';
 }
 
@@ -115,8 +115,16 @@ export type RoleLook = Pick<Role, 'name' | 'color'>;
  */
 export function roleTextStyle(role: WorkspaceRole | undefined, tone: RoleTone = 'role', custom?: RoleLook): CSSProperties | undefined {
   if (tone !== 'role' || hasRoleMark(role) || !custom?.color) return undefined;
-  return { color: roleColorCss(custom.color) };
+  const hit = tintStyles.get(custom.color);
+  if (hit) return hit;
+  // Both theme variants; .role-tint (styles.css) picks one, so no theme subscription per row.
+  const style = { '--rc-l': readableRoleColor(custom.color, 'light'), '--rc-d': readableRoleColor(custom.color, 'dark') } as CSSProperties;
+  if (tintStyles.size >= 512) tintStyles.clear();
+  tintStyles.set(custom.color, style);
+  return style;
 }
+/** One frozen-in-practice style object per role colour: rows get a stable `style` identity. */
+const tintStyles = new Map<number, CSSProperties>();
 
 /** Owner and admins carry a mark; members and guests don't (the guest badge is separate). */
 export const hasRoleMark = (role: WorkspaceRole | undefined): boolean => role === WorkspaceRole.OWNER || role === WorkspaceRole.ADMIN;

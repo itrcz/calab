@@ -507,6 +507,10 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'userBlocksUpdate':
       useBlocks.getState().setOne(e.value.userId, e.value.blocked);
       return;
+    // The inbox ✕ on any of my devices (CBF-155, ADR-0163).
+    case 'inboxDismiss':
+      useInbox.getState().dismiss([...e.value.messageIds, ...e.value.noticeIds]);
+      return;
     case 'workspaceReportCreate':
     case 'workspaceReportUpdate':
       if (e.value.report) onReportEvent(e.value.report, e.case === 'workspaceReportCreate');

@@ -7,6 +7,8 @@ import { wikiPageCode } from '../services/wikiPublic';
 import { CanvasPublicPage } from '../features/canvas/PublicPage';
 import { canvasPageCode } from '../services/canvasPublic';
 import { OAuthConsent } from '../features/identity/OAuth';
+import { McpConnect } from '../features/mcp/McpConnect';
+import { mcpConnectHandle } from '../features/mcp/model';
 import { SsoComplete } from '../features/identity/SignIn';
 import { consentHandle } from '../features/identity/model';
 import * as TooltipP from '@radix-ui/react-tooltip';
@@ -111,6 +113,8 @@ export function App(): ReactNode {
     );
   // Web /e/<id>?t=…: the public meeting page of an invited address, signed in or not (ADR-0038).
   else if (platform.kind === 'web' && location.pathname === '/sso/complete') screen = <SsoComplete />;
+  // Web /mcp/connect#<request>: an MCP client's OAuth consent (ADR-0158), signed in or after it.
+  else if (platform.kind === 'web' && mcpConnectHandle(location.href)) screen = <McpConnect handle={mcpConnectHandle(location.href) as string} />;
   else if (platform.kind === 'web' && location.pathname === '/oauth/consent') {
     const handle = consentHandle(location.href);
     screen = handle ? <OAuthConsent handle={handle} /> : <div className="mat-content grid h-full place-items-center p-6" role="alert">{t('identity.changed')}</div>;

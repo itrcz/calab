@@ -180,7 +180,7 @@ function AppMenu({ id, name, url, workspaceId, manage, children }: { id: string;
   const reload = (): void => {
     openWebApp(id);
     // The screen reloads the page once it shows this app (features/webapps/AppScreen).
-    useWebApps.getState().bumpReload();
+    useWebApps.getState().bumpReload(id);
   };
   const remove = async (): Promise<void> => {
     if (!(await confirmAction(t('wapp.deleteTitle', { name }), t('wapp.deleteConfirm'), t('wapp.delete')))) return;

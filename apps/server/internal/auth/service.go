@@ -81,6 +81,9 @@ type Service struct {
 	// OnSessionsRevoked deletes optional native endpoints after every common revocation hook.
 	// Each call has its own bounded context and runs even when Redis markers failed.
 	OnSessionsRevoked func(context.Context, []uuid.UUID) error
+	// MCPInnerRoutes are the route patterns the MCP tools call (mcp.InnerRoutes): the only routes an
+	// MCP connection's token reaches besides the endpoint (ADR-0158). Set before serving.
+	MCPInnerRoutes map[string]bool
 	// BotLimiter bounds the requests of one bot (ADR-0031, BOT_RATE_PER_SEC); nil = none.
 	BotLimiter *redisx.RateLimiter
 	// OnBotRequest runs for every authenticated bot request (presence of webhook-only bots).
@@ -287,14 +290,22 @@ func (s *Service) tokenPair(sess sqlc.Session, secret string) (*v1.AuthTokens, e
 			deadline = limit
 		}
 	}
-	access, exp, err := s.tokens.IssueUntil(sess.UserID, sess.ID, sess.RefreshGen, deadline)
+	scope := ""
+	if sess.Scope != nil {
+		scope = *sess.Scope // an MCP session's tokens stay MCP-only (ADR-0158)
+	}
+	access, exp, err := s.tokens.issue(sess.UserID, sess.ID, sess.RefreshGen, deadline, scope)
 	if err != nil {
 		return nil, err
+	}
+	refresh := FormatRefreshToken(sess.ID, secret)
+	if scope != "" {
+		refresh = formatMCPRefreshToken(sess.ID, secret)
 	}
 	return &v1.AuthTokens{
 		AccessToken:      access,
 		AccessExpiresAt:  timestamppb.New(exp),
-		RefreshToken:     FormatRefreshToken(sess.ID, secret),
+		RefreshToken:     refresh,
 		RefreshExpiresAt: timestamppb.New(sess.ExpiresAt),
 		SessionId:        sess.ID.String(),
 		Authority:        pbconv.SessionAuthority(sess),
@@ -568,7 +579,7 @@ func (s *Service) Login(ctx context.Context, req *v1.LoginRequest, c Client) (*v
 // the previous one after the new one was used, or an older one — is reuse: the session is
 // revoked (401 SESSION_REVOKED, reason REUSE).
 func (s *Service) Refresh(ctx context.Context, req *v1.RefreshRequest, c Client) (*v1.RefreshResponse, error) {
-	return s.refreshAuthority(ctx, req, c, identitypolicy.LocalAccount, uuid.Nil)
+	return s.refreshAuthority(ctx, req, c, identitypolicy.LocalAccount, uuid.Nil, "")
 }
 
 // RefreshWorkspace rotates only the presented workspace session; proof is never renewed.
@@ -576,10 +587,17 @@ func (s *Service) RefreshWorkspace(ctx context.Context, ws uuid.UUID, req *v1.Re
 	if ws == uuid.Nil {
 		return nil, errInvalidRefresh
 	}
-	return s.refreshAuthority(ctx, req, c, identitypolicy.WorkspaceSSO, ws)
+	return s.refreshAuthority(ctx, req, c, identitypolicy.WorkspaceSSO, ws, "")
 }
-func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, c Client, authority identitypolicy.Authority, ws uuid.UUID) (*v1.RefreshResponse, error) {
-	sid, secret, ok := ParseRefreshToken(req.GetRefreshToken())
+
+// mcpClient: "" rotates an app session only; a client id rotates only an MCP session of that
+// client (ADR-0158): neither endpoint accepts the other's refresh tokens.
+func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, c Client, authority identitypolicy.Authority, ws uuid.UUID, mcpClient string) (*v1.RefreshResponse, error) {
+	parse := ParseRefreshToken
+	if mcpClient != "" {
+		parse = parseMCPRefreshToken
+	}
+	sid, secret, ok := parse(req.GetRefreshToken())
 	if !ok {
 		return nil, errInvalidRefresh
 	}
@@ -632,6 +650,9 @@ func (s *Service) refreshAuthority(ctx context.Context, req *v1.RefreshRequest, 
 		}
 		p := SessionPrincipal(sess)
 		if p.Authority != authority || p.WorkspaceID != ws {
+			return errInvalidRefresh
+		}
+		if !mcpSessionOf(sess, mcpClient) {
 			return errInvalidRefresh
 		}
 
@@ -793,6 +814,11 @@ func (s *Service) LogoutByRefresh(ctx context.Context, token string, all bool) e
 	recent := !all && sess.PrevRefreshTokenHash != nil && sess.RefreshUsedAt == nil &&
 		subtle.ConstantTimeCompare(h, sess.PrevRefreshTokenHash) == 1
 	if !current && !recent {
+		return errInvalidRefresh
+	}
+	if !mcpSessionOf(sess, "") {
+		// An MCP connection's refresh token (ADR-0158) ends only itself, at the MCP revocation
+		// endpoint: it must not log the person out of the app, let alone everywhere.
 		return errInvalidRefresh
 	}
 	if sess.RevokedAt != nil && !all {

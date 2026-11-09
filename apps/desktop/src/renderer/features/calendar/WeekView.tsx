@@ -3,7 +3,7 @@ import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { isExternalKey } from '../../lib/calendar/external';
 import { layoutAllDay, type Placed } from '../../lib/calendar/layout';
-import { HOUR, dayEnd, dayStart, formatLongDay, isoWeek, shortWeekday, utcOffsetLabel, viewerZone, weekDays, weekStart } from '../../lib/calendar/time';
+import { HOUR, dayEnd, dayStart, formatLongDay, isoWeek, shortWeekday, utcOffsetLabel, viewerZone, weekDays, useWeekStart } from '../../lib/calendar/time';
 import { dateTimeFormat } from '../../lib/format';
 import { calendarAvailable } from '../../services/calendar';
 import { useUi } from '../../stores/ui';
@@ -62,7 +62,7 @@ function barsSig(data: readonly DayData[]): string {
 }
 
 export function WeekGrid({ workspaceId }: { workspaceId: string }): ReactNode {
-  const locale = useLocale();
+  useLocale(); // day labels follow the language
   const today = useToday();
   const day = useUi((s) => s.calDay) ?? today;
   const selected = useUi((s) => s.calEvent);
@@ -72,7 +72,7 @@ export function WeekGrid({ workspaceId }: { workspaceId: string }): ReactNode {
   const creatable = calendarAvailable(workspaceId);
   const zones = useZonesSig();
 
-  const first = weekStart(locale);
+  const first = useWeekStart();
   const startKey = weekDays(day, first)[0] ?? day;
   const days = useMemo(() => weekDays(startKey, first), [startKey, first]);
   const { data, people } = useCalendarDays(workspaceId, days);

@@ -369,9 +369,13 @@ export function NewCategoryDialog({ workspaceId, onClose }: { workspaceId: strin
   );
 }
 
-/** The row click: «Мои задачи» always shows the list — a task open over it (store openBoard is a no-op on the same board) is closed. */
-function openMyTasks(workspaceId: string): void {
-  openBoard(workspaceId, MY_TASKS);
+/**
+ * A sidebar row click (CBF-32): the board's list always shows. A task open over it is closed — store openBoard
+ * is a no-op on the current board, and it only drops the task when it switches boards; a task of another board
+ * opened over the current one (a parent link, a tab) would otherwise keep covering a click on the board under it.
+ */
+export function showBoard(workspaceId: string, boardId: string): void {
+  openBoard(workspaceId, boardId);
   useBoardsUi.getState().openTask(null);
 }
 
@@ -383,7 +387,7 @@ function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
   return (
     <button
       type="button"
-      onClick={() => openMyTasks(workspaceId)}
+      onClick={() => showBoard(workspaceId, MY_TASKS)}
       aria-current={active ? 'page' : undefined}
       className={cx('flex h-9 w-full items-center gap-2 rounded-[var(--radius-card)] px-2 text-left text-list mobile:h-14 mobile:gap-3 mobile:rounded-none mobile:px-3 mobile:text-list', active ? 'bg-active font-medium text-fg' : cx('text-muted hover:text-fg', ROW_HOVER))}
       data-testid="my-tasks"
@@ -431,7 +435,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
         className={cx('group/board relative flex items-center rounded-[var(--radius-card)] pr-1 mobile:static mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
         data-testid="board-row"
       >
-        <button type="button" onClick={() => openBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list mobile:gap-3 mobile:pl-3 mobile:text-list', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+        <button type="button" onClick={() => showBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list mobile:gap-3 mobile:pl-3 mobile:text-list', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
           <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:text-[22px]" aria-hidden>
             {emoji || <SquareKanban className="size-[18px] mobile:size-5" />}
           </span>

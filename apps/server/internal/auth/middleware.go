@@ -41,7 +41,10 @@ func WithIdentity(ctx context.Context, id Identity) context.Context {
 // request with Calab-On-Behalf runs as the bot's owner or is refused (ADR-0106, onbehalf.go).
 func (s *Service) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, err := s.authenticate(r)
+		id, err := s.authenticate(r, true)
+		if err == nil && id.MCP {
+			err = s.mcpRequest(r, id) // ADR-0158: the MCP endpoint and its tools only
+		}
 		if err == nil && id.IsBot {
 			err = s.botRequest(r.Context(), id) // on behalf of the owner too: the bot's limits (ADR-0106)
 		}
@@ -77,19 +80,20 @@ func HasBearer(r *http.Request) bool {
 // Authenticate validates the bearer access token of r for routes that do their own
 // authentication (logout, room links). Those are for people only: a bot token gets 403.
 func (s *Service) Authenticate(r *http.Request) (Identity, error) {
-	id, err := s.authenticate(r)
+	id, err := s.authenticate(r, false)
 	if err == nil && id.IsBot {
 		return Identity{}, ErrBotNotAllowed
 	}
 	return id, err
 }
 
-func (s *Service) authenticate(r *http.Request) (Identity, error) {
+// allowMCP admits an MCP session's token (ADR-0158; Require then confines it to the MCP endpoint).
+func (s *Service) authenticate(r *http.Request, allowMCP bool) (Identity, error) {
 	tok, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !found || tok == "" {
 		return Identity{}, httpx.Unauthenticated("missing bearer token")
 	}
-	id, err := s.AuthenticateToken(r.Context(), tok)
+	id, err := s.authenticateToken(r.Context(), tok, allowMCP)
 	switch {
 	case err == nil:
 		return id, nil
@@ -104,13 +108,18 @@ func (s *Service) authenticate(r *http.Request) (Identity, error) {
 }
 
 // AuthenticateToken validates an access JWT or a bot token (REST and gateway IDENTIFY).
-// Errors: ErrInvalidToken, ErrSessionRevoked, or a dependency failure (fail closed).
+// Errors: ErrInvalidToken, ErrSessionRevoked, or a dependency failure (fail closed). An MCP
+// session's token (ADR-0158) is ErrInvalidToken here: it is for the MCP endpoint only.
 func (s *Service) AuthenticateToken(ctx context.Context, tok string) (Identity, error) {
+	return s.authenticateToken(ctx, tok, false)
+}
+
+func (s *Service) authenticateToken(ctx context.Context, tok string, allowMCP bool) (Identity, error) {
 	if IsBotToken(tok) {
 		return s.authenticateBot(ctx, tok)
 	}
 	id, err := s.tokens.Parse(tok)
-	if err != nil {
+	if err != nil || (id.MCP && !allowMCP) {
 		return Identity{}, ErrInvalidToken
 	}
 	if err := s.checkSession(ctx, id.SessionID); err != nil {
@@ -118,8 +127,9 @@ func (s *Service) AuthenticateToken(ctx context.Context, tok string) (Identity, 
 	}
 	liveSessions.mu.Lock()
 	p := liveSessions.principals[id.SessionID]
+	mcpSession := liveSessions.mcp[id.SessionID]
 	liveSessions.mu.Unlock()
-	if p.UserID != id.UserID || !identitypolicy.CheckSession(s.now(), p).Allowed {
+	if p.UserID != id.UserID || mcpSession != id.MCP || !identitypolicy.CheckSession(s.now(), p).Allowed {
 		return Identity{}, ErrInvalidToken
 	}
 	id.Principal = p

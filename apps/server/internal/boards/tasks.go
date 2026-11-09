@@ -959,7 +959,7 @@ func (s *Service) insertTask(r *http.Request, boardID uuid.UUID, acc perm.BoardA
 		if err != nil {
 			return err
 		}
-		if err := checkCreateGate(len(approvers), required, *st); err != nil {
+		if err := checkCreateGate(len(approvers), required, *st, b.ApprovalGateOff); err != nil {
 			return err
 		}
 		number, err := q.NextTaskNumber(r.Context(), boardID)
@@ -1508,7 +1508,8 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			}
 			to, t.StatusID = x, sid
 		}
-		// APPROVALS off (ADR-0058 §3): the gate does not apply; the votes are kept.
+		// APPROVALS off (ADR-0058 §3) or the board's gate off (ADR-0160): the gate does not apply. A status
+		// change never touches the votes.
 		var overridden *Tally
 		if t.StatusID != old.StatusID && !approvalsOff {
 			tl, err := taskTally(r.Context(), q, old)
@@ -1518,7 +1519,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			if resets {
 				tl = tl.reset() // the same request resets the votes: they do not count
 			}
-			if err := checkApprovalGate(tl, from, to); err != nil {
+			if err := boardGate(r.Context(), q, old.BoardID, tl, from, to); err != nil {
 				if !req.GetOverrideApproval() {
 					return err
 				}
@@ -1859,14 +1860,14 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 		return httpx.Conflict("the target board has no status")
 	}
 	// Approvers and votes move along; a task not approved may not land in COMPLETED (ADR-0049 §2)
-	// unless the target board has APPROVALS off (ADR-0058 §3). Other features may differ: the
+	// unless the target board has APPROVALS off (ADR-0058 §3) or its gate off (ADR-0160). Other features may differ: the
 	// fields stay and are just hidden there.
 	if !Disabled(dst.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) {
 		tl, err := taskTally(r.Context(), q, *t)
 		if err != nil {
 			return err
 		}
-		if err := checkApprovalGate(tl, from, *to); err != nil {
+		if err := boardGate(r.Context(), q, dstID, tl, from, *to); err != nil { // the target board's setting
 			return err
 		}
 	}

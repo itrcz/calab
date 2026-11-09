@@ -140,6 +140,95 @@ export function siteOf(url: string): string {
   return labels.slice(-keep).join('.');
 }
 
+// ---------------------------------------------------------------- sign-in with the Calab session
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** What a code request must carry to be one the provider can answer (OIDC, PKCE S256). */
+const REQUIRED = ['client_id', 'redirect_uri', 'response_type', 'scope', 'state', 'nonce', 'code_challenge', 'code_challenge_method'];
+
+export interface WorkspaceSignIn {
+  /** The site's request with `prompt=none` added: answered silently or with consent_required. */
+  silent: string;
+  /** The site's request as it is: opens a consent request when none is remembered. */
+  interactive: string;
+  /** Where the answer may go: the client's redirect_uri (the app's own origin). */
+  redirectUri: string;
+}
+
+function parseUrl(raw: string, base?: string): URL | null {
+  try {
+    return new URL(raw, base);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A top-level navigation of app `workspaceId`'s view to «Sign in with Calab» of the same
+ * workspace on our own server (ADR-0159): Calab answers it with the session it already has.
+ * Anything else — another server, another workspace, a client whose redirect_uri is not the
+ * app's own origin (a site must not sign in as another app), a request the site shaped itself
+ * (prompt, max_age, hints) or a malformed one — returns null and loads as before.
+ */
+export function workspaceSignIn(target: string, serverUrl: string, workspaceId: string, home: string): WorkspaceSignIn | null {
+  const url = parseUrl(target);
+  const server = parseUrl(serverUrl);
+  const app = parseUrl(home);
+  if (!url || !server || !app || !UUID.test(workspaceId)) return null;
+  if (url.protocol !== 'https:' || url.origin !== server.origin || url.username || url.password || url.hash) return null;
+  if (url.pathname !== `/oidc/workspaces/${workspaceId}/authorize`) return null;
+  const q = url.searchParams;
+  const keys = [...q.keys()];
+  if (new Set(keys).size !== keys.length) return null;
+  if (!REQUIRED.every((k) => q.get(k))) return null;
+  if (q.get('response_type') !== 'code' || q.get('code_challenge_method') !== 'S256') return null;
+  if (['prompt', 'max_age', 'id_token_hint', 'login_hint', 'request', 'request_uri'].some((k) => q.has(k))) return null;
+  const redirect = parseUrl(q.get('redirect_uri') ?? '');
+  if (!redirect || redirect.origin !== app.origin || redirect.username || redirect.password || redirect.hash) return null;
+  if (redirect.protocol !== 'https:' && !validateAppUrl(`http://${redirect.host}/`).ok) return null;
+  const silent = new URL(url);
+  silent.searchParams.set('prompt', 'none');
+  return { silent: silent.toString(), interactive: url.toString(), redirectUri: redirect.toString() };
+}
+
+export type SignInAnswer = { kind: 'code'; url: string } | { kind: 'consent' } | { kind: 'fallback' };
+
+/**
+ * The provider's answer to the silent request (its Location): a code for the app's redirect_uri
+ * goes to the view, `consent_required` asks the user once; anything else (signed out, not a
+ * member, a guest, a policy refusal) leaves the site's own sign-in path in place.
+ */
+export function signInAnswer(location: string | null, serverUrl: string, redirectUri: string): SignInAnswer {
+  const to = location ? parseUrl(location, serverUrl) : null;
+  if (!to || !sameEndpoint(to.toString(), redirectUri)) return { kind: 'fallback' };
+  if (to.searchParams.get('code') && !to.searchParams.has('error')) return { kind: 'code', url: to.toString() };
+  return to.searchParams.get('error') === 'consent_required' ? { kind: 'consent' } : { kind: 'fallback' };
+}
+
+/** The consent request a non-silent authorize opened: its handle, only on our own server. */
+export function consentRequest(location: string | null, serverUrl: string): string | null {
+  const to = location ? parseUrl(location, serverUrl) : null;
+  const server = parseUrl(serverUrl);
+  if (!to || !server || to.origin !== server.origin || to.pathname !== '/oauth/consent' || to.hash) return null;
+  const handles = to.searchParams.getAll('request');
+  const handle = handles.length === 1 ? (handles[0] ?? '') : '';
+  return /^calab_oh_[A-Za-z0-9_-]{32,128}$/.test(handle) ? handle : null;
+}
+
+/** A decision's redirect goes to the view only if it is the app's own redirect_uri. */
+export function sameEndpoint(a: string, b: string): boolean {
+  const x = parseUrl(a);
+  const y = parseUrl(b);
+  return !!x && !!y && x.origin === y.origin && x.pathname === y.pathname && !x.username && !x.password && !x.hash;
+}
+
+/** At most this many sign-ins per app a minute: a site that loops back to sign-in falls back. */
+export const SIGN_IN_PER_MINUTE = 3;
+
+export function signInAllowed(recent: readonly number[], now: number): boolean {
+  return recent.filter((t) => now - t < 60_000).length < SIGN_IN_PER_MINUTE;
+}
+
 // ---------------------------------------------------------------- LRU of live views
 
 /** Views kept alive at most (ADR-0050 §5): the open app and the one before it. */

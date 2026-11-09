@@ -136,6 +136,14 @@ export function refetchWorkspace(workspaceId: string): void {
   );
 }
 
+/** The first weekday changed (settings): every loaded month's grid window moved, list them again. */
+export function refetchLoadedMonths(): void {
+  for (const id of Object.keys(cal().months)) {
+    const [ws, month] = id.split('|');
+    if (ws && month) void fetchMonth(ws, month);
+  }
+}
+
 // ---------------------------------------------------------------- today's count
 
 let todayTimer: number | null = null;

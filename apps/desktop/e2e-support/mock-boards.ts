@@ -17,6 +17,7 @@ import {
   BoardCategorySchema,
   BoardFeature,
   BoardWebhookPauseReason,
+  ApprovalGate,
   BoardWebhookSchema,
   EstimateScale,
   TaskChecklistItemSchema,
@@ -572,6 +573,14 @@ export class BoardsMock {
     return id;
   }
 
+  /** POST /me/inbox/dismiss (CBF-155): the caller's own history rows leave. */
+  dismissNotices(userId: string, ids: readonly string[]): void {
+    for (let i = this.noticeLog.length - 1; i >= 0; i--) {
+      const l = this.noticeLog[i];
+      if (l && l.user === userId && ids.includes(l.id)) this.noticeLog.splice(i, 1);
+    }
+  }
+
   /** GET /me/task-notices (ADR-0141): mine, newest first, of tasks I see now, with the current key and title. */
   notices(userId: string, before: string, limit: number): MessageInitShape<typeof ListTaskNoticesResponseSchema> {
     const all = this.noticeLog
@@ -670,6 +679,7 @@ export class BoardsMock {
       position: live.filter((r) => !r.board.archivedAt).length,
       autoArchiveDays: 30,
       approvalNotifyDelaySeconds: 60,
+      approvalGate: ApprovalGate.HOLD,
       createdBy: userId,
       createdAt: this.host.tick(),
       statuses,
@@ -713,6 +723,7 @@ export class BoardsMock {
       approvalNotifyDelaySeconds?: number | undefined;
       aiInstruction?: string | undefined;
       aiFindDuplicates?: boolean | undefined;
+      approvalGate?: ApprovalGate | undefined;
     },
   ): Board {
     const rec = this.boardFor(id, userId);
@@ -739,6 +750,11 @@ export class BoardsMock {
       rec.aiInstruction = v;
     }
     if (req.aiFindDuplicates !== undefined) b.aiFindDuplicates = req.aiFindDuplicates; // CBF-75
+    if (req.approvalGate !== undefined) {
+      // ADR-0160: HOLD | OFF.
+      if (req.approvalGate !== ApprovalGate.HOLD && req.approvalGate !== ApprovalGate.OFF) throw invalid('approvalGate', 'approval gate must be HOLD or OFF');
+      b.approvalGate = req.approvalGate;
+    }
     if (req.description !== undefined) b.description = req.description.slice(0, 2000);
     if (req.autoArchiveDays !== undefined) b.autoArchiveDays = Math.min(3650, req.autoArchiveDays);
     if (req.defaultViewId !== undefined) b.defaultViewId = req.defaultViewId;
@@ -1143,7 +1159,7 @@ export class BoardsMock {
     const status = req.statusId ? rec.board.statuses.find((s) => s.id === req.statusId) : rec.board.statuses.find((s) => s.isDefault);
     if (!status) throw invalid('status_id', 'unknown status');
     this.checkAssignees(rec, req.assignees);
-    if (approverIds.length && status.type === BoardStatusType.COMPLETED) throw new BoardError(409, ErrorCode.CONFLICT, 'approval required', '', 'TASK_APPROVAL_REQUIRED', { used: 0, limit: req.approvalRequired || approverIds.length });
+    if (approverIds.length && status.type === BoardStatusType.COMPLETED && rec.board.approvalGate !== ApprovalGate.OFF) throw new BoardError(409, ErrorCode.CONFLICT, 'approval required', '', 'TASK_APPROVAL_REQUIRED', { used: 0, limit: req.approvalRequired || approverIds.length });
     for (const l of req.labelIds) if (!rec.board.labels.some((x) => x.id === l)) throw invalid('label_ids', 'unknown label');
     if (req.parentId && this.tasks.get(req.parentId)?.task.boardId !== boardId) throw invalid('parent_id', 'unknown parent');
     let position = this.lastPosition(boardId, status.id) + 1024;
@@ -1343,7 +1359,7 @@ export class BoardsMock {
     if (req.statusId !== undefined) {
       const st = b.board.statuses.find((s) => s.id === req.statusId);
       if (!st) throw invalid('status_id', 'unknown status');
-      approvalGate(task, b.board.statuses.find((s) => s.id === task.statusId), st);
+      if (b.board.approvalGate !== ApprovalGate.OFF) approvalGate(task, b.board.statuses.find((s) => s.id === task.statusId), st); // ADR-0160
       const from = task.statusId;
       task.statusId = st.id;
       // A kanban move: between the neighbours (neither = last).

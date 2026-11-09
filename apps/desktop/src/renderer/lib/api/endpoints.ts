@@ -136,6 +136,7 @@ import {
   ListMessageReadersResponseSchema,
   ListMessagesResponseSchema,
   ListTaskNoticesResponseSchema,
+  InboxDismissSchema,
   ListReactionUsersResponseSchema,
   MoveMemberRequestSchema,
   ListSessionsResponseSchema,
@@ -318,6 +319,8 @@ export const api = {
     /** My task notices (ADR-0141), newest first, of tasks I see now (cursor `before`, limit ≤ 100). */
     taskNotices: (p: { limit?: number; before?: string }, signal?: AbortSignal) =>
       call('GET', `/api/me/task-notices${qs(p)}`, ListTaskNoticesResponseSchema, undefined, signal),
+    /** CBF-155: the ✕ on «Упоминания» cards (≤ 100 ids of each kind) → 204; INBOX_DISMISS to my sessions. */
+    dismissInbox: (init: MessageInitShape<typeof InboxDismissSchema>) => callEmpty('POST', '/api/me/inbox/dismiss', body(InboxDismissSchema, init)),
   },
   users: {
     /** My private note about a user (docs/09 #20); empty text = none. 404 = no shared workspace / DM. */

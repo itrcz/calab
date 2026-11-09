@@ -8,10 +8,24 @@ import { useRooms } from '../stores/rooms';
 import { toast } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { loadTask, openTaskAnywhere } from './boards';
+import { openInTab, wantsTab, type TabClickEvent } from './taskTab';
 import { openEventOccurrence } from './calendar';
 import { openCanvasHit } from './canvas';
 import { openDiskHit } from './disk';
 import { openWikiHit } from './wiki';
+
+/**
+ * Ctrl/⌘ on a task or a task comment hit: the task as a background tab, the search stays where it
+ * is. True when it did; other hits ignore the key (and the phone has no tabs): `openHit` then.
+ */
+export function openHitInTab(h: SearchHit, e: TabClickEvent): boolean {
+  const r = h.ref;
+  if (!wantsTab(e)) return false;
+  if (r.case === 'task') openInTab(r.value.taskId, h.workspaceId, r.value.boardId);
+  else if (r.case === 'taskComment') void openTaskTab(r.value.taskId);
+  else return false;
+  return true;
+}
 
 /**
  * Where a search hit leads (ADR-0062 §4): a message — its room, scrolled to it; a task comment —
@@ -73,6 +87,16 @@ export function openMessage(roomId: string, messageId: string): void {
   const dm = room.type === RoomType.DM || room.type === RoomType.NOTES;
   useUi.getState().openRoom(dm ? HOME : room.workspaceId, roomId);
   useChatView.getState().requestJump(roomId, messageId);
+}
+
+/** A task's tab by id alone (a comment hit): loads the task when the store has not got it. */
+async function openTaskTab(taskId: string): Promise<void> {
+  const task = useBoards.getState().tasks[taskId] ?? (await loadTask(taskId));
+  if (!task) {
+    toast.info(t('boards.err.notFound'));
+    return;
+  }
+  openInTab(task.id, task.workspaceId, task.boardId);
 }
 
 async function openTaskComment(taskId: string, roomId: string, messageId: string): Promise<void> {

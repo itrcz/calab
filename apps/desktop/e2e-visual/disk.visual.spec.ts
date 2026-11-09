@@ -157,6 +157,15 @@ test('disk-share', async ({ open, win, shot }) => {
   await expect(dialog.getByTestId('disk-access-row')).toHaveCount(2);
   await expect(dialog.getByRole('switch', { name: 'Только выбранные' })).toBeChecked();
   await checkpoint(shot, 'disk-share');
+  // CBF-161: the third level «Управление» (people only) — Борис manages, Дина is added with «Правка».
+  const level = (name: string) => dialog.getByTestId('disk-access-row').filter({ hasText: name }).getByTestId('disk-access-level');
+  await expect(level('Борис').locator('option')).toHaveText(['Просмотр', 'Правка', 'Управление', 'Нет доступа']);
+  await level('Борис').selectOption('manage');
+  await dialog.getByTestId('disk-access-add').click();
+  await win.getByTestId('disk-access-picker').getByTestId('picker-option').filter({ hasText: 'Дина' }).click();
+  await expect(dialog.getByTestId('disk-access-row')).toHaveCount(3);
+  await level('Дина').selectOption('edit');
+  await checkpoint(shot, 'disk-share-levels');
   // CBF-20: a file without a viewer opens its card (no download), «Отправить в чат» opens the picker.
   await win.keyboard.press('Escape');
   await win.getByTestId('disk-tile').filter({ hasText: 'Бюджет 2026.xlsx' }).click({ button: 'right' });

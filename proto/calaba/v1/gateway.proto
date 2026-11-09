@@ -334,6 +334,9 @@ message DispatchEvent {
     WorkspaceReportCreate workspace_report_create = 120;
     WorkspaceReportUpdate workspace_report_update = 121;
     UserBlocksUpdate user_blocks_update = 122;
+    // The caller dismissed inbox items on another device (CBF-155, ADR-0163): their user
+    // channel only, personal like notes.
+    InboxDismiss inbox_dismiss = 123;
   }
 }
 

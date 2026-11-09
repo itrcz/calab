@@ -90,6 +90,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("DELETE /api/messages/{id}/pin", wrap(httpx.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return h.setPin(w, r, false) })))
 	mux.Handle("GET /api/rooms/{id}/pins", wrap(httpx.HandlerFunc(h.listPins)))
 	mux.Handle("GET /api/me/mentions", wrap(httpx.HandlerFunc(h.listMentions)))
+	mux.Handle("POST /api/me/inbox/dismiss", wrap(httpx.HandlerFunc(h.dismissInbox)))
 	mux.Handle("PUT /api/messages/{id}/embeds-hidden", wrap(httpx.HandlerFunc(h.setEmbedsHidden)))
 }
 
@@ -629,13 +630,39 @@ func (h *Handlers) load(r *http.Request) (sqlc.Message, perm.RoomAccess, error) 
 	return m, acc, nil
 }
 
+// editor checks the author rule of an edit (perm.MessageAuthor, ADR-0162): the author, or the
+// current owner of the bot author in the bot's home workspace. The caller already sees the room
+// (load). The owner lookup runs only for someone else's message.
+func (h *Handlers) editor(r *http.Request, m sqlc.Message, acc perm.RoomAccess) error {
+	me := uid(r)
+	if m.AuthorID == me {
+		return nil
+	}
+	var ws *uuid.UUID
+	if !acc.DM {
+		ws = &acc.WorkspaceID
+	}
+	owner, err := h.db.Q.GetMessageBotOwner(r.Context(), sqlc.GetMessageBotOwnerParams{AuthorID: m.AuthorID, WorkspaceID: ws})
+	if err != nil && !db.IsNotFound(err) {
+		return err
+	}
+	var botOwner *uuid.UUID
+	if err == nil {
+		botOwner = &owner
+	}
+	if !perm.MessageAuthor(m.AuthorID, botOwner, me) {
+		return httpx.Forbidden("only the author can edit a message")
+	}
+	return nil
+}
+
 func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 	m, acc, err := h.load(r)
 	if err != nil {
 		return err
 	}
-	if m.AuthorID != uid(r) {
-		return httpx.Forbidden("only the author can edit a message")
+	if err := h.editor(r, m, acc); err != nil {
+		return err
 	}
 	if m.Kind == pbconv.MessageKindSystem {
 		return httpx.Forbidden("system messages cannot be edited")
@@ -743,6 +770,9 @@ func (h *Handlers) delete(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		if err := clearMentions(r.Context(), q, m.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteMentionDismissals(r.Context(), m.ID); err != nil {
 			return err
 		}
 		// Detached files become orphans and are removed by the cleanup job.

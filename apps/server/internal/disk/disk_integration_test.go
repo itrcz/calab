@@ -248,7 +248,7 @@ func TestDiskPermissionsMatrix(t *testing.T) {
 	ctx := context.Background()
 	team := e.folder(e.alice, "", "Team")
 	doc := e.upload(e.alice, team.GetId(), "plan.txt", 10)
-	if doc.GetFile() == nil || doc.GetMyBits() != uint64(perm.DiskView|perm.DiskWrite) {
+	if doc.GetFile() == nil || doc.GetMyBits() != uint64(perm.Disk) { // the owner: all three (ADR-0161)
 		t.Fatalf("upload answer: %v", doc)
 	}
 	// Members see everything not restricted; the guest and outsiders nothing.
@@ -419,7 +419,7 @@ func TestDiskTrashQuotaAndUsage(t *testing.T) {
 	_ = mw.Close()
 	r := httptest.NewRequestWithContext(ctx, "POST", "/x", &buf)
 	r.Header.Set("Content-Type", mw.FormDataContentType())
-	r = r.WithContext(auth.WithIdentity(r.Context(), auth.Identity{UserID: e.alice}))
+	r = r.WithContext(perm.WithResolver(auth.WithIdentity(r.Context(), auth.Identity{UserID: e.alice}), e.d.Q))
 	if err := e.fs.UploadInto(httptest.NewRecorder(), r, e.ws); err != nil {
 		t.Fatal(err)
 	}

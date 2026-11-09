@@ -2,7 +2,8 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { AiState, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole, ReportReason } from '@calaba/protocol';
+import { create } from '@bufbuild/protobuf';
+import { AiState, FileMetaSchema, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole, ReportReason } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
 import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedRichComments, seedViaMcp, settle } from './harness';
@@ -1089,6 +1090,9 @@ test('m-calendar-zones', async ({ page }) => {
   await openProfile(page);
   await page.getByTestId('phone-profile-calendar').tap();
   await expect(page.getByTestId('cal-zone-label')).toHaveCount(2);
+  // CBF-165: «Первый день недели» sits first in the section.
+  await expect(page.getByRole('radio', { name: 'Понедельник' })).toBeChecked();
+  await checkpoint(page, 'm-settings-calendar-week');
   await page.getByTestId('cal-zone-label').last().evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await checkpoint(page, 'm-settings-calendar-zones');
 });
@@ -1319,6 +1323,11 @@ test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
   const cal4 = mock.boards.taskByKey('CAL-4');
   if (cal4) seedDays(mock, cal4.task.roomId); // #87: CAL-4's comments over several days
+  const cal3 = mock.boards.taskByKey('CAL-3');
+  if (cal3) {
+    cal3.task.attachments = [create(FileMetaSchema, { id: IDS.files.sheet, workspaceId: IDS.workspaces.main, name: 'График отпусков 2026.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 19n })];
+    cal3.task.attachmentCount = 1;
+  }
   await signedIn(page);
   // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
   await tab(page, 'boards');
@@ -1337,6 +1346,10 @@ test('m-boards-task', async ({ page }) => {
   const panel = page.getByTestId('task-panel');
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await checkpoint(page, 'm-boards-task');
+  // «Скачать» on a description's attachment: always visible on the phone (no hover).
+  await expect(panel.getByTestId('task-attachment-download')).toBeVisible();
+  await panel.getByTestId('task-attachment').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-boards-task-attachment');
   // Owner 23.10: a tap on the description edits it in place in the wiki's editor («Готово» under it).
   await panel.getByTestId('task-description').tap();
   const prose = panel.getByTestId('task-description-editor').locator('.wiki-prose');
@@ -1602,6 +1615,15 @@ test('m-menu', async ({ page }) => {
   await expect(report).toBeVisible();
   await report.getByTestId(`report-reason-${ReportReason.SPAM}`).tap();
   await checkpoint(page, 'm-report-dialog');
+  // ADR-0162: «Изменить» on a message of my own bot («Погода»).
+  await page.keyboard.press('Escape');
+  await expect(report).toHaveCount(0);
+  mock.seedBots();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.weather, content: 'Завтра +3, без осадков.' });
+  await feedToBottom(page);
+  await page.getByText('Завтра +3, без осадков.').dispatchEvent('contextmenu', { clientX: 120, clientY: 400 });
+  await expect(page.getByTestId('message-edit')).toBeVisible();
+  await checkpoint(page, 'm-message-menu-bot');
 });
 
 // Owner 07.10: a sub-level («+» → «Создать задачу ▸») opens by a tap only — never on hover — as a
@@ -1759,6 +1781,14 @@ test('m-dm-list', async ({ page }) => {
   await expect(list.getByRole('button')).toHaveCount(2);
   await expect(nav.getByTestId('dm-archive').getByRole('button', { name: 'Архив — 1' })).toHaveAttribute('aria-expanded', 'false');
   await checkpoint(page, 'm-dm-list');
+
+  // CBF-159: the field at the top of the tab searches the messages of my DMs.
+  await nav.getByTestId('dm-search').fill('ре');
+  await expect(nav.getByTestId('dm-search-hits').getByTestId('dm-hit').first()).toBeVisible();
+  await checkpoint(page, 'm-dm-search');
+  await nav.getByTestId('dm-search').fill('qzxw');
+  await expect(nav.getByTestId('dm-search-empty')).toBeVisible();
+  await checkpoint(page, 'm-dm-search-empty');
 });
 
 // Count badges (owner 07.10): 1 and 2 digits are perfect circles, 99+ is a pill; tab bar and DM rows.
@@ -2832,6 +2862,15 @@ test('m-disk-item-menu', async ({ page }) => {
   await menu.getByTestId('disk-menu-move').tap();
   await expect(page.getByRole('dialog')).toBeVisible();
   await checkpoint(page, 'm-disk-move', { snapshot: false });
+  // CBF-161: «Доступ» of a restricted folder with the third level «Управление».
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByTestId('disk-row').filter({ hasText: 'Договоры' }).getByTestId('disk-item-more').tap();
+  await page.getByTestId('disk-item-menu').getByTestId('disk-menu-access').tap();
+  const boris = page.getByTestId('disk-access-row').filter({ hasText: 'Борис' }).getByTestId('disk-access-level');
+  await boris.selectOption('manage');
+  await expect(boris).toHaveValue('manage');
+  await checkpoint(page, 'm-disk-share-levels', { snapshot: false });
 });
 
 test('m-disk-trash', async ({ page }) => {

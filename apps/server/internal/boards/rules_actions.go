@@ -86,7 +86,7 @@ func (s *Service) moveStatus(ctx context.Context, q *sqlc.Queries, t taskRow, it
 		if err != nil {
 			return err
 		}
-		if err := checkApprovalGate(tl, from, to); err != nil {
+		if err := boardGate(ctx, q, t.BoardID, tl, from, to); err != nil {
 			return err
 		}
 	}
@@ -728,7 +728,7 @@ func (s *Service) dryRun(ctx context.Context, q *sqlc.Queries, b sqlc.Board, r r
 				if err != nil {
 					return nil, err
 				}
-				if err := checkApprovalGate(tl, it.statuses[t.StatusID], to); err != nil {
+				if err := boardGate(ctx, q, t.BoardID, tl, it.statuses[t.StatusID], to); err != nil {
 					x.Problem = ruleErrText(err)
 				}
 			}

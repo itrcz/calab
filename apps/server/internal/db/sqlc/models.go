@@ -398,6 +398,7 @@ type Board struct {
 	ApprovalNotifyDelaySeconds int32
 	AiInstruction              string
 	AiFindDuplicates           bool
+	ApprovalGateOff            bool
 }
 
 type BoardCategory struct {
@@ -1117,6 +1118,37 @@ type MailOutbox struct {
 	Error     string
 }
 
+type McpOauthClient struct {
+	ID           string
+	Name         string
+	RedirectUris []string
+	CreatedIp    string
+	CreatedAt    time.Time
+	LastUsedAt   *time.Time
+}
+
+type McpOauthRequest struct {
+	ID            uuid.UUID
+	HandleHash    []byte
+	BrowserHash   []byte
+	ClientID      string
+	RedirectUri   string
+	CodeChallenge string
+	State         string
+	Resource      string
+	CreatedIp     string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	UserID        *uuid.UUID
+	BoundSession  *uuid.UUID
+	CsrfHash      []byte
+	DecidedAt     *time.Time
+	CodeHash      []byte
+	CodeExpiresAt *time.Time
+	CodeUsedAt    *time.Time
+	SessionID     *uuid.UUID
+}
+
 type MemberAchievement struct {
 	ID            uuid.UUID
 	WorkspaceID   uuid.UUID
@@ -1134,6 +1166,12 @@ type MemberRole struct {
 	WorkspaceID uuid.UUID
 	UserID      uuid.UUID
 	RoleID      uuid.UUID
+}
+
+type MentionDismissal struct {
+	UserID    uuid.UUID
+	MessageID uuid.UUID
+	CreatedAt time.Time
 }
 
 type Message struct {
@@ -1573,6 +1611,8 @@ type Session struct {
 	LocalAuthenticatedAt    *time.Time
 	RecoveryAuthenticatedAt *time.Time
 	AuthorityVersion        int64
+	Scope                   *string
+	McpClientID             *string
 }
 
 type SessionWorkspaceAssurance struct {

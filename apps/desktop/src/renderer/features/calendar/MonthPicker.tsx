@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { addMonths, formatMonth, monthGrid, monthOf, weekStart, weekdayNames } from '../../lib/calendar/time';
+import { addMonths, formatMonth, monthGrid, monthOf, useWeekStart, weekdayNames } from '../../lib/calendar/time';
 
 /**
  * A month to pick a day from: «‹ Октябрь 2026 ›», weekday names and six weeks. The chosen day is
@@ -24,7 +24,7 @@ export function MonthPicker({
   focus?: string;
   onPick: (day: string) => void;
 }): ReactNode {
-  const first = weekStart();
+  const first = useWeekStart();
   const grid = useMemo(() => monthGrid(month, first), [month, first]);
   const arrow = 'grid size-6 place-items-center rounded-[var(--radius-icon)] text-muted hover:bg-hover hover:text-fg mobile:size-11';
   return (

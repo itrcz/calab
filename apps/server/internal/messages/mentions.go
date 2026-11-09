@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -141,4 +142,73 @@ func (h *Handlers) listMentions(w http.ResponseWriter, r *http.Request) error {
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
+}
+
+// maxDismiss caps the ids of each kind in one POST /api/me/inbox/dismiss.
+const maxDismiss = 100
+
+// dismissInbox: POST /api/me/inbox/dismiss (CBF-155, ADR-0163) — the ✕ on «Упоминания» cards.
+// Chat mentions get a dismissal row (the list skips them for good); task notices leave the
+// caller's own history. Both are the caller's own rows: an unknown or foreign id changes
+// nothing and is not reported. INBOX_DISMISS then goes to the caller's sessions.
+func (h *Handlers) dismissInbox(w http.ResponseWriter, r *http.Request) error {
+	var req v1.InboxDismiss
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	msgs, err := dismissIDs(req.GetMessageIds(), "messageIds")
+	if err != nil {
+		return err
+	}
+	notices, err := dismissIDs(req.GetNoticeIds(), "noticeIds")
+	if err != nil {
+		return err
+	}
+	if len(msgs) == 0 && len(notices) == 0 {
+		return httpx.Validation("messageIds", "nothing to dismiss")
+	}
+	me := uid(r)
+	if err := db.GuardExec(r.Context(), h.db, func(guarded *sqlc.Queries) error {
+		if len(msgs) > 0 {
+			if err := guarded.DismissMentions(r.Context(), sqlc.DismissMentionsParams{UserID: me, MessageIds: msgs}); err != nil {
+				return err
+			}
+		}
+		if len(notices) > 0 {
+			return guarded.DismissTaskNotices(r.Context(), sqlc.DismissTaskNoticesParams{UserID: me, Ids: notices})
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	ev := &v1.InboxDismiss{MessageIds: make([]string, len(msgs)), NoticeIds: make([]string, len(notices))}
+	for i, id := range msgs {
+		ev.MessageIds[i] = id.String()
+	}
+	for i, id := range notices {
+		ev.NoticeIds[i] = id.String()
+	}
+	h.events.User(context.WithoutCancel(r.Context()), me, &v1.DispatchEvent{Event: &v1.DispatchEvent_InboxDismiss{InboxDismiss: ev}})
+	httpx.NoContent(w)
+	return nil
+}
+
+// dismissIDs: up to maxDismiss distinct ids.
+func dismissIDs(in []string, field string) ([]uuid.UUID, error) {
+	if len(in) > maxDismiss {
+		return nil, httpx.Validation(field, "too many ids")
+	}
+	out := make([]uuid.UUID, 0, len(in))
+	seen := map[uuid.UUID]bool{}
+	for _, s := range in {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return nil, httpx.Validation(field, "invalid id")
+		}
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }

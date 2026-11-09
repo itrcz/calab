@@ -1,5 +1,5 @@
 import { DiskItemResponseSchema, OfficeConfigResponseSchema, OfficeMode, type DiskItem, type OfficeConfigResponse } from '@calaba/protocol';
-import { ArrowLeft, RotateCw } from 'lucide-react';
+import { ArrowLeft, Download, RotateCw } from 'lucide-react';
 import { memo, useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton, Spinner, cx } from '../../../components/ui';
 import { getLocale, t } from '../../../i18n';
@@ -11,6 +11,8 @@ import { useTaskTabs, type TaskTab } from '../../../stores/taskTabs';
 import { useUi } from '../../../stores/ui';
 import { FRAME_START, connectHost, convertTarget, frameReducer, officeCapability, originOf, viewOnly, type HostConnection, type HostEvent } from './bridge';
 import { openOfficeFile, type OfficeSource } from './fileTabs';
+import { downloadFile } from '../../../services/files';
+import { diskApi, downloadItem } from '../../../services/disk';
 
 type Load = { kind: 'loading' } | { kind: 'ready'; cfg: OfficeConfigResponse } | { kind: 'error'; why: 'unsupported' | 'unavailable' | 'failed' };
 
@@ -244,6 +246,15 @@ function OfficeView({ tab }: { tab: TaskTab }): ReactNode {
       },
     );
   };
+  // «Скачать»: the original file as saved so far (a Disk item: its current version), through the one download path.
+  const download = (): void => {
+    if (!itemId) downloadFile({ id: fileId, name });
+    else
+      void diskApi.get(itemId).then(
+        (r) => r.item && downloadItem(r.item),
+        (e: unknown) => toast.fail(e, t('err.ctx.download')),
+      );
+  };
   const saveAs = (): void => copy(() => (itemId ? officeApi.convertItem(itemId) : officeApi.convertFile(tab.ws, fileId, '')), t('office.saveAs.failed'), false);
   const saveToDisk = (): void => copy(() => officeApi.importFile(tab.ws, fileId, ''), t('office.import.failed'), true);
 
@@ -287,11 +298,17 @@ function OfficeView({ tab }: { tab: TaskTab }): ReactNode {
           </span>
         </div>
       ) : null}
-      {/* A legacy format or an attachment: view only, with the way to an editable copy. */}
+      {/* A legacy format or an attachment: view only, with the way to an editable copy and «Скачать».
+          A file edited in place has no bar of ours (docs/08): the editor's «Файл → Скачать как» saves it. */}
       {convert || attachment ? (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-1.5 text-caption text-muted" data-testid={convert ? 'office-convert-notice' : 'office-attachment-notice'}>
           <span className="min-w-0">{convert ? t('office.convert', { ext: convert }) : t('office.attachment')}</span>
           <span className="flex shrink-0 gap-2">
+            {phone ? null : (
+              <Button variant="secondary" size="sm" onClick={download} data-testid="office-download">
+                <Download className="size-4" aria-hidden /> {t('chat.download')}
+              </Button>
+            )}
             {attachment ? (
               <Button variant="secondary" size="sm" onClick={saveToDisk} disabled={saving} data-testid="office-import">
                 {t('office.import')}

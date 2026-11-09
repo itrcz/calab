@@ -1,5 +1,5 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
-import { ApproverState, TaskNoticeKind, TaskNoticeSchema, TaskPriority, BoardCategorySchema, BoardSchema, TaskChecklistItemSchema, TaskChecklistSchema, BoardStatusSchema, BoardStatusType, BoardViewSchema, DispatchEventSchema, TaskActivitySchema, TaskApprovalState, TaskApproverSchema, TaskSchema, WorkspaceSnapshotSchema, type Task } from '@calaba/protocol';
+import { ApprovalGate, ApproverState, TaskNoticeKind, TaskNoticeSchema, TaskPriority, BoardCategorySchema, BoardSchema, TaskChecklistItemSchema, TaskChecklistSchema, BoardStatusSchema, BoardStatusType, BoardViewSchema, DispatchEventSchema, TaskActivitySchema, TaskApprovalState, TaskApproverSchema, TaskSchema, WorkspaceSnapshotSchema, type Task } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // services/boards.ts on the gateway events (ADR-0042 §4), with the stores it writes.
@@ -17,7 +17,7 @@ const update = vi.fn<(...a: unknown[]) => Promise<unknown>>();
 const search = vi.fn<(...a: unknown[]) => Promise<unknown>>();
 vi.mock('./boardsApi', () => ({ boardsApi: { tasks: { update: (...a: unknown[]) => update(...a), search: (...a: unknown[]) => search(...a) } } }));
 
-const { openTaskAnywhere, duplicateStatusId, applyBoardEvent, moveTask, updateTask, gateText, applySnapshotBoards, noticeText, searchAllTasks, ALL_TASKS_LIMIT } = await import('./boards');
+const { openTaskAnywhere, duplicateStatusId, applyBoardEvent, moveTask, updateTask, bulkUpdate, gateText, applySnapshotBoards, noticeText, duplicateAfterId, searchAllTasks, ALL_TASKS_LIMIT } = await import('./boards');
 const { t } = await import('../i18n');
 const { memberName } = await import('../stores/workspaces');
 const { useBoards, workspaceBoards } = await import('../stores/boards');
@@ -114,6 +114,17 @@ describe('approvals (ADR-0049) in the store and the move gate', () => {
     update.mockResolvedValue({});
     await moveTask('a', 'gone', '', '');
     expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it('ADR-0160: on a board whose gate is off the pending task moves forward and in bulk, no toast', async () => {
+    useBoards.getState().upsertBoard(create(BoardSchema, { id: 'b1', workspaceId: 'w1', statuses, approvalGate: ApprovalGate.OFF }));
+    update.mockResolvedValue({});
+    await moveTask('a', 'doing', '', '');
+    await updateTask('a', { statusId: 'done' });
+    await bulkUpdate(['a', 'b'], { statusId: 'doing' });
+    expect(update).toHaveBeenCalledTimes(4);
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(useBoards.getState().tasks['a']?.statusId).toBe('doing');
   });
 
   it('409 TASK_APPROVAL_REQUIRED (a race) reverts the optimistic move with the same toast', async () => {
@@ -286,6 +297,10 @@ describe('«Дублировать» status (CBF #103)', () => {
   });
   it('an unknown status (board not loaded) is kept as is', () => {
     expect(duplicateStatusId(src('zzz'), [])).toBe('zzz');
+  });
+  it('CBF-158: the copy is placed after the source only in the same status', () => {
+    expect(duplicateAfterId({ id: 't1', statusId: 'todo' }, 'todo')).toBe('t1');
+    expect(duplicateAfterId({ id: 't1', statusId: 'done' }, undefined)).toBeUndefined();
   });
 });
 

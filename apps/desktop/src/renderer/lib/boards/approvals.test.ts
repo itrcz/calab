@@ -1,6 +1,6 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
-import { ApproverState, BoardFeature, BoardStatusSchema, BoardStatusType, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
+import { ApprovalGate, ApproverState, BoardFeature, BoardStatusSchema, BoardStatusType, TaskApprovalState, TaskApproverSchema, TaskSchema, type Task } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
 import { approvalBadge, approvalTagKey, parseApprovalTag, approvalsWouldReset, decidedApprovers, approvalControls, blockedStatusIds, clampRequired, gateReason, mayMoveTo, onBehalfAction, quorumChoices, quorumOf, statusPick, toggleApprover, MAX_APPROVERS } from './approvals';
 
@@ -41,6 +41,18 @@ describe('mayMoveTo (the server gate, for the UI)', () => {
   it('blockedStatusIds: the dimmed columns / disabled menu rows', () => {
     expect([...blockedStatusIds(task(TaskApprovalState.PENDING, { statusId: 'todo' }), statuses)].sort()).toEqual(['doing', 'done']);
     expect(blockedStatusIds(task(TaskApprovalState.APPROVED), statuses).size).toBe(0);
+  });
+
+  it('ADR-0160: the board gate HOLD (and UNSPECIFIED from an older server) holds, OFF never does', () => {
+    const pending = task(TaskApprovalState.PENDING, { statusId: 'todo' });
+    const vetoed = task(TaskApprovalState.REJECTED, { statusId: 'todo' });
+    expect(blockedStatusIds(pending, statuses, ApprovalGate.HOLD).size).toBe(2);
+    expect(blockedStatusIds(pending, statuses, ApprovalGate.UNSPECIFIED).size).toBe(2);
+    expect(blockedStatusIds(pending, statuses, ApprovalGate.OFF).size).toBe(0);
+    expect(blockedStatusIds(vetoed, statuses, ApprovalGate.OFF).size).toBe(0);
+    expect(statusPick(pending, statuses, 'done', false, ApprovalGate.OFF)).toBe('move');
+    expect(statusPick(vetoed, statuses, 'done', true, ApprovalGate.OFF)).toBe('move');
+    expect(statusPick(pending, statuses, 'done', false, ApprovalGate.HOLD)).toBe('blocked');
   });
 });
 

@@ -21,6 +21,17 @@ describe('task attachments (GET /tasks/{id} only)', () => {
     d = { ...d, ...upsertTask(d, task('a', 's1', 1, { attachmentCount: 0 })) };
     expect(d.tasks['a']?.attachments).toEqual([]);
   });
+  it('CBF-160: a board list arriving after the full card keeps the files while the count matches', () => {
+    const f2 = { id: 'f2', name: 'b.pdf' };
+    const full = task('a', 's1', 1, { attachments: [file, f2], attachmentCount: 2 });
+    let d: BoardsData = { ...EMPTY_DATA, ...setBoardTasks(EMPTY_DATA, 'b1', [full]) };
+    d = { ...d, ...setBoardTasks(d, 'b1', [task('a', 's1', 1, { attachmentCount: 2 })]) };
+    expect(d.tasks['a']?.attachments.map((f) => f.id)).toEqual(['f1', 'f2']);
+    // A diverged count is not papered over with the stale set: the card is re-fetched (count > 0, no files).
+    d = { ...d, ...setBoardTasks(d, 'b1', [task('a', 's1', 1, { attachmentCount: 1 })]) };
+    expect(d.tasks['a']?.attachments).toEqual([]);
+    expect(d.tasks['a']?.attachmentCount).toBe(1);
+  });
 });
 
 describe('board reducers', () => {

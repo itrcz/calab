@@ -381,6 +381,7 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/rooms/{id}/sounds/play":                                    scopeRoom,
 	"POST /api/rooms/{id}/stream/request":                                 scopeRoom,
 	"POST /api/rooms/{id}/voice/leave":                                    scopeRoom,
+	"POST /api/rooms/{id}/voice/companion":                                scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/allow-camera":                    scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/disconnect":                      scopeRoom,
 	"POST /api/rooms/{id}/voice/{userId}/move":                            scopeRoom,
@@ -697,6 +698,24 @@ var identityRoutes = map[string]identityScope{
 	// MCP for bots (CBF-48): the endpoint itself reads and writes nothing; every tool's REST
 	// call goes through this gate again with its own route and scope.
 	"/api/mcp": scopePublic,
+	// MCP without a bot (ADR-0158): the OAuth server of the endpoint. Metadata, registration and
+	// token are public (no ambient credential); the consent routes authenticate the person's app
+	// session themselves (local authority, the browser that started the request).
+	"GET /.well-known/oauth-protected-resource":             scopePublic,
+	"GET /.well-known/oauth-protected-resource/api/mcp":     scopePublic,
+	"GET /.well-known/oauth-authorization-server":           scopePublic,
+	"OPTIONS /.well-known/oauth-protected-resource":         scopePublic,
+	"OPTIONS /.well-known/oauth-protected-resource/api/mcp": scopePublic,
+	"OPTIONS /.well-known/oauth-authorization-server":       scopePublic,
+	"POST /api/mcp/oauth/register":                          scopePublic,
+	"OPTIONS /api/mcp/oauth/register":                       scopePublic,
+	"GET /api/mcp/oauth/authorize":                          scopePublic,
+	"POST /api/mcp/oauth/token":                             scopePublic,
+	"OPTIONS /api/mcp/oauth/token":                          scopePublic,
+	"POST /api/mcp/oauth/revoke":                            scopePublic,
+	"OPTIONS /api/mcp/oauth/revoke":                         scopePublic,
+	"POST /api/mcp/oauth/requests/{request}/bind":           scopePublic,
+	"POST /api/mcp/oauth/requests/{request}/decision":       scopePublic,
 	// Report and block users (ADR-0154): blocks are the account's own; a report names its
 	// workspace in the body (the handler checks it through the resolver, like POST /api/dms).
 	"GET /api/me/blocked-users":                            scopeGlobal,
@@ -705,6 +724,9 @@ var identityRoutes = map[string]identityScope{
 	"POST /api/reports":                                    scopeGlobal,
 	"GET /api/workspaces/{id}/reports":                     scopeWorkspace,
 	"POST /api/workspaces/{id}/reports/{reportId}/resolve": scopeWorkspace,
+	// The inbox ✕ (CBF-155, ADR-0163): writes only the caller's own dismissal rows and reads
+	// nothing back, so no workspace is opened by it.
+	"POST /api/me/inbox/dismiss": scopeGlobal,
 }
 
 // identityGate classifies and checks every private route. planActive refuses the routes of

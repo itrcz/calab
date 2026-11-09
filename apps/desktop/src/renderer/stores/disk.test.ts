@@ -81,6 +81,8 @@ describe('disk store', () => {
 
   it('413 FILE_TOO_LARGE names the limit', () => {
     expect(uploadErrorText(new ApiError('ERROR_CODE_FILE_TOO_LARGE', 'file exceeds 1024 MB', 413, undefined, { limit: 1 << 30 }))).toBe('Больше лимита 1,00 ГБ на файл');
+    // An administrator's limit is the hard cap (ADR-0164): the row names the uploader's own limit from the API.
+    expect(uploadErrorText(new ApiError('ERROR_CODE_FILE_TOO_LARGE', 'file exceeds 4096 MB', 413, undefined, { limit: 4096 * 2 ** 20 }))).toBe('Больше лимита 4,00 ГБ на файл');
     expect(uploadErrorText(new ApiError('ERROR_CODE_UNSPECIFIED', 'Request Entity Too Large', 413))).not.toBe('');
   });
 });

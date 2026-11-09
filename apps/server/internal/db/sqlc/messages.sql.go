@@ -226,6 +226,31 @@ func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error)
 	return i, err
 }
 
+const getMessageBotOwner = `-- name: GetMessageBotOwner :one
+SELECT b.owner_user_id FROM bots b
+WHERE b.user_id = $1
+  AND CASE WHEN $2::uuid IS NULL
+        THEN EXISTS (SELECT FROM workspace_members hm WHERE hm.workspace_id = b.workspace_id AND hm.user_id = b.owner_user_id)
+        ELSE b.workspace_id = $2::uuid END
+`
+
+type GetMessageBotOwnerParams struct {
+	AuthorID    uuid.UUID
+	WorkspaceID *uuid.UUID
+}
+
+// The current owner of the bot that wrote a message, for the author rule (perm.MessageAuthor,
+// ADR-0162). Only in the bot's home workspace (ADR-0151 §1): a workspace room or task room
+// counts when it is the bot's workspace_id; a DM (workspace_id NULL) when the owner is still a
+// member of the bot's home workspace (where they control the bot, ADR-0106). No row: not a bot,
+// the bot was deleted, or outside its home.
+func (q *Queries) GetMessageBotOwner(ctx context.Context, arg GetMessageBotOwnerParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getMessageBotOwner, arg.AuthorID, arg.WorkspaceID)
+	var owner_user_id uuid.UUID
+	err := row.Scan(&owner_user_id)
+	return owner_user_id, err
+}
+
 const getMessageByNonce = `-- name: GetMessageByNonce :one
 SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages WHERE author_id = $1 AND nonce = $2
 `

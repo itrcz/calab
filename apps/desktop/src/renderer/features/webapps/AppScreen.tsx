@@ -3,7 +3,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } fr
 import type { WebAppBounds } from '../../../shared/ipc';
 import { Button } from '../../components/ui';
 import { t } from '../../i18n';
-import { coversContent, visibleViewRect } from '../../lib/webApps';
+import { coversContent, visibleViewRect, type Overlay } from '../../lib/webApps';
 import { platform } from '../../platform';
 import { setAppViewRect } from '../../services/webAppTip';
 import { openAppInBrowser } from '../../services/webApps';
@@ -16,6 +16,7 @@ import { useAdmissions } from '../guests/stores/admissions';
 /** The web app fills the content area down to the window bottom, also during calls. */
 export function AppScreen({ appId }: { appId: string }): ReactNode {
   const url = useWebApps((s) => s.byId[appId]?.url ?? '');
+  const workspaceId = useWebApps((s) => s.byId[appId]?.workspaceId ?? '');
   if (!url) return null;
   return (
     <div
@@ -23,7 +24,7 @@ export function AppScreen({ appId }: { appId: string }): ReactNode {
       data-testid="app-screen"
     >
       <LoadLine appId={appId} />
-      {platform.webApps ? <DesktopView appId={appId} url={url} /> : <WebFrame appId={appId} url={url} />}
+      {platform.webApps ? <DesktopView appId={appId} url={url} workspaceId={workspaceId} /> : <WebFrame appId={appId} url={url} />}
     </div>
   );
 }
@@ -85,10 +86,11 @@ function viewRect(el: HTMLElement): WebAppBounds {
 }
 
 /** Rectangles of the overlays that must stay visible over the site (`[data-app-occluder]`). */
-function occluderRects(): WebAppBounds[] {
+function occluderRects(): Overlay[] {
   return Array.from(document.querySelectorAll<HTMLElement>(OCCLUDERS), (o) => {
     const r = o.getBoundingClientRect();
-    return { x: r.left, y: r.top, width: r.width, height: r.height };
+    // `data-app-occluder="band"`: the site keeps its x and width, only its height shrinks.
+    return { x: r.left, y: r.top, width: r.width, height: r.height, band: o.dataset.appOccluder === 'band' };
   });
 }
 
@@ -114,30 +116,60 @@ function useOccluderKey(): string {
  * knock cards and the calling strip are never hidden behind the site: the view steps aside
  * (visibleViewRect) while they are shown.
  */
-function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode {
+function DesktopView({ appId, url, workspaceId }: { appId: string; url: string; workspaceId: string }): ReactNode {
   const ref = useRef<HTMLDivElement>(null);
   const covered = useOverlayOpen();
   const occluders = useOccluderKey();
   const reloadKey = useWebApps((s) => s.reloadKey);
-  const firstReload = useRef(reloadKey);
   const failed = useWebApps((s) => s.nav[appId]?.failed ?? '');
   const crashed = useWebApps((s) => s.nav[appId]?.crashed ?? false);
   const api = platform.webApps;
 
+  // A menu or dialog over the app: a still picture of the site takes the view's place first, the
+  // view steps aside once it is drawn — the site stays in sight instead of an empty area (ADR-0053
+  // «Поправка 2»). No picture (nothing shown yet, a failed capture): the view steps aside at once.
+  const [still, setStill] = useState<string | null>(null);
+  useEffect(() => () => void api?.hide(), [api]);
+  // The pointer entering our page from outside it (from the site above it, most of all): the next
+  // menu opens here, so main takes the site's picture now — a capture waits for a frame (~0.5 s).
+  useEffect(() => {
+    if (!api || covered) return;
+    const back = (ev: MouseEvent): void => {
+      if (!ev.relatedTarget) void api.prepareSnapshot();
+    };
+    document.addEventListener('mouseover', back);
+    return () => document.removeEventListener('mouseover', back);
+  }, [api, covered]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !api) return;
     if (covered) {
       setAppViewRect(null);
-      void api.hide();
-      return;
+      let live = true;
+      api.snapshot().then(
+        (src) => {
+          if (!live) return;
+          if (src) setStill(src);
+          else void api.hide();
+        },
+        () => {
+          if (live) void api.hide();
+        },
+      );
+      return () => {
+        live = false;
+      };
     }
-    void api.open(appId, url, viewRect(el));
+    // The picture goes once the view is back over it: no empty frame in between.
+    const back = (): void => setStill(null);
+    api.open(appId, url, workspaceId, viewRect(el)).then(back, back);
     return () => {
       setAppViewRect(null);
-      void api.hide();
+      // An overlay opening: the view stays until the picture under it is drawn (leaving the
+      // screen hides it through the effect above).
+      if (!overlayOpenNow()) void api.hide();
     };
-  }, [api, appId, url, covered]);
+  }, [api, appId, url, workspaceId, covered]);
 
   // Size changes and the overlays that must stay visible (re-measured after they are laid out).
   useLayoutEffect(() => {
@@ -159,15 +191,30 @@ function DesktopView({ appId, url }: { appId: string; url: string }): ReactNode 
     };
   }, [api, covered, occluders]);
 
-  // «Перезагрузить» from the rail menu (after the open above: IPC keeps the order).
+  // «Перезагрузить» from the rail menu (after the open above: IPC keeps the order). The request is
+  // kept by app id: the menu of an app that is not open yet opens it first, and this view only
+  // mounts then — a counter captured on mount would already include the request and skip it.
   useEffect(() => {
-    if (reloadKey === firstReload.current) return;
-    firstReload.current = reloadKey;
-    void api?.navigate('reload');
-  }, [api, reloadKey]);
+    if (useWebApps.getState().reloadApp !== appId) return;
+    useWebApps.setState({ reloadApp: null });
+    void api?.navigate('reload', appId);
+  }, [api, appId, reloadKey]);
 
   return (
     <div ref={ref} className="relative min-h-0 flex-1" data-testid="app-view" data-toast-anchor>
+      {still ? (
+        <img
+          src={still}
+          alt=""
+          aria-hidden
+          draggable={false}
+          className="pointer-events-none absolute inset-0 size-full select-none rounded-[12px] object-fill"
+          onLoad={() => {
+            if (overlayOpenNow()) void api?.hide();
+          }}
+          data-testid="app-still"
+        />
+      ) : null}
       {failed || crashed ? (
         <div className="absolute inset-0 grid place-items-center p-6">
           <div className="flex max-w-sm flex-col items-center gap-2 text-center">

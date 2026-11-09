@@ -314,6 +314,9 @@ var eventScope = map[protoreflect.Name]bool{
 	// The caller's own block list changed on another device (ADR-0154): their user channel
 	// only, personal like notes.
 	"user_blocks_update": false,
+	// The caller dismissed inbox items on another device (CBF-155, ADR-0163): their user
+	// channel only, personal like notes.
+	"inbox_dismiss": false,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent
@@ -357,7 +360,7 @@ func (h *Hub) prepareEvent(ctx context.Context, enc *encEvent) {
 			*v1.DispatchEvent_CallRing, *v1.DispatchEvent_CallState,
 			*v1.DispatchEvent_NotesCreate, *v1.DispatchEvent_NotesUpdate, *v1.DispatchEvent_NotesDelete,
 			*v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete,
-			*v1.DispatchEvent_UserBlocksUpdate:
+			*v1.DispatchEvent_UserBlocksUpdate, *v1.DispatchEvent_InboxDismiss:
 			scopes[uuid.Nil] = true
 		case *v1.DispatchEvent_EventReminder:
 			// A reminder of the user's own imported CalDAV event (ADR-0045 amendment 3): personal,

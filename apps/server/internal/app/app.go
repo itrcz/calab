@@ -47,6 +47,7 @@ import (
 	"github.com/calaba/calaba/server/internal/mail"
 	"github.com/calaba/calaba/server/internal/mailbox"
 	"github.com/calaba/calaba/server/internal/mcp"
+	"github.com/calaba/calaba/server/internal/mcpauth"
 	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/metrika"
 	"github.com/calaba/calaba/server/internal/moderation"
@@ -689,7 +690,15 @@ func New(d Deps) *App {
 	// MCP for bots (CBF-48): its tools call the routes above through the full chain (h) with
 	// the bot's own token, so a tool has exactly the bot's rights.
 	mcpHandler := mcp.New(buildinfo.Version)
-	mux.Handle(mcp.Path, private(mcpHandler))
+	// ADR-0158: a person connects an MCP client through OAuth; a 401 of the endpoint points the
+	// client to the metadata.
+	mcpOAuth := mcpauth.New(mcpauth.Config{DB: d.DB, Auth: authSvc, Origins: d.Config.AllowedOrigins(), RedirectURIs: d.Config.MCPOAuthRedirectURIs,
+		RegisterLimit:  redisx.NewRateLimiter(d.Redis, "rl:mcp-register:", 10, 10.0/60), // 10 at once, then 10 per hour per address
+		AuthorizeLimit: redisx.NewRateLimiter(d.Redis, "rl:mcp-authorize:", 30, 30),     // 30 at once, then 30 per minute
+		TokenLimit:     redisx.NewRateLimiter(d.Redis, "rl:mcp-token:", 60, 60)})        // token + revoke: 60 per minute
+	authSvc.MCPInnerRoutes = mcp.InnerRoutes()
+	mcpOAuth.Routes(mux)
+	mux.Handle(mcp.Path, mcpOAuth.Challenge(private(mcpHandler)))
 	mux.Handle("/api/", httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return httpx.NotFound("route")
 	}))

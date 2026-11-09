@@ -113,6 +113,11 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		}
 		return s.SIP.SIPParticipant(ctx, ev.Event, wid, rid, p)
 	}
+	// A companion connection (ADR-0149 §3) is not a device: no voice state, grace, cues or phone
+	// line; it may only stay while its device holds a seat in the room.
+	if cu, cs, ok := voice.ParseCompanion(p.Identity); ok {
+		return s.companionEvent(ctx, ev.Event, wid, rid, cu, cs, ev.Room.Name, p)
+	}
 	uid, sid, ok := voice.ParseIdentity(p.Identity)
 	if !ok {
 		return nil
@@ -154,6 +159,10 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		if kept {
 			slog.InfoContext(ctx, "voice seat held: the connection dropped", "identity", identity, "reason", string(p.DisconnectReason))
 			return nil
+		}
+		// The device left the room (or moved on): its companion has no seat here any more.
+		if !voice.IsDM(wid, rid) {
+			s.dropCompanion(ctx, wid, rid, uid, sid)
 		}
 		if s.SIP != nil && !voice.IsDM(wid, rid) {
 			s.SIP.PersonLeft(ctx, wid, rid) // the last person out hangs up a phone call (ADR-0046)

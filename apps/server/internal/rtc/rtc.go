@@ -99,6 +99,7 @@ func NewService(cfg Config, d *db.DB, r rueidis.Client, lk LiveKit, ev events.Pu
 func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	mux.Handle("POST /api/rooms/{id}/join", wrap(httpx.HandlerFunc(s.join)))
 	mux.Handle("POST /api/rooms/{id}/voice/leave", wrap(httpx.HandlerFunc(s.leave)))
+	mux.Handle("POST /api/rooms/{id}/voice/companion", wrap(httpx.HandlerFunc(s.companionToken)))
 	mux.Handle("POST /api/rooms/{id}/stream/request", wrap(httpx.HandlerFunc(s.requestStream)))
 	mux.Handle("POST /api/rooms/{id}/camera/request", wrap(httpx.HandlerFunc(s.requestCamera)))
 	mux.Handle("POST /api/rooms/{id}/camera/stop", wrap(httpx.HandlerFunc(s.stopOwnCamera)))
@@ -318,7 +319,10 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 // a lost connection, which the device takes back (seatOnRejoin, ADR-0150). A device recorded in
 // another room (switching rooms) moves here and keeps its mute / deafen / musician mode.
 func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.UUID, adm admission) (pending bool, joinedAt int64, err error) {
-	var c voice.Change
+	var (
+		c    voice.Change
+		left uuid.UUID // the room the device's seat moved out of, if any
+	)
 	err = s.voice.WithLock(ctx, room.WorkspaceID, func() error {
 		if err := s.checkIdentity(ctx, room.WorkspaceID, room.ID, uid, sid); err != nil {
 			return err
@@ -330,6 +334,7 @@ func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.
 		}
 		var err error
 		c, err = s.voice.UpdateLocked(ctx, room.WorkspaceID, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
+			left = uuid.Nil
 			if cur != nil && cur.RoomID == room.ID {
 				pending, joinedAt = cur.Pending, cur.JoinedAt
 				if n, ok := seatOnRejoin(*cur, time.Now()); ok {
@@ -340,6 +345,7 @@ func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.
 			n := voice.SessionState{RoomID: room.ID, Pending: true, JoinedAt: time.Now().UnixMilli()}
 			if cur != nil {
 				n.Muted, n.Deafened, n.Musician, n.Ptt = cur.Muted, cur.Deafened, cur.Musician, cur.Ptt
+				left = cur.RoomID
 			}
 			pending, joinedAt = true, n.JoinedAt
 			return &n
@@ -350,6 +356,11 @@ func (s *Service) recordPending(ctx context.Context, room wsRoom, uid, sid uuid.
 		return false, 0, err
 	}
 	s.publishVoice(ctx, room.WorkspaceID, c)
+	if left != uuid.Nil {
+		// A device switching rooms (also one still pending in the old room, whose connect wait
+		// this /join replaces): its companion has no seat in the old room (ADR-0149 §3).
+		s.dropCompanion(ctx, room.WorkspaceID, left, uid, sid)
+	}
 	return pending, joinedAt, nil
 }
 
@@ -429,6 +440,13 @@ func (s *Service) serverMuted(ctx context.Context, wid, uid uuid.UUID) bool {
 // state before a /camera/request, or before a moderator's stop-camera, is corrected by
 // re-reading it after the push.
 func (s *Service) pushGrant(ctx context.Context, lkRoom, identity string, wid, uid uuid.UUID, bits perm.Bits, slot bool) error {
+	if user, sid, ok := voice.ParseCompanion(identity); ok { // never a device's grant (ADR-0149 §3)
+		ws, rid, roomOK := voice.ParseRoomName(lkRoom)
+		if !roomOK || ws != wid || user != uid {
+			return httpx.Forbidden("voice scope mismatch")
+		}
+		return s.pushCompanionGrant(ctx, lkRoom, wid, rid, user, sid, bits)
+	}
 	if user, sid, ok := voice.ParseIdentity(identity); ok {
 		ws, rid, roomOK := voice.ParseRoomName(lkRoom)
 		if !roomOK || ws != wid || user != uid {
@@ -856,6 +874,7 @@ func (s *Service) disconnectMember(w http.ResponseWriter, r *http.Request) error
 		if err := s.lk.RemoveParticipant(r.Context(), name, voice.Identity(st.UserID, st.SessionID)); err != nil && !IsNotFound(err) {
 			return httpx.Unavailable(err)
 		}
+		s.dropCompanion(r.Context(), room.WorkspaceID, room.ID, st.UserID, st.SessionID)
 		// Voice state is cleared by the participant_left webhook (or reconcile); a seat without
 		// a connection (pending, or held after a drop) has none and goes here.
 		s.dropPending(r.Context(), room.WorkspaceID, st)
@@ -864,9 +883,10 @@ func (s *Service) disconnectMember(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-// removeIdentities disconnects identities from a room; not-found is fine.
+// removeIdentities disconnects identities from a room; not-found is fine. A device goes with its
+// companion connection (ADR-0149 §3).
 func (s *Service) removeIdentities(ctx context.Context, room string, ids []string) {
-	for _, id := range ids {
+	for _, id := range withCompanions(ids) {
 		if err := s.lk.RemoveParticipant(ctx, room, id); err != nil && !IsNotFound(err) {
 			slog.WarnContext(ctx, "livekit remove participant", "room", room, "identity", id, "err", err)
 		}
@@ -973,7 +993,7 @@ func DisabledRoutes(mux httpx.Router, wrap func(http.Handler) http.Handler) {
 	h := httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return httpx.Unavailable(errors.New("rtc: LiveKit is not configured"))
 	})
-	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/voice/leave", "POST /api/rooms/{id}/stream/request",
+	for _, p := range []string{"POST /api/rooms/{id}/join", "POST /api/rooms/{id}/voice/leave", "POST /api/rooms/{id}/voice/companion", "POST /api/rooms/{id}/stream/request",
 		"POST /api/rooms/{id}/camera/request", "POST /api/rooms/{id}/camera/stop", "POST /api/rooms/{id}/voice/{userId}/stop-camera",
 		"POST /api/rooms/{id}/voice/{userId}/allow-camera", "PATCH /api/voice/self",
 		"PATCH /api/rooms/{id}/voice-status", "POST /api/rooms/{id}/voice/{userId}/mute", "POST /api/rooms/{id}/voice/{userId}/unmute", "POST /api/rooms/{id}/voice/{userId}/disconnect",

@@ -504,6 +504,8 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.approvalNotify.now': '立即',
   'boards.approvalNotify.min': '{n} 分钟后',
   'boards.approvalNotify.hour': '1 小时后',
+  'boards.approvalGate.label': '审批限制状态变更',
+  'boards.approvalGate.hint': '审批完成前，任务不能向后推进。关闭后，可编辑任务的人都能更改状态，投票保留。',
   'boards.notice.approved': '任务已批准',
   'boards.notice.rejected': '{name} 驳回了任务',
   'boards.notice.rejectedWhy': '{name} 驳回了任务：{comment}',
