@@ -1,5 +1,6 @@
 import { formPageCode } from './boardForms';
 import { installIdentityDenials } from './identity';
+import { installServerHealth, resetServerHealth } from './serverHealth';
 import { useIdentity } from '../stores/identity';
 import { resetIdentityGate } from '../lib/api/identityGate';
 import { fromJson, type JsonValue } from '@bufbuild/protobuf';
@@ -104,6 +105,7 @@ export async function bootstrap(): Promise<void> {
   if (nagNow !== nag) usePrefs.getState().setPrefs({ updateNag: nagNow });
 
   installIdentityDenials();
+  installServerHealth();
   voice.init();
   watchSyncedPrefs();
   startMessageRetention();
@@ -223,6 +225,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   useIdentity.getState().reset();
   resetIdentityGate();
   stopGateway();
+  resetServerHealth();
   resetGatewaySubscriptions();
   voice.leaveParked();
   await voice.leave(false);

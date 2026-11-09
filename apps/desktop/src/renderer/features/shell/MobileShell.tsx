@@ -70,7 +70,7 @@ const EDGE_PX = 28;
  * iOS safe areas: the top inset on the shell, the bottom one on whatever is last (tab bar, strip
  * or composer).
  */
-export function MobileShell({ showReconnect, welcome }: { showReconnect: boolean; welcome: ReactNode }): ReactNode {
+export function MobileShell({ welcome }: { welcome: ReactNode }): ReactNode {
   const ready = useSession((s) => s.ready);
   const inVoice = useVoice((s) => s.roomId !== null);
   const tab = useUi((s) => s.phone.tab);
@@ -95,7 +95,7 @@ export function MobileShell({ showReconnect, welcome }: { showReconnect: boolean
       style={{ ['--composer-safe' as string]: strip ? '0px' : 'var(--safe-bottom, 0px)' }}
       {...swipe}
     >
-      {showReconnect ? <ReconnectBanner /> : null}
+      <ReconnectBanner />
       {/* Web: «Доступна версия X · Обновить страницу» when the server is newer (docs/09 #125). */}
       <UpdateBar />
       <VerifyBanner />

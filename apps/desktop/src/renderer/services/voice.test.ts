@@ -737,7 +737,7 @@ describe('native room audio (ADR-0149)', () => {
     await voice.join('A', 'ws');
     setHidden(true);
     h.emit({ phase: 'lost', error: 'network', microphoneReady: false });
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(16 * 60_000); // past the 15 min rejoin bound (ADR-0166)
     setHidden(false);
     await vi.advanceTimersByTimeAsync(0);
     expect(joinVoice).toHaveBeenCalledOnce();
@@ -1343,6 +1343,42 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState().roomId).toBeNull();
   });
 
+  it('a database stall: /join answers 503 for minutes, the rejoin goes on and gets back in still muted (ADR-0166)', async () => {
+    const { ApiError } = await import('../lib/api/client');
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(100);
+    let down = true;
+    joinVoice.mockImplementation((roomId: string) =>
+      down
+        ? Promise.reject(new ApiError('ERROR_CODE_UNAVAILABLE', 'service unavailable', 503))
+        : Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }),
+    );
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await vi.advanceTimersByTimeAsync(5 * 60_000); // the stall: 5 min of 503
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'reconnecting', muted: true });
+    const tried = joinVoice.mock.calls.length;
+    expect(tried).toBeGreaterThan(10);
+    down = false;
+    await vi.advanceTimersByTimeAsync(16_000); // the next attempt (backoff ≤ 15 s)
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected', muted: true }); // never unmuted
+    expect(FakeRoom.all.at(-1)?.published[0]?.isMuted).toBe(true);
+    joinVoice.mockReset();
+    joinVoice.mockImplementation((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
+  });
+
+  it('a refusal (no access / the room is gone) ends the rejoin at once', async () => {
+    const { ApiError } = await import('../lib/api/client');
+    await voice.join('A', 'ws');
+    joinVoice.mockRejectedValueOnce(new ApiError('ERROR_CODE_NOT_FOUND', 'room not found', 404));
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice).toHaveBeenCalledTimes(2); // no more attempts
+    expect(useVoice.getState().roomId).toBeNull();
+  });
+
   it('a rejoin whose room drops right as connect() resolves is not counted as back: the cycle goes on', async () => {
     await voice.join('A', 'ws');
     // The first rejoin attempt: LiveKit connects, then the room is gone before our connect() returns.
@@ -1389,7 +1425,7 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState().link.attempts).toBe(0);
   });
 
-  it('a connect that keeps failing backs off 1/2/4/8 s, then 15 s, for 90 s, ends with the «lost» toast and frees the seat (#255)', async () => {
+  it('a connect that keeps failing backs off 1/2/4/8 s, then 15 s, for 15 min, ends with the «lost» toast and frees the seat (#255, ADR-0166)', async () => {
     await voice.join('A', 'ws');
     const { toast } = await import('../stores/toasts');
     vi.mocked(toast.error).mockClear();
@@ -1398,17 +1434,24 @@ describe('VoiceEngine', () => {
     await settle();
     // Rejoin attempts so far (the first /join was the user's).
     const attempts = (): number => joinVoice.mock.calls.length - 1;
-    // Attempts at 1, 3, 7, 15, 30, 45, 60, 75 and 90 s; then the cycle gives up (90 s, ADR-0150 hold).
-    const steps: [number, number][] = [[999, 0], [1, 1], [1_999, 1], [1, 2], [3_999, 2], [1, 3], [7_999, 3], [1, 4], [14_999, 4], [1, 5], [14_999, 5], [1, 6], [14_999, 6], [1, 7], [14_999, 7], [1, 8], [14_999, 8], [1, 9]];
+    // Attempts at 1, 3, 7, 15 s, then every 15 s up to 15 min (a database stall, ADR-0166); then
+    // the cycle gives up: 4 + 59 = 63 attempts.
+    const steps: [number, number][] = [[999, 0], [1, 1], [1_999, 1], [1, 2], [3_999, 2], [1, 3], [7_999, 3], [1, 4], [14_999, 4], [1, 5], [14_999, 5], [1, 6]];
     for (const [ms, n] of steps) {
       await vi.advanceTimersByTimeAsync(ms);
       expect(attempts()).toBe(n);
     }
+    await vi.advanceTimersByTimeAsync(900_000 - 45_000 - 1);
+    expect(attempts()).toBe(62);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(useVoice.getState()).toMatchObject({ phase: 'reconnecting', roomId: 'A' });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts()).toBe(63);
     expect(vi.mocked(toast.error).mock.calls.map((c) => c[0])).toEqual(['Не удалось вернуться в голосовую комнату']);
     expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
     expect(leaveVoice).toHaveBeenCalledWith('A');
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(attempts()).toBe(9);
+    expect(attempts()).toBe(63);
   });
 
   it('the CSP blocking the LiveKit host: phase «blocked», the cycle stops, «Повторить» joins again', async () => {

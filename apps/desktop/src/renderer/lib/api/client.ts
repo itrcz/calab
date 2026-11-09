@@ -1,4 +1,5 @@
 import { identityRequestBlocked, identityRequestVersion } from './identityGate';
+import { outageStatus, type ServerHealth } from './health';
 import { create, fromJson, toJson, type DescMessage, type JsonValue, type MessageInitShape, type MessageShape } from '@bufbuild/protobuf';
 import { PlanLimitViolationsSchema, type PlanLimitViolation } from '@calaba/protocol';
 import { platform } from '../../platform';
@@ -111,6 +112,12 @@ export const apiUrl = (path: string): string => `${platform.apiBase}${path}`;
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/** Outcome of every request for the connection indicator (lib/api/health.ts, ADR-0166). */
+let health: Pick<ServerHealth, 'ok' | 'failed'> | null = null;
+export function setApiHealth(h: Pick<ServerHealth, 'ok' | 'failed'> | null): void {
+  health = h;
+}
+
 const JSON_OPTS = { ignoreUnknownFields: true } as const;
 
 async function send(method: Method, path: string, body?: JsonValue, signal?: AbortSignal): Promise<Response> {
@@ -126,8 +133,11 @@ async function send(method: Method, path: string, body?: JsonValue, signal?: Abo
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    health?.failed();
     throw new ApiError('ERROR_CODE_UNAVAILABLE', err instanceof Error ? err.message : String(err), 0);
   }
+  if (outageStatus(res.status)) health?.failed();
+  else health?.ok();
   if (!res.ok) {
     const err = await toApiError(res);
     if (['ERROR_CODE_SSO_REQUIRED', 'ERROR_CODE_DIRECTORY_ACCESS_DENIED', 'ERROR_CODE_RECOVERY_ONLY'].includes(err.code))

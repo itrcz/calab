@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { t } from '../../i18n';
+import { useSession } from '../../stores/session';
 
 /**
  * «Нет соединения — переподключаемся…» as an overlay (#41): a zero-height anchor right under the
@@ -8,6 +9,10 @@ import { t } from '../../i18n';
  * no blur, no animation (docs/08, CLAUDE.md perf rules).
  */
 export function ReconnectBanner(): ReactNode {
+  // A leaf with its own subscriber (CLAUDE.md «Ререндеры»): the gateway is down (lib/gateway/banner.ts:
+  // only after a drop > 3 s) or the API answers with outages (services/serverHealth.ts, ADR-0166).
+  const shown = useSession((s) => s.ready && (s.reconnectBanner || s.serverDegraded));
+  if (!shown) return null;
   return (
     <div className="pointer-events-none relative z-[var(--z-sticky)] h-0" data-testid="reconnect-banner">
       <div

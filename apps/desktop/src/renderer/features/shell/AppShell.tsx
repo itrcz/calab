@@ -131,9 +131,6 @@ function ShellLayout(): ReactNode {
   // workspace, and does not wait for the Calab server (the mail engine is on this computer).
   const mailOn = useMailUi((s) => s.active) && MAIL_ENABLED;
 
-  // Short reconnects (a server deploy re-IDENTIFYs in 1–5 s) don't flash the banner; it goes
-  // away the moment READY/RESUMED arrives (lib/gateway/banner.ts).
-  const showReconnect = useSession((s) => s.ready && s.reconnectBanner);
 
   const mobile = useMobile();
   // An opened office file (ADR-0143): its editor exists (fileMounted) and/or its view is on screen.
@@ -171,7 +168,6 @@ function ShellLayout(): ReactNode {
     return (
       <>
         <MobileShell
-          showReconnect={showReconnect}
           welcome={
             wsPending ? (
               <Connecting />
@@ -199,7 +195,8 @@ function ShellLayout(): ReactNode {
       <VerifyBanner />
       <SuspendedBanner />
       <BillingBanner />
-      {showReconnect ? <ReconnectBanner /> : null}
+      {/* Its own subscriber: a drop > 3 s or an API outage (ReconnectBanner, ADR-0166). */}
+      <ReconnectBanner />
       {/* An update waits: the accent bar under the title bar (docs/08 «Обновление», docs/09 #125). */}
       <UpdateBar />
       {/* The rail sits on the window layer (same material as the title bar); the room column and

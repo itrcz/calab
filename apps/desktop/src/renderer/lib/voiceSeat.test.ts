@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { seatAction, seatRefused, type SeatView } from './voiceSeat';
+import { rejoinRefusal, seatAction, seatRefused, type SeatView } from './voiceSeat';
 
 const view = (p: Partial<SeatView>): SeatView => ({ seatRoom: null, busy: false, livekit: 'none', rejoining: false, strays: [], ...p });
 
@@ -27,5 +27,10 @@ describe('seatAction (docs/09 #71)', () => {
   it('only a refusal (no access, gone, full) is unrecoverable', () => {
     expect([403, 404, 409].every(seatRefused)).toBe(true);
     expect([0, 401, 429, 500, 503, undefined].some(seatRefused)).toBe(false);
+  });
+
+  it('a rejoin stops on a decision, rides out an outage (ADR-0166)', () => {
+    expect([403, 404, 409, 410].every(rejoinRefusal)).toBe(true);
+    expect([0, 401, 429, 500, 502, 503, 504, undefined].some(rejoinRefusal)).toBe(false);
   });
 });

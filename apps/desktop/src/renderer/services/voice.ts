@@ -79,7 +79,7 @@ import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
 import { lastSpoke, speakingStarts } from '../lib/lastSpoke';
 import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } from '../lib/voiceLink';
-import { seatAction, seatRefused, type SeatView } from '../lib/voiceSeat';
+import { rejoinRefusal, seatAction, seatRefused, type SeatView } from '../lib/voiceSeat';
 import {
   AUDIO_SETTLE_MS,
   MIC_SETTLE_MS,
@@ -147,13 +147,14 @@ const SEAT_SELF_GRACE_MS = 3000;
  */
 const REMOVED_GRACE_MS = 500;
 /**
- * Rejoin backoff (#255): 1, 2, 4, 8 s, then at most 15 s apart; at least 5 attempts and 90 s — the
- * server's default seat hold after a drop (VOICE_LOST_GRACE 60 s, removed by the next 30 s
- * reconcile, ADR-0150) — before «Не удалось вернуться в голосовую комнату».
+ * Rejoin backoff (#255): 1, 2, 4, 8 s, then at most 15 s apart; at least 5 attempts and 15 min
+ * before «Не удалось вернуться в голосовую комнату» (ADR-0166: a database stall of the server
+ * lasts minutes, and its /join answers 503 meanwhile; past the server's seat hold, ADR-0150, the
+ * rejoin just takes a new seat). A refusal (no access, the room gone or full) ends it at once.
  */
 const REJOIN_MIN_ATTEMPTS = 5;
 const REJOIN_MAX_BACKOFF_MS = 15_000;
-const REJOIN_GIVE_UP_MS = 90_000;
+export const REJOIN_GIVE_UP_MS = 15 * 60_000;
 /** `devicechange` comes in bursts while the OS switches the output: re-bind the elements once it settles (#255). */
 const REBIND_SETTLE_MS = 400;
 /**
@@ -859,6 +860,8 @@ class VoiceEngine {
         return;
       }
       log.error('voice join failed', err);
+      // A decision of the server ends a rejoin cycle; an outage (network, 5xx) does not (ADR-0166).
+      if (quiet && err instanceof ApiError && rejoinRefusal(err.status)) this.rejoinRefused = true;
       const line = describeConnectError(err);
       setLink({ attempts: useVoice.getState().link.attempts + 1, lastError: line });
       // Rejoin attempts (quiet) only log: the reconnect notice already tells the user, and the
@@ -1408,8 +1411,13 @@ class VoiceEngine {
           log.info('voice: page hidden, the native room rejoins when it is back');
           return;
         }
+        this.rejoinRefused = false;
         await this.connect(roomId, wsId, true, undefined, serverMuted);
         if (gen !== this.rejoinGen) return;
+        if (this.refusedRejoin()) {
+          log.info('voice: the server refuses the rejoin (no access / the room is gone), giving up');
+          break;
+        }
         // A Disconnected between room.connect() resolving and here is ignored by its handler
         // (a rejoin is running): a room that is not Connected now is not back — drop it, go on.
         if (this.room && this.room.state !== ConnectionState.Connected && !this.nativeAudio?.connected) {
@@ -1576,6 +1584,12 @@ class VoiceEngine {
 
   /** The room a running rejoin loop is trying to get back into (a move may redirect it). */
   private rejoinRoomId: string | null = null;
+  /** The last quiet connect was refused by the server (403/404/409/410): the rejoin cycle stops. */
+  private rejoinRefused = false;
+  /** Read through a call: connect() sets the flag across awaits. */
+  private refusedRejoin(): boolean {
+    return this.rejoinRefused;
+  }
   /** Ends the rejoin loop's current backoff wait (set only while it waits). */
   private rejoinWake: (() => void) | null = null;
 

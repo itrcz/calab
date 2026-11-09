@@ -28,8 +28,9 @@ import { queryClient } from '../lib/queryClient';
 import { platform } from '../platform';
 import { identityPathWorkspace, identityRoomLocked, markIdentityBoundary, rememberIdentityResources } from '../lib/api/identityGate';
 import { onIdentityDenied } from '../lib/api/client';
-import { accessLocked, billingLocked } from '../features/identity/model';
+import { accessLocked, accessUndecided, billingLocked } from '../features/identity/model';
 import { pruneGatewaySubscriptions } from './gateway';
+import { log } from '../lib/log';
 
 export function withoutKeys<T>(map: Readonly<Record<string, T>>, keys: ReadonlySet<string>): Record<string, T> {
   return Object.fromEntries(Object.entries(map).filter(([id]) => !keys.has(id)));
@@ -37,6 +38,12 @@ export function withoutKeys<T>(map: Readonly<Record<string, T>>, keys: ReadonlyS
 export function applyIdentityAccess(access: WorkspaceIdentityAccess): void {
   const id = access.workspaceId;
   if (!id) return;
+  // The server could not check access (a database stall): no verdict, so nothing is dropped,
+  // locked or left (ADR-0166). The previous status stays; the server settles it when it can.
+  if (accessUndecided(access)) {
+    log.info(`identity: access of ${id} undecided (server dependency), keeping the workspace`);
+    return;
+  }
   const roomIds = Object.values(useRooms.getState().byId)
     .filter((r) => r.workspaceId === id)
     .map((r) => r.id);

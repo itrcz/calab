@@ -26,6 +26,8 @@ export interface SessionState {
   gateway: GatewayStatus;
   /** «Нет соединения с сервером» banner (lib/gateway/banner.ts decides). */
   reconnectBanner: boolean;
+  /** The API answers with outages (network errors, 502/503/504): the same banner (services/serverHealth.ts, ADR-0166). */
+  serverDegraded: boolean;
   /** Gateway READY received at least once for this login. */
   ready: boolean;
   /** Close 4008 before READY: too many active devices. */
@@ -51,6 +53,7 @@ export const useSession = create<SessionState>()((set) => ({
   billingSelfServe: false,
   gateway: 'idle',
   reconnectBanner: false,
+  serverDegraded: false,
   ready: false,
   tooManySessions: false,
   loggedOutReason: null,

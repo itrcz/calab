@@ -11,6 +11,13 @@ export function accessLocked(access: WorkspaceIdentityAccess | undefined, now = 
     (access.reason !== IdentityAccessReason.ALLOWED || (!!access.validUntil && timestampDate(access.validUntil).getTime() <= now))
   );
 }
+/**
+ * The server could not evaluate access (a database stall): not a decision (ADR-0166). Nothing
+ * is dropped or locked for it — the workspace stays on screen as it was, its call goes on.
+ */
+export function accessUndecided(access: WorkspaceIdentityAccess | undefined): boolean {
+  return access?.reason === IdentityAccessReason.DEPENDENCY_UNAVAILABLE;
+}
 /** Closed for unpaid billing (ADR-0080 §8): content is locked, the workspace stays as a stub with the paywall. */
 export function billingLocked(access: WorkspaceIdentityAccess | undefined): boolean {
   return access?.reason === IdentityAccessReason.BILLING_SUSPENDED;

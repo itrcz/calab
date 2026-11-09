@@ -173,7 +173,7 @@ export const en: Dict = {
 
   // gateway
   'gateway.connecting': 'Connecting…',
-  'gateway.reconnecting': 'Lost connection to the server — reconnecting…',
+  'gateway.reconnecting': 'No connection to the server — recovering…',
 
   // shell
   'shell.pickRoom': 'Pick a room on the left',
@@ -406,7 +406,7 @@ export const en: Dict = {
 
   // voice
   'voice.connecting': 'Connecting…',
-  'voice.reconnecting': 'Reconnecting…',
+  'voice.reconnecting': 'Reconnecting to the room…',
   'voice.audioBlocked': "You can't hear the others",
   'voice.audioBlockedAction': 'Turn on sound',
   'voice.micRecovering': 'Waiting for mic',

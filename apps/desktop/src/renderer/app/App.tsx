@@ -51,6 +51,7 @@ declare global {
     __calabaParked?: (p: { roomId: string; workspaceId: string } | null) => void;
     /** Visual tests only: be «in voice» in a room by store state alone, no LiveKit (null = leave; `phase` defaults to connected). */
     __calabaVoiceSeat?: (seat: { roomId: string; workspaceId: string; phase?: 'connected' | 'reconnecting' } | null) => void;
+    __calabaServerDegraded?: (on: boolean) => void;
   }
 }
 
@@ -70,7 +71,10 @@ function useTheme(): void {
     window.__calabaParked = (parked) => setVoice({ parked });
     window.__calabaVoiceSeat = (seat) =>
       setVoice(seat ? { roomId: seat.roomId, workspaceId: seat.workspaceId, phase: seat.phase ?? 'connected', joinedAt: Date.now() } : { roomId: null, workspaceId: null, phase: 'idle', joinedAt: null });
+    // «Нет связи с сервером — восстанавливаем…» (ADR-0166): the API outage indicator.
+    window.__calabaServerDegraded = (on) => useSession.getState().set({ serverDegraded: on });
     return () => {
+      delete window.__calabaServerDegraded;
       delete window.__calabaLogout;
       delete window.__calabaLocale;
       delete window.__calabaParked;

@@ -171,7 +171,7 @@ export const ru = {
 
   // gateway
   'gateway.connecting': 'Подключение…',
-  'gateway.reconnecting': 'Нет соединения с сервером — переподключаемся…',
+  'gateway.reconnecting': 'Нет связи с сервером — восстанавливаем…',
 
   // shell
   'shell.pickRoom': 'Выберите комнату слева',
@@ -405,7 +405,7 @@ export const ru = {
   // voice
   'voice.connecting': 'Подключение…',
   'voice.pendingMember': 'Подключается…',
-  'voice.reconnecting': 'Переподключение…',
+  'voice.reconnecting': 'Переподключаемся к комнате…',
   'voice.audioBlocked': 'Вы не слышите собеседников',
   'voice.audioBlockedAction': 'Включить звук',
   'voice.micRecovering': 'Ждём микрофон',

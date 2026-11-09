@@ -3,6 +3,8 @@ import {
   DispatchEventSchema,
   IdentityAccessReason,
   ReadySchema,
+  RoomSchema,
+  RoomType,
   WorkspaceCreateSchema,
   WorkspaceDeleteSchema,
   WorkspaceIdentityAccessSchema,
@@ -68,7 +70,7 @@ describe('a workspace READY lists as pending (board #145)', () => {
     ready([B], [A]);
     expect(active()).toBe(A);
     expect(useWorkspaces.getState().pending[A]).toBe(A); // under its last known name
-    expect(useWorkspaces.getState().byId[A]).toBeUndefined();
+    expect(useWorkspaces.getState().byId[A]?.ws.name).toBe(A); // still shown, stale (ADR-0166)
     applyDispatch(ev({ case: 'workspaceCreate', value: create(WorkspaceCreateSchema, { snapshot: snap(A) }) }));
     expect(useWorkspaces.getState().pending[A]).toBeUndefined();
     expect(useWorkspaces.getState().byId[A]).toBeDefined();
@@ -121,5 +123,51 @@ describe('a workspace READY lists as pending (board #145)', () => {
     useUi.getState().setWorkspace(B);
     ready([]);
     expect(active()).toBeNull(); // truly no workspace: Welcome
+  });
+});
+
+describe('a database stall is not a decision (ADR-0166)', () => {
+  const room = (id: string, workspaceId: string) => create(RoomSchema, { id, workspaceId, name: id, type: RoomType.VOICE });
+  const withRooms = (id: string, rooms: string[]) => create(WorkspaceSnapshotSchema, { workspace: create(WorkspaceSchema, { id, name: id }), role: WorkspaceRole.MEMBER, rooms: rooms.map((r) => room(r, id)) });
+  const readyWith = (snaps: ReturnType<typeof withRooms>[], pending: string[] = []): void =>
+    applyDispatch(ev({ case: 'ready', value: create(ReadySchema, { sessionId: 'gs', workspaces: snaps, pendingWorkspaceIds: pending }) }));
+
+  it('an undecided access status drops nothing and leaves no call', async () => {
+    const { voice } = await import('./voice');
+    const leave = vi.spyOn(voice, 'leave');
+    leave.mockClear();
+    useRooms.getState().upsertMany([room('r1', A)]);
+    applyDispatch(
+      ev({
+        case: 'workspaceIdentityAccessUpdate',
+        value: { $typeName: 'calaba.v1.WorkspaceIdentityAccessUpdate', sessionId: 'gs', access: create(WorkspaceIdentityAccessSchema, { workspaceId: A, reason: IdentityAccessReason.DEPENDENCY_UNAVAILABLE }) },
+      }),
+    );
+    expect(useWorkspaces.getState().byId[A]).toBeDefined();
+    expect(useRooms.getState().byId.r1).toBeDefined();
+    expect(useIdentity.getState().access[A]).toBeUndefined(); // no lock recorded
+    expect(leave).not.toHaveBeenCalled();
+  });
+
+  it('READY with the workspace pending keeps it on screen with its rooms; its WORKSPACE_CREATE settles it', () => {
+    readyWith([withRooms(A, ['r1', 'r2']), withRooms(B, ['b1'])]);
+    useRooms.getState().setCounts('r1', 3, 1);
+    readyWith([withRooms(B, ['b1'])], [A]);
+    expect(useWorkspaces.getState().byId[A]?.ws.name).toBe(A);
+    expect(useWorkspaces.getState().order).toEqual([A, B]); // its place in the rail
+    expect(useRooms.getState().byId.r1?.workspaceId).toBe(A);
+    expect(useRooms.getState().unread.r1).toBe(3);
+    expect(active()).toBe(A);
+    // Settled: r2 was deleted meanwhile — it goes; r1 stays.
+    applyDispatch(ev({ case: 'workspaceCreate', value: create(WorkspaceCreateSchema, { snapshot: withRooms(A, ['r1']) }) }));
+    expect(useWorkspaces.getState().pending[A]).toBeUndefined();
+    expect(useRooms.getState().byId.r2).toBeUndefined();
+    expect(useRooms.getState().byId.r1).toBeDefined();
+  });
+
+  it('a workspace never shown is pending as before (connecting, no stale copy)', () => {
+    readyWith([withRooms(B, ['b1'])], ['ws-c']);
+    expect(useWorkspaces.getState().byId['ws-c']).toBeUndefined();
+    expect(useWorkspaces.getState().pending['ws-c']).toBe('');
   });
 });

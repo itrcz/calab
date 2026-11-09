@@ -173,7 +173,7 @@ export const zhCN: Dict = {
 
   // gateway
   'gateway.connecting': '连接中…',
-  'gateway.reconnecting': '与服务器的连接已断开——正在重新连接…',
+  'gateway.reconnecting': '无法连接服务器——正在恢复…',
 
   // shell
   'shell.pickRoom': '请在左侧选择一个房间',
@@ -406,7 +406,7 @@ export const zhCN: Dict = {
 
   // voice
   'voice.connecting': '连接中…',
-  'voice.reconnecting': '重新连接中…',
+  'voice.reconnecting': '正在重新连接房间…',
   'voice.audioBlocked': '你听不到其他人',
   'voice.audioBlockedAction': '开启声音',
   'voice.micRecovering': '等待麦克风',

@@ -54,3 +54,12 @@ export function seatAction(v: SeatView): SeatAction {
 export function seatRefused(status: number | undefined): boolean {
   return status === 403 || status === 404 || status === 409;
 }
+
+/**
+ * A rejoin after a lost connection (ADR-0166) stops on a decision of the server — the seat refused
+ * (seatRefused) or the room archived (410) — and keeps trying through an outage: no answer, 5xx
+ * (a database stall answers 503 for minutes), 401 (the token is refreshed meanwhile), 429.
+ */
+export function rejoinRefusal(status: number | undefined): boolean {
+  return seatRefused(status) || status === 410;
+}
