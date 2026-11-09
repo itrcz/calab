@@ -25,3 +25,15 @@ verification, a new App Store Connect build and a pull request on 2026-11-09.
 - No schema/proto change, media behavior change, new user setting or store submission
   for public release. PR and App Store Connect upload are authorized; production web/API
   rollout follows the normal maintainer merge/release workflow.
+
+Review follow-up (PR #320, base efc7fb9aafb69140d902c657c77f74b1b8882dc1):
+- Keep cross-device reads, but coalesce events for one second before any DB work;
+  allow at most four active badge workers and 128 pending users per process.
+- Bound each endpoint transaction/provider call to 750 ms, within the existing
+  three-second user pass. Keep fresh authorization and endpoint locking unchanged.
+- Skip an unchanged count for the same endpoint version using a bounded, five-minute
+  in-memory cache of accepted sends; ordinary APNs alerts update that cache too.
+  Failures never populate it. This is a best-effort optimization, not an unread ledger.
+- Scope: push service, targeted PG17 race tests, ADR/backlog. No mobile changes,
+  schema/proto changes or deployment. Verify bursts, unchanged/failed sends,
+  alert-to-read-to-zero, concurrency and provider deadlines; then update PR and notify reviewer.

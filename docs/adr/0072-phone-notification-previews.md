@@ -207,7 +207,17 @@ workspace rooms. Muting delivery does not change unread state. Counts use existi
 read queries and the endpoint's exact current session policy, clamped to 99,999.
 APNs alerts carry an absolute `aps.badge`; reads on another client enqueue a
 coalesced, best-effort badge-only APNs update, including zero, without sound/banner.
-No new unread ledger, migration, public API, timer or background fetch is added.
+Read events wait one second before any DB work; events during that wait join the
+same pass. A user can start at most one pass per second. Per process, at most four
+workers perform DB/provider work and 128 users wait; overflow is debug-logged and
+left to the next alert/foreground reconciliation. Each endpoint gets a 750 ms
+transaction/provider budget within the existing three-second user pass.
+Unchanged counts for the same endpoint version skip APNs, using a bounded
+4,096-entry, five-minute process-local cache of accepted badge and alert sends.
+Failures are not cached; restart/eviction may cause an extra refresh. This cache
+does not bypass fresh authorization or count calculation, and is not shared across
+server replicas. No unread ledger, migration, public API, periodic polling or
+background fetch is added.
 
 The iOS host advertises optional `notificationsBadgeVersion: 1`. The existing
 origin/main-frame/document/sequence gate accepts only integer counts 0–99,999.
@@ -219,4 +229,6 @@ Rollout requires a new iOS binary plus the shared web/API release. APNs delivery
 is best effort: dropped/reordered notifications or permission changes are
 reconciled on foreground READY or the next alert. Message deletion/permission
 changes without a read event use that same reconciliation, not proactive pushes.
+In the foreground, a delayed APNs badge can briefly overwrite a newer web count;
+the next web count change or foreground return corrects it.
 Simulator and fixture checks do not establish locked physical-device delivery.

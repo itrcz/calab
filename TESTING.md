@@ -2484,7 +2484,7 @@ Expected: the task / board / room / wiki / Disk / meeting opens in the app (anot
 
 1. `hostBadge.test.ts`, `services/badge.test.ts`: bounded count, document handshake, old hosts, READY, foreground and logout.
 2. Mobile suite includes the actual Swift serial writer; zero clears after an in-flight write.
-3. PG17 `TestPushBadge*`: DM + visible mentions, private room exclusion, cross-device reads/zero, endpoint revocation and exact-session step-up/revocation. `TestAPNSAbsoluteBadgeAndSilentClear`: real JSON/headers, no VoIP badge.
+3. PG17 `TestPushBadge*`: DM + visible mentions, private room exclusion, cross-device reads/zero, endpoint revocation and exact-session step-up/revocation; burst coalescing, unchanged accepted counts, failed-send retry, at most four active badge sends and a 750 ms endpoint budget. `TestAPNSAbsoluteBadgeAndSilentClear`: real JSON/headers, no VoIP badge.
 4. iOS Release archive and exported IPA: production APNs, matching version in app/extensions, existing widget/app groups retained.
 5. Device acceptance: allow badges; background app receives two DMs and one mention → 3; read one on desktop → 2, read all → no badge; logout → no badge. Repeat with app killed and with badge permission disabled.
 6. Simulator push only verifies OS payload behavior; APNs acceptance, Focus and locked-device delivery require a physical device. Both native binary and shared web/API rollout are required.
