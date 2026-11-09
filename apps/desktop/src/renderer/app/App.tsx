@@ -6,6 +6,8 @@ import { WikiPublicPage } from '../features/wiki/PublicPage';
 import { wikiPageCode } from '../services/wikiPublic';
 import { CanvasPublicPage } from '../features/canvas/PublicPage';
 import { canvasPageCode } from '../services/canvasPublic';
+import { DiskPublicPage } from '../features/disk/PublicPage';
+import { diskPageCode } from '../services/diskPublic';
 import { OAuthConsent } from '../features/identity/OAuth';
 import { McpConnect } from '../features/mcp/McpConnect';
 import { mcpConnectHandle } from '../features/mcp/model';
@@ -102,6 +104,7 @@ export function App(): ReactNode {
   const formCode = formPageCode();
   const wikiCode = wikiPageCode();
   const canvasCode = canvasPageCode();
+  const diskCode = diskPageCode();
   // A guest's knock on a room (ADR-0040): the waiting screen in place of the app.
   const waiting = useWaiting();
   let screen: ReactNode;
@@ -123,6 +126,8 @@ export function App(): ReactNode {
   else if (wikiCode) screen = <WikiPublicPage code={wikiCode} />;
   // Web /c/<code>: a canvas through its public link, view only, signed in or not (ADR-0127 wave 5).
   else if (canvasCode) screen = <CanvasPublicPage code={canvasCode} />;
+  // Web /d/<code>: a Disk file or folder through its public link, read-only, signed in or not (ADR-0165).
+  else if (diskCode) screen = <DiskPublicPage code={diskCode} />;
   else if (eventPage) screen = <EventPublicPage page={eventPage} />;
   // Web /mail-reset/<token>: the one-time mailbox password of a bot reset (ADR-0101). The
   // check runs once; the page owns its token.

@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Input, Select, Switch } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
+import { isFolder } from '../../lib/disk';
 import { diskApi } from '../../services/disk';
 import { useDisk } from '../../stores/disk';
 import { toast } from '../../stores/toasts';
@@ -12,7 +13,7 @@ const EXPIRY_DAYS = [0, 1, 7, 30] as const;
 type Expiry = (typeof EXPIRY_DAYS)[number];
 
 /**
- * The public link of a file (ADR-0094 §3): the switch «Доступ по ссылке» (anyone with it downloads
+ * The public link of a file (ADR-0094 §3) or a folder (ADR-0165): the switch «Доступ по ссылке» (anyone with it downloads
  * the file without signing in), the address with «Скопировать», the term chosen before switching
  * on (changing it means a new link), the download counter. One body for «Ссылка» (the dialog) and
  * the file card (CBF-20); the caller decides who may see it (the owner or DISK_MANAGE).
@@ -64,7 +65,7 @@ export function LinkPanel({ itemId }: { itemId: string }): ReactNode {
   const until = item.link?.expiresAt ? timestampDate(item.link.expiresAt) : null;
   return (
     <div className="flex flex-col gap-4" data-testid="disk-link">
-      <Switch checked={on} onChange={toggle} label={t('disk.link.on')} hint={t('disk.link.hint')} disabled={busy} />
+      <Switch checked={on} onChange={toggle} label={t('disk.link.on')} hint={t(isFolder(item) ? 'disk.link.hintFolder' : 'disk.link.hint')} disabled={busy} />
       {on ? (
         <>
           <div className="flex items-center gap-2">

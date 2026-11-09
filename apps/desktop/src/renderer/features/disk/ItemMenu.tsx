@@ -1,6 +1,6 @@
 import * as ContextMenu from '../../components/radix/context-menu';
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { Download, Ellipsis, FolderInput, FolderOpen, History, Link2, Pencil, RotateCcw, Send, Trash2, Users } from 'lucide-react';
+import { Download, Ellipsis, FolderInput, FolderOpen, Globe, History, Link2, Pencil, RotateCcw, Send, Trash2, Users } from 'lucide-react';
 import { useState, type ComponentType, type ReactNode } from 'react';
 import { IconButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -17,7 +17,7 @@ import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
  * of a tile / row (Dropdown). Open, Download, Rename (in place), Move…, Access…, Link…, History,
  * To the trash; in the trash — Restore and Delete forever. Entries follow the item's bits
  * (DiskItem.my_bits; the server decides): no WRITE — no rename / move / trash; access and the
- * link — the owner or DISK_MANAGE. The menu body mounts only while open.
+ * public link (files and folders, ADR-0165) — the owner or MANAGE. The menu body mounts only while open.
  */
 interface Parts {
   Item: ComponentType<{ className?: string; onSelect?: (e: Event) => void; disabled?: boolean; children?: ReactNode; 'data-testid'?: string }>;
@@ -71,8 +71,8 @@ function Entries({ id, parts }: { id: string; parts: Parts }): ReactNode {
       <Separator className={menuSeparator} />
       {share ? row(ic(Users), t('disk.access'), () => ui.openDialog({ kind: 'access', itemId: id }), { testId: 'disk-menu-access' }) : null}
       {folder ? row(ic(Link2), t('disk.card.copyLink'), () => copyDiskItemAddress(id, 'disk.folder.linkCopied'), { testId: 'disk-menu-copy-link' }) : null}
-      {!folder && share ? row(ic(Link2), t('disk.link'), () => ui.openDialog({ kind: 'link', itemId: id }), { testId: 'disk-menu-link' }) : null}
-      {!folder && !share && item.link ? row(ic(Link2), t('disk.link.copy'), () => void copyItemLink(id)) : null}
+      {share ? row(ic(Globe), t('disk.link'), () => ui.openDialog({ kind: 'link', itemId: id }), { testId: 'disk-menu-link' }) : null}
+      {!share && item.link ? row(ic(Globe), t(folder ? 'disk.card.copyPublic' : 'disk.link.copy'), () => void copyItemLink(id)) : null}
       {row(ic(History), t('disk.history'), () => ui.openDialog({ kind: 'history', itemId: id }), { testId: 'disk-menu-history' })}
       {write ? <Separator className={menuSeparator} /> : null}
       {write ? row(ic(Trash2), t('disk.toTrash'), () => void trashItems([id]), { danger: true, testId: 'disk-menu-trash' }) : null}

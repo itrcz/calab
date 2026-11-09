@@ -22,25 +22,25 @@ import { AudioAttachment } from '../chat/MediaPlayer';
 
 type Text = { kind: 'loading' } | { kind: 'ready'; text: string } | { kind: 'error' };
 
-/** The file's text; nothing is fetched while `enabled` is false (too large for the viewer). */
-function useFileText(fileId: string, enabled: boolean): Text {
+/** The file's text at API `path`; nothing is fetched while `enabled` is false (too large for the viewer). */
+function useFileText(path: string, enabled: boolean): Text {
   const [state, setState] = useState<{ id: string; v: Text } | null>(null);
   useEffect(() => {
     if (!enabled) return;
     const ac = new AbortController();
     platform
-      .apiFetch(filePath(fileId), { signal: ac.signal })
+      .apiFetch(path, { signal: ac.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
-        if (!ac.signal.aborted) setState({ id: fileId, v: { kind: 'ready', text } });
+        if (!ac.signal.aborted) setState({ id: path, v: { kind: 'ready', text } });
       })
       .catch(() => {
-        if (!ac.signal.aborted) setState({ id: fileId, v: { kind: 'error' } });
+        if (!ac.signal.aborted) setState({ id: path, v: { kind: 'error' } });
       });
     return () => ac.abort();
-  }, [fileId, enabled]);
-  return state?.id === fileId ? state.v : { kind: 'loading' };
+  }, [path, enabled]);
+  return state?.id === path ? state.v : { kind: 'loading' };
 }
 
 // ---------------------------------------------------------------- Markdown
@@ -225,9 +225,10 @@ function CodeView({ text, wrap }: { text: string; wrap: boolean }): ReactNode {
   );
 }
 
-function TextBody({ fileId, size, kind, name }: { fileId: string; size: bigint; kind: TextKind; name: string }): ReactNode {
+/** The read-only text viewer of a file whose bytes are at API `path` (also the public Disk link page, ADR-0165). */
+export function TextBody({ path, size, kind, name }: { path: string; size: bigint; kind: TextKind; name: string }): ReactNode {
   const tooLarge = textTooLarge({ size });
-  const state = useFileText(fileId, !tooLarge);
+  const state = useFileText(path, !tooLarge);
   if (tooLarge) return <Notice testid="disk-view-large">{t('disk.view.tooLarge')}</Notice>;
   if (state.kind === 'loading') {
     return (
@@ -345,7 +346,7 @@ export function DiskViewDialog({ itemId, siblings, onClose }: { itemId: string; 
             <AudioAttachment key={file.id} f={file} messageId={`disk:${id}`} roomId="" label={item.name} className="w-full" />
           </div>
         ) : tk ? (
-          <TextBody key={file.id} fileId={file.id} size={file.size} kind={tk} name={item.name} />
+          <TextBody key={file.id} path={filePath(file.id)} size={file.size} kind={tk} name={item.name} />
         ) : null}
       </div>
     </Modal>

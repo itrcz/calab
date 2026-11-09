@@ -1,7 +1,7 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { DISK_BITS, diskPermissions, WorkspaceRole, type DiskItem } from '@calaba/protocol';
-import { Check, Ellipsis, Gauge, History, Search, Trash2, Users } from 'lucide-react';
+import { Check, Ellipsis, Gauge, History, Link2, Search, Trash2, Users } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Bar, BAR_GROUP } from '../../components/Bar';
@@ -198,6 +198,7 @@ const MoreMenu = memo(function MoreMenu({
               </Dropdown.RadioGroup>
               <Dropdown.Separator className={menuSeparator} />
               {folderId && shareFolder ? item(ic(Users), t('disk.access'), () => ui().openDialog({ kind: 'access', itemId: folderId }), 'disk-open-access') : null}
+              {folderId && shareFolder ? item(ic(Link2), t('disk.link'), () => ui().openDialog({ kind: 'link', itemId: folderId }), 'disk-open-link') : null}
               {item(ic(Trash2), t('disk.trash'), () => openPhoneDisk({ kind: 'disk', folderId: '', trash: true }), 'disk-open-trash')}
               {manage ? item(ic(History), t('disk.diskHistory'), () => ui().openDialog({ kind: 'disk-history', wsId: workspaceId }), 'disk-open-history') : null}
               {item(ic(Gauge), t('disk.usage.title'), () => ui().openDialog({ kind: 'usage', wsId: workspaceId }), 'disk-open-usage')}
