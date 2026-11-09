@@ -105,24 +105,26 @@ export function approvalBadge(t: Approvals): ApprovalBadge {
 
 /**
  * The card / row tag (docs/08 «Доски»): «✓ 3/3» filled green once approved, «2/3» outlined orange
- * while waiting, «✕ 1/3» outlined red after a veto — approvals given of the quorum (capped by it
+ * while waiting (outlined green, no fill, once the viewer has voted «за»), «✕ 1/3» outlined red after a veto — approvals given of the quorum (capped by it
  * once approved). Encoded as a primitive ("kind:n:m", "" = no tag) so a card's selector re-renders
  * the tag only when it changes.
  */
 export type ApprovalTagKind = 'approved' | 'pending' | 'rejected';
 
-export function approvalTagKey(t: Approvals | undefined): string {
+export function approvalTagKey(t: Approvals | undefined, me?: string): string {
   const b = t ? approvalBadge(t) : null;
   if (!t || !b) return '';
   const m = quorumOf(t);
   const n = Math.min(approvedCount(t), m);
-  return `${b.kind}:${n}:${m}`;
+  // 4th segment: the viewer is an approver who already voted «за» on a pending task (green outline).
+  const mine = b.kind === 'pending' && !!me && t.approvers.some((a) => a.userId === me && a.state === ApproverState.APPROVED);
+  return mine ? `pending:${n}:${m}:me` : `${b.kind}:${n}:${m}`;
 }
 
-export function parseApprovalTag(key: string): { kind: ApprovalTagKind; n: number; m: number } | null {
-  const [kind, n, m] = key.split(':');
+export function parseApprovalTag(key: string): { kind: ApprovalTagKind; n: number; m: number; mine: boolean } | null {
+  const [kind, n, m, me] = key.split(':');
   if (kind !== 'approved' && kind !== 'pending' && kind !== 'rejected') return null;
-  return { kind, n: Number(n), m: Number(m) };
+  return { kind, n: Number(n), m: Number(m), mine: kind === 'pending' && me === 'me' };
 }
 
 /** Edits of the approver list: toggle (≤ 10), the quorum kept valid (≤ the number of approvers). */

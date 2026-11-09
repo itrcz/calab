@@ -4606,6 +4606,13 @@ test('boards-kanban', async ({ open, win, mock, shot }) => {
   await expectAssigneeStacks(win);
   await checkpoint(shot, 'boards-kanban-assignees', { axe: false });
 
+  // CBF-167: I am an approver of CAL-6 and have voted «за» (1/2): the tag is outlined green, no fill, no ✓.
+  const reviewTag = win.getByTestId('task-card').filter({ hasText: 'Ревью: права досок' }).getByTestId('approval-badge');
+  await reviewTag.scrollIntoViewIfNeeded();
+  await expect(reviewTag).toHaveAttribute('data-mine', 'approved');
+  await expect(reviewTag).toHaveText('1/2');
+  await checkpoint(shot, 'boards-approval-tag-mine', { axe: false });
+
   // Status picker on a task waiting for approval: the statuses it may not reach carry a second
   // line («нужно согласование»); one-line and two-line rows keep the same padding and rhythm.
   await win.getByTestId('task-card').filter({ hasText: 'Ревью: права досок' }).getByTestId('card-status').click();

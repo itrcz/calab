@@ -171,8 +171,22 @@ describe('approvalTagKey (the card / row tag)', () => {
     const A = ApproverState.APPROVED;
     expect(approvalTagKey(task(TaskApprovalState.APPROVED, { approvers: three(A, A, A), approvalRequired: 2 }))).toBe('approved:2:2');
   });
+  it('mine: only a pending task with my «за» vote gets the :me segment', () => {
+    const A = ApproverState.APPROVED;
+    const P = ApproverState.PENDING;
+    const R = ApproverState.REJECTED;
+    const pend = task(TaskApprovalState.PENDING, { approvers: three(A, P, P) });
+    expect(approvalTagKey(pend, 'a')).toBe('pending:1:3:me');
+    expect(approvalTagKey(pend, 'b')).toBe('pending:1:3'); // approver without a vote
+    expect(approvalTagKey(pend, 'zzz')).toBe('pending:1:3'); // not an approver
+    expect(approvalTagKey(pend)).toBe('pending:1:3');
+    expect(approvalTagKey(task(TaskApprovalState.APPROVED, { approvers: three(A, A, A) }), 'a')).toBe('approved:3:3');
+    expect(approvalTagKey(task(TaskApprovalState.REJECTED, { approvers: three(A, P, R) }), 'a')).toBe('rejected:1:3');
+    expect(approvalTagKey(task(TaskApprovalState.PENDING, { approvers: three(P, A, P) }), 'a')).toBe('pending:1:3');
+  });
   it('parses back', () => {
-    expect(parseApprovalTag('pending:2:3')).toEqual({ kind: 'pending', n: 2, m: 3 });
+    expect(parseApprovalTag('pending:2:3')).toEqual({ kind: 'pending', n: 2, m: 3, mine: false });
+    expect(parseApprovalTag('pending:1:3:me')).toEqual({ kind: 'pending', n: 1, m: 3, mine: true });
     expect(parseApprovalTag('')).toBeNull();
   });
 });
