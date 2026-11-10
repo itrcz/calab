@@ -19,15 +19,15 @@
     "test:docs": "vitest run"
   },
   "dependencies": {
-    "lucide-react": "^1.59.0",
-    "next": "15.5.28",
+    "lucide-react": "^1.70.0",
+    "next": "15.5.29",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@next/eslint-plugin-next": "16.4.2",
-    "@tailwindcss/postcss": "^4.3.3",
+    "@next/eslint-plugin-next": "16.4.5",
+    "@tailwindcss/postcss": "^4.3.5",
     "@types/hast": "^3.0.5",
     "@types/mdast": "^4.0.4",
     "@types/node": "^22.0.0",
@@ -45,14 +45,14 @@
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
     "sharp": "^0.35.5",
-    "shiki": "^4.5.0",
-    "tailwindcss": "^4.3.3",
+    "shiki": "^4.6.0",
+    "tailwindcss": "^4.3.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.0",
-    "typescript-eslint": "~8.70.1",
+    "typescript-eslint": "~8.72.1",
     "unified": "^11.0.5",
-    "unist-util-visit": "^5.1.0",
-    "vitest": "^5.0.4",
+    "unist-util-visit": "^5.2.0",
+    "vitest": "^5.1.0",
     "yaml": "^2.9.1"
   }
 }
