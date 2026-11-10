@@ -582,6 +582,8 @@ export const ru = {
   'app.onCloseHint': 'Свёрнутый Calab остаётся в голосе и слышит push-to-talk',
   'app.onCloseTray': 'Сворачивать в трей',
   'app.onCloseQuit': 'Выходить',
+  'app.monoTray': 'Монохромная иконка в трее',
+  'app.monoTrayHint': 'Белая или чёрная — по теме панели задач Windows',
   'app.devStats': 'Статистика звука и видео',
   'app.devStatsHint': 'Битрейты, кодеки и нагрузка — в панели голоса',
 

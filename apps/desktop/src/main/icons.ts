@@ -1,5 +1,6 @@
 import { join } from 'node:path';
-import { app, nativeImage, type NativeImage } from 'electron';
+import { app, nativeImage, nativeTheme, type NativeImage } from 'electron';
+import { trayIconFile } from '../shared/trayIconFile';
 
 /**
  * Runtime icons (owner artwork, apps/desktop/build/icons — scripts/gen-icons.sh).
@@ -10,11 +11,17 @@ function iconsDir(): string {
   return app.isPackaged ? join(process.resourcesPath, 'icons') : join(app.getAppPath(), 'build', 'icons');
 }
 
-/** macOS: monochrome template (menu bar recolours it); elsewhere the colour icon. @2x/@4x are picked up automatically. */
-export function trayImage(): NativeImage {
-  const mac = process.platform === 'darwin';
-  const img = nativeImage.createFromPath(join(iconsDir(), 'tray', mac ? 'trayTemplate.png' : 'tray.png'));
-  if (mac) img.setTemplateImage(true);
+/**
+ * macOS: monochrome template (menu bar recolours it); Windows with «Монохромная иконка в трее»:
+ * a white/black glyph by the taskbar theme; elsewhere the colour icon. @2x/@4x (and Windows
+ * @1.25x/@1.5x/@3x) siblings are picked up automatically.
+ */
+export function trayImage(mono: boolean): NativeImage {
+  const platform = process.platform;
+  // The taskbar theme, not the app's (`shouldUseDarkColors` follows the app theme); win32/darwin only.
+  const systemDark = platform === 'win32' ? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI : nativeTheme.shouldUseDarkColors;
+  const img = nativeImage.createFromPath(join(iconsDir(), 'tray', trayIconFile({ platform, mono, systemDark })));
+  if (platform === 'darwin') img.setTemplateImage(true);
   return img;
 }
 

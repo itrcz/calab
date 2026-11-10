@@ -51,7 +51,7 @@ import { decodeImageNative } from './imageDecode';
 import { cancelCapture, captureNext, pttStatus, setBinding } from './ptt';
 import { getSettings, updateSettings } from './settings';
 import { parseMainStrings, setMainStrings } from './strings';
-import { setTrayBadge, setTrayState } from './tray';
+import { refreshTrayIcon, setTrayBadge, setTrayState } from './tray';
 import { setMenuState } from './appMenu';
 import { parseMenuState } from '../shared/menu';
 import { checkForUpdates, downloadUpdate, installUpdate, updateChannelChanged, updateSettingsChanged, updatesNudge, updateStatus } from './updater';
@@ -145,6 +145,7 @@ function parseSettings(v: unknown): Partial<AppSettings> {
     out.updateChannel = r['updateChannel'];
   }
   if (r['closeToTray'] !== undefined) out.closeToTray = Boolean(r['closeToTray']);
+  if (r['monoTrayIcon'] !== undefined) out.monoTrayIcon = Boolean(r['monoTrayIcon']);
   return out;
 }
 
@@ -259,6 +260,7 @@ export function registerIpc(): void {
     const next = updateSettings(patch);
     if (patch.autoUpdate !== undefined || patch.autoCheckUpdates !== undefined) updateSettingsChanged();
     if (channelChanged) updateChannelChanged();
+    if (patch.monoTrayIcon !== undefined) refreshTrayIcon();
     reloadIfServerChanged();
     return next;
   });

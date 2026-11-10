@@ -339,6 +339,11 @@ export interface AppSettings {
    * false — quit (asks during a call). macOS ignores it: the close button always hides (docs/09 #31).
    */
   closeToTray: boolean;
+  /**
+   * Windows «Монохромная иконка в трее» (default off): a white / black glyph that follows the
+   * system taskbar theme instead of the colour icon. Ignored on macOS (template icon) and Linux.
+   */
+  monoTrayIcon: boolean;
   /** Main-owned: the one-time «Calab продолжает работать в трее» was shown. Not settable by the renderer. */
   trayHintShown: boolean;
 }

@@ -1,6 +1,7 @@
-import { app, Menu, Tray } from 'electron';
+import { app, Menu, nativeTheme, Tray } from 'electron';
 import { IPC, type TrayAction, type TrayState } from '../shared/ipc';
 import { trayImage } from './icons';
+import { getSettings } from './settings';
 import { mainStrings, onMainStrings } from './strings';
 import { getMainWindow, showMainWindow } from './windows';
 
@@ -42,12 +43,19 @@ function rebuild(): void {
 
 export function createTray(): void {
   if (tray) return;
-  tray = new Tray(trayImage());
+  tray = new Tray(trayImage(getSettings().monoTrayIcon));
+  // The Windows taskbar light/dark switch is followed live (only the mono icon depends on it).
+  if (process.platform === 'win32') nativeTheme.on('updated', refreshTrayIcon);
   tray.on('click', () => {
     if (process.platform !== 'darwin') showMainWindow();
   });
   rebuild();
   onMainStrings(rebuild);
+}
+
+/** Re-pick the icon: the «Монохромная иконка в трее» setting or the system theme changed. */
+export function refreshTrayIcon(): void {
+  if (tray) tray.setImage(trayImage(getSettings().monoTrayIcon));
 }
 
 /** Update status → the «Перезапустить для обновления X» item (main/updater.ts). */

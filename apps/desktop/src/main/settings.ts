@@ -27,6 +27,7 @@ const DEFAULTS = (): AppSettings => ({
   // Installs from before 3.1.3 have no key: they get GitHub too (owner 12.10).
   updateChannel: DEFAULT_UPDATE_CHANNEL,
   closeToTray: true,
+  monoTrayIcon: false,
   trayHintShown: false,
 });
 

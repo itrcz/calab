@@ -56,6 +56,16 @@ rsvg-convert -w 16 -h 16 "$SRC/icon_other.svg" -o "$OUT/tray/tray.png"
 rsvg-convert -w 32 -h 32 "$SRC/icon_other.svg" -o "$OUT/tray/tray@2x.png"
 rsvg-convert -w 64 -h 64 "$SRC/icon_other.svg" -o "$OUT/tray/tray@4x.png"
 
+# --- Tray, Windows monochrome (setting «Монохромная иконка в трее», CBF-171): the same glyph in
+# white (dark taskbar) and black (light taskbar); 16/20/24/32/48 px = 100/125/150/200/300 % DPI.
+for c in White:#ffffff Black:#000000; do
+  name=${c%%:*}; hex=${c#*:}
+  sed "s/fill=\"[^\"]*\"/fill=\"$hex\"/g; s/stroke=\"[^\"]*\"/stroke=\"$hex\"/g" "$SRC/fav.svg" > "$TMP/tray-mono.svg"
+  for e in 16: 20:@1.25x 24:@1.5x 32:@2x 48:@3x; do
+    rsvg-convert -w "${e%%:*}" -h "${e%%:*}" "$TMP/tray-mono.svg" -o "$OUT/tray/trayMono$name${e#*:}.png"
+  done
+done
+
 # --- Web: favicon + touch icons.
 mkdir -p "$OUT/web"
 cp "$SRC/fav.svg" "$OUT/web/favicon.svg"

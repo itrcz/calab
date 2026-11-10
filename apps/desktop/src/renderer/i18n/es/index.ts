@@ -588,6 +588,8 @@ export const es: Dict = {
   'app.onCloseHint': 'Calab minimizado sigue en la voz y atiende el push-to-talk',
   'app.onCloseTray': 'Minimizar a la bandeja',
   'app.onCloseQuit': 'Salir',
+  'app.monoTray': 'Icono monocromo en la bandeja',
+  'app.monoTrayHint': 'Blanco o negro, según el tema de la barra de tareas de Windows',
   'app.devStats': 'Estadísticas de audio y video',
   'app.devStatsHint': 'Tasas de bits, códecs y carga — en el panel de voz',
 

@@ -463,7 +463,7 @@ function info(): AppInfo {
   };
 }
 
-const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', updateChannel: 'github', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, trayHintShown: false });
+const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', updateChannel: 'github', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, monoTrayIcon: false, trayHintShown: false });
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>

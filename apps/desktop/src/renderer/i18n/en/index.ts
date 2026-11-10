@@ -588,6 +588,8 @@ export const en: Dict = {
   'app.onCloseHint': 'Minimized Calab stays in voice and keeps listening for push-to-talk',
   'app.onCloseTray': 'Minimize to tray',
   'app.onCloseQuit': 'Quit',
+  'app.monoTray': 'Monochrome tray icon',
+  'app.monoTrayHint': 'White or black, following the Windows taskbar theme',
   'app.devStats': 'Audio and video stats',
   'app.devStatsHint': 'Bitrates, codecs and load — in the voice panel',
 
