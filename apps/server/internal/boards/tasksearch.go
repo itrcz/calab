@@ -409,14 +409,18 @@ func (s *Service) snippets(ctx context.Context, rows []taskRow, rooms []uuid.UUI
 		ids[i] = t.ID
 	}
 	var a Args
-	tsq := a.Add(pq.TS)
+	// Title and description: folded like SearchMatch («е» = «ё», CBF-169); the headline is over
+	// the original text — its russian config folds ё itself, so «федоров» marks «Фёдоров».
+	// Comments: the message match as commentRooms found them (the query as typed).
+	tsq, msq := a.Add(pq.Folded().TS), a.Add(pq.TS)
 	opts := a.Add(searchq.HeadlineOptions)
-	inDesc := "to_tsvector('simple', t.description) @@ to_tsquery('simple', " + tsq + "::text)"
-	comment := "(SELECT " + searchq.Headline("m.content", tsq, opts) + " FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL AND " +
-		searchq.MessageMatch(tsq) + " ORDER BY m.id DESC LIMIT 1)"
+	inDesc := "to_tsvector('simple', " + searchq.FoldSQL("t.description") + ") @@ to_tsquery('simple', " + tsq + "::text)"
+	comment := "(SELECT " + searchq.Headline("m.content", msq, opts) + " FROM messages m WHERE m.room_id = t.room_id AND m.deleted_at IS NULL AND " +
+		searchq.MessageMatch(msq) + " ORDER BY m.id DESC LIMIT 1)"
 	sql := "SELECT t.id, CASE WHEN " + inDesc + " THEN " + searchq.Headline("t.description", tsq, opts) + " END, " +
 		"CASE WHEN NOT " + inDesc + " AND t.room_id = ANY(" + a.Add(rooms) + "::uuid[]) THEN " + comment + " END " +
-		"FROM tasks t WHERE t.id = ANY(" + a.Add(ids) + "::uuid[]) AND NOT to_tsvector('simple', t.title) @@ to_tsquery('simple', " + tsq + "::text)"
+		"FROM tasks t WHERE t.id = ANY(" + a.Add(ids) + "::uuid[]) AND NOT to_tsvector('simple', " + searchq.FoldSQL("t.title") +
+		") @@ to_tsquery('simple', " + tsq + "::text)"
 	type row struct {
 		id            uuid.UUID
 		desc, comment *string

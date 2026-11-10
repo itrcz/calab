@@ -190,8 +190,8 @@ WHERE u.id <> $1 AND NOT u.is_guest AND u.disabled_at IS NULL
     SELECT 1 FROM workspace_members a
     JOIN workspace_members b ON b.workspace_id = a.workspace_id AND b.user_id = u.id AND b.role <> 'guest'
     WHERE a.user_id = $1 AND a.role <> 'guest'
-      AND ($2::text = '' OR u.display_name ILIKE '%' || $2::text || '%'
-           OR b.nickname ILIKE '%' || $2::text || '%')
+      AND ($2::text = '' OR translate(u.display_name, 'Ёё', 'Ее') ILIKE '%' || $2::text || '%'
+           OR translate(b.nickname, 'Ёё', 'Ее') ILIKE '%' || $2::text || '%')
   )
 ORDER BY lower(u.display_name), u.id
 LIMIT $3
@@ -205,7 +205,8 @@ type ListDMCandidatesParams struct {
 
 // Users the caller may start a DM with: full members of a workspace the caller is a full
 // member of; not guest accounts, not disabled, not the caller. q matches the display name
-// or a workspace nickname (case-insensitive substring; ” = everyone).
+// or a workspace nickname (case-insensitive substring, «ё» = «е»: q comes folded, searchq.Fold;
+// ” = everyone).
 func (q *Queries) ListDMCandidates(ctx context.Context, arg ListDMCandidatesParams) ([]User, error) {
 	rows, err := q.db.Query(ctx, listDMCandidates, arg.UserID, arg.Q, arg.Lim)
 	if err != nil {

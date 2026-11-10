@@ -23,6 +23,7 @@ import (
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
+	"github.com/calaba/calaba/server/internal/searchq"
 )
 
 // Limits.
@@ -324,8 +325,8 @@ func (h *Handlers) candidates(w http.ResponseWriter, r *http.Request) error {
 	if utf8.RuneCountInString(raw) > maxQuery {
 		return httpx.Validation("q", "query must be at most 64 characters")
 	}
-	// LIKE wildcards in the query are literal text.
-	q := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(raw)
+	// LIKE wildcards in the query are literal text; «ё» = «е» (CBF-169, the query side of the fold).
+	q := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(searchq.Fold(raw))
 	me := uid(r)
 	readable, all, err := readableWorkspaces(r.Context(), h.db.Q, me)
 	if err != nil {

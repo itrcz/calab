@@ -281,7 +281,7 @@ func (s *Service) tasks(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 	if rel {
 		score = "(CASE WHEN t.key_match THEN 10 ELSE 0 END + " + rank() + " * " + fresh("t.updated_at", a.Add(req.now)) + ")::float8"
 	}
-	tsq := a.Add(req.q.TS)
+	tsq := a.Add(req.fq.TS)
 	sql := "SELECT p.id, p.board_id, p.key, p.number, p.title, p.created_by, p.updated_at, p.workspace_id, st.type, p.key_match, p.score, p.total, " +
 		searchq.Headline("coalesce(nullif(p.description, ''), p.title)", tsq, a.Add(searchq.HeadlineOptions)) +
 		" FROM (" + ranked(cands, first, "t", score, rel, req, &a) + ") p JOIN board_statuses st ON st.id = p.status_id" + order(rel, "p")
@@ -339,12 +339,12 @@ func (s *Service) events(ctx context.Context, tx pgx.Tx, req *request, sc *scope
 		return nil
 	}
 	rel := req.relevance(sec.Type)
-	tsq := a.Add(req.q.TS) + "::text"
+	tsq := a.Add(req.fq.TS) + "::text"
 	cands := "SELECT e.id, e.workspace_id, e.title, e.description, e.updated_at FROM events e WHERE e.cancelled_at IS NULL AND " + orJoin(vis) +
-		" AND (" + eventVector + " @@ " + searchq.TSQuery(tsq) + " OR " + searchq.TitleMatch("e.title", req.q, a.Add) + ")" + newer("e.id", rel, req, &a)
+		" AND (" + eventVector + " @@ " + searchq.TSQuery(tsq) + " OR " + searchq.TitleMatch("e.title", req.fq, a.Add) + ")" + newer("e.id", rel, req, &a)
 	score := ""
 	if rel {
-		score = "((greatest(ts_rank_cd(" + eventVector + ", " + searchq.TSQuery(tsq) + "), word_similarity(" + a.Add(req.q.Text) + "::text, e.title))) * " +
+		score = "((greatest(ts_rank_cd(" + eventVector + ", " + searchq.TSQuery(tsq) + "), word_similarity(" + a.Add(req.fq.Text) + "::text, " + searchq.FoldSQL("e.title") + "))) * " +
 			fresh("e.updated_at", a.Add(req.now)) + ")::float8"
 	}
 	sql := "SELECT p.id, p.workspace_id, p.score, p.total, " + searchq.Headline("coalesce(nullif(p.description, ''), p.title)", tsq, a.Add(searchq.HeadlineOptions)) +
@@ -433,11 +433,12 @@ func (s *Service) files(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 	cands := "SELECT f.id, f.name, f.mime, f.size, f.created_at, mm.id AS message_id, mm.room_id, mm.author_id FROM files f" +
 		" CROSS JOIN LATERAL (SELECT m.id, m.room_id, m.author_id FROM message_attachments ma JOIN messages m ON m.id = ma.message_id" +
 		" WHERE ma.file_id = f.id AND m.deleted_at IS NULL AND " + orJoin(parts) + " ORDER BY m.id DESC LIMIT 1) mm" +
-		" WHERE " + wsCond + " AND " + searchq.TitleMatch("f.name", req.q, a.Add) + newer("f.id", rel, req, &a)
+		" WHERE " + wsCond + " AND " + searchq.TitleMatch("f.name", req.fq, a.Add) + newer("f.id", rel, req, &a)
 	score := ""
 	if rel {
-		score = "((CASE WHEN f.name ILIKE " + a.Add(searchq.Like(req.q.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.q.Text) +
-			"::text, f.name) END) * " + fresh("f.created_at", a.Add(req.now)) + ")::float8"
+		fname := searchq.FoldSQL("f.name")
+		score = "((CASE WHEN " + fname + " ILIKE " + a.Add(searchq.Like(req.fq.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.fq.Text) +
+			"::text, " + fname + ") END) * " + fresh("f.created_at", a.Add(req.now)) + ")::float8"
 	}
 	sql := "SELECT p.id, p.name, p.mime, p.size, p.created_at, p.message_id, p.room_id, p.author_id, p.score, p.total, r.workspace_id FROM (" +
 		ranked(cands, "f.id DESC", "f", score, rel, req, &a) + ") p LEFT JOIN rooms r ON r.id = p.room_id" + order(rel, "p")
@@ -466,7 +467,7 @@ func (s *Service) files(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 		total(req, sec, list[0].total)
 	}
 	for _, x := range page(req, sec, list, func(x row) (float64, uuid.UUID) { return x.score, x.id }) {
-		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: markWords(x.name, req.q.Words), Title: x.name, WorkspaceId: str(x.ws), At: ts(x.at),
+		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: markWords(x.name, req.fq.Words), Title: x.name, WorkspaceId: str(x.ws), At: ts(x.at),
 			AuthorId: x.author.String(), Ref: &v1.SearchHit_File{File: &v1.SearchFileRef{FileId: x.id.String(), MessageId: x.msg.String(),
 				RoomId: x.room.String(), Mime: x.mime, Size: x.size}}})
 	}
@@ -474,16 +475,18 @@ func (s *Service) files(ctx context.Context, tx pgx.Tx, req *request, sc *scope,
 }
 
 // markWords wraps the case-insensitive occurrences of words in s with the highlight markers
-// (file names: trigram matches have no ts_headline).
+// (file names: trigram matches have no ts_headline); «е» and «ё» alike (CBF-169).
 func markWords(s string, words []string) string {
 	s = strings.NewReplacer(searchq.MarkStart, "", searchq.MarkStop, "").Replace(s)
 	rs := []rune(s)
-	lower := []rune(strings.ToLower(s))
+	// Words and name are compared folded; Fold keeps the length in runes.
+	lower := []rune(searchq.Fold(strings.ToLower(s)))
 	if len(lower) != len(rs) { // a case mapping changed the length: no highlight
 		return s
 	}
 	mark := make([]bool, len(rs))
 	for _, w := range words {
+		w = searchq.Fold(w)
 		wr := []rune(w)
 		if len(wr) == 0 {
 			continue
@@ -601,7 +604,7 @@ func (s *Service) wiki(ctx context.Context, tx pgx.Tx, req *request, sc *scope, 
 		members[sp.id] = sp.m
 	}
 	q := s.db.Q.WithTx(tx)
-	rows, err := q.SearchWikiPages(ctx, sqlc.SearchWikiPagesParams{Tsq: req.q.TS, Words: req.q.Text, Phrase: searchq.Like(req.q.Text),
+	rows, err := q.SearchWikiPages(ctx, sqlc.SearchWikiPagesParams{Tsq: req.fq.TS, Words: req.fq.Text, Phrase: searchq.Like(req.fq.Text),
 		Now: req.now, WorkspaceIds: sc.workspaceIDs(), Lim: candidateCap})
 	if err != nil || len(rows) == 0 {
 		return err
@@ -647,7 +650,7 @@ func (s *Service) wiki(ctx context.Context, tx pgx.Tx, req *request, sc *scope, 
 	for i, r := range list {
 		pageIDs[i] = r.ID
 	}
-	heads, err := q.WikiSearchHeadlines(ctx, sqlc.WikiSearchHeadlinesParams{Tsq: req.q.TS, Options: searchq.HeadlineOptions, Ids: pageIDs})
+	heads, err := q.WikiSearchHeadlines(ctx, sqlc.WikiSearchHeadlinesParams{Tsq: req.fq.TS, Options: searchq.HeadlineOptions, Ids: pageIDs})
 	if err != nil {
 		return err
 	}
@@ -702,7 +705,7 @@ type diskRow struct {
 
 // disk is the section of Disk folders and files (ADR-0094): live items of the caller's
 // workspaces whose name matches like a file name (trigram / substring per word, over
-// disk_items_name_trgm_idx), ranked like files (whole phrase in the name, else word similarity,
+// disk_items_name_fold_trgm_idx), ranked like files (whole phrase in the name, else word similarity,
 // × freshness of updated_at) or newest first (id: uuidv7, creation). The access filter is the
 // Disk rule itself (perm.ComputeDiskItemIn over the candidates' chains, diskacl): an item the
 // caller has no DISK_VIEW on — another member's private folder and everything in it — is never
@@ -719,14 +722,15 @@ func (s *Service) disk(ctx context.Context, tx pgx.Tx, req *request, sc *scope, 
 	var a boards.Args
 	score, first := "0::float8", "di.id DESC"
 	if rel {
-		score = "((CASE WHEN di.name ILIKE " + a.Add(searchq.Like(req.q.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.q.Text) +
-			"::text, di.name) END) * " + fresh("di.updated_at", a.Add(req.now)) + ")::float8"
+		dname := searchq.FoldSQL("di.name")
+		score = "((CASE WHEN " + dname + " ILIKE " + a.Add(searchq.Like(req.fq.Text)) + "::text THEN 1.0 ELSE word_similarity(" + a.Add(req.fq.Text) +
+			"::text, " + dname + ") END) * " + fresh("di.updated_at", a.Add(req.now)) + ")::float8"
 		first = "score DESC, di.id DESC"
 	}
 	sql := "SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, coalesce(f.mime, ''), coalesce(f.size, 0)::bigint, di.updated_at, " +
 		score + " AS score FROM disk_items di LEFT JOIN files f ON f.id = di.file_id" +
 		" WHERE di.workspace_id = ANY(" + a.Add(sc.workspaceIDs()) + "::uuid[]) AND di.trashed_at IS NULL AND " +
-		searchq.TitleMatch("di.name", req.q, a.Add) + newer("di.id", rel, req, &a) +
+		searchq.TitleMatch("di.name", req.fq, a.Add) + newer("di.id", rel, req, &a) +
 		" ORDER BY " + first + " LIMIT " + strconv.Itoa(candidateCap)
 	rows, err := tx.Query(ctx, sql, a.Values()...)
 	if err != nil {
@@ -773,7 +777,7 @@ func (s *Service) disk(ctx context.Context, tx pgx.Tx, req *request, sc *scope, 
 		if x.file != nil {
 			ref.FileId, ref.Mime, ref.Size = x.file.String(), x.mime, x.size
 		}
-		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: markWords(x.name, req.q.Words), Title: x.name, WorkspaceId: x.ws.String(),
+		sec.Items = append(sec.Items, &v1.SearchHit{Snippet: markWords(x.name, req.fq.Words), Title: x.name, WorkspaceId: x.ws.String(),
 			At: ts(x.at), AuthorId: str(x.owner), Ref: &v1.SearchHit_Disk{Disk: ref}})
 	}
 	return nil

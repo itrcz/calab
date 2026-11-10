@@ -1845,14 +1845,14 @@ SELECT w.id, w.workspace_id, w.parent_id, w.title, w.icon, w.updated_at, w.updat
     ((greatest(
         ts_rank_cd(to_tsvector('russian', w.title || ' ' || w.plain_text) || to_tsvector('simple', w.title || ' ' || w.plain_text),
                    to_tsquery('russian', $1::text) || to_tsquery('simple', $1::text)),
-        word_similarity($2::text, w.title)))
+        word_similarity($2::text, translate(w.title, 'Ёё', 'Ее'))))
      * (1.0 / (1.0 + greatest(0, extract(epoch FROM ($3::timestamptz - w.updated_at)))::float8 / 2592000.0)))::float8 AS score
 FROM wiki_pages w
 WHERE w.workspace_id = ANY($4::uuid[]) AND w.trashed_at IS NULL
   AND ((to_tsvector('russian', w.title || ' ' || w.plain_text) || to_tsvector('simple', w.title || ' ' || w.plain_text))
           @@ (to_tsquery('russian', $1::text) || to_tsquery('simple', $1::text))
-       OR $2::text <% w.title
-       OR w.title ILIKE $5::text)
+       OR $2::text <% translate(w.title, 'Ёё', 'Ее')
+       OR translate(w.title, 'Ёё', 'Ее') ILIKE $5::text)
 ORDER BY score DESC, w.id DESC
 LIMIT $6
 `
@@ -1881,7 +1881,8 @@ type SearchWikiPagesRow struct {
 // Search candidates (ADR-0096 §7, the shape of the ADR-0062 sections): live pages of the given
 // workspaces matching the full-text query (tsq: searchq.Query.TS, over wiki_pages_search_idx;
 // the expression is search.WikiVector) or, by title, the words with typos or as substrings
-// (words: searchq.Query.Text, phrase: searchq.Like(Query.Text) — the phrase as a whole, unlike
+// (words: searchq.Query.Text, phrase: searchq.Like(Query.Text) of the Folded query — «ё» = «е», CBF-169,
+// over wiki_pages_title_fold_trgm_idx; the phrase as a whole, unlike
 // the per-word searchq.TitleMatch, so that both arms of the OR stay on their GIN indexes and the
 // planner can BitmapOr them instead of computing tsvectors row by row). Ranked by greatest(ts_rank_cd, word_similarity) × freshness
 // 1 / (1 + days / 30) of updated_at at now, then id; at most lim (the candidate cap). The access

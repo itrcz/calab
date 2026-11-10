@@ -109,13 +109,42 @@ func Like(s string) string {
 	return "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s) + "%"
 }
 
+// Fold makes «ё» and «е» one letter (CBF-169): ё → е, Ё → Е. It keeps the length in runes, so
+// positions in a folded text are positions in the original. Stored text is never folded — only
+// index expressions (FoldSQL) and queries are.
+func Fold(s string) string {
+	if !strings.ContainsAny(s, "ёЁ") {
+		return s
+	}
+	return foldReplacer.Replace(s)
+}
+
+var foldReplacer = strings.NewReplacer("ё", "е", "Ё", "Е")
+
+// FoldSQL is Fold of a text expression in SQL; an index serving a folded match must be built
+// over exactly this expression (migration 00152).
+func FoldSQL(expr string) string { return "translate(" + expr + ", 'Ёё', 'Ее')" }
+
+// Folded is q with every word folded (Fold): the query side of the short-field and task matches,
+// whose indexes are over FoldSQL. Messages keep the query as typed (their russian vector
+// folds ё itself).
+func (q Query) Folded() Query {
+	out := Query{TS: Fold(q.TS), Text: Fold(q.Text), Words: make([]string, len(q.Words))}
+	for i, w := range q.Words {
+		out.Words[i] = Fold(w)
+	}
+	return out
+}
+
 // TitleMatch matches a short text column col with typos and inside words: every positive word
 // of q is in col as a substring or with a typo (pg_trgm word similarity ≥
-// pg_trgm.word_similarity_threshold). Both forms use a gin_trgm_ops index on col; add appends a
-// parameter and returns its placeholder.
+// pg_trgm.word_similarity_threshold), «е» and «ё» alike (both sides folded). Both forms use a
+// gin_trgm_ops index on FoldSQL(col); add appends a parameter and returns its placeholder.
 func TitleMatch(col string, q Query, add func(any) string) string {
+	col = FoldSQL(col)
 	parts := make([]string, 0, len(q.Words))
 	for _, w := range q.Words {
+		w = Fold(w)
 		parts = append(parts, "("+add(w)+"::text <% "+col+" OR "+col+" ILIKE "+add(Like(w))+"::text)")
 	}
 	return "(" + strings.Join(parts, " AND ") + ")"

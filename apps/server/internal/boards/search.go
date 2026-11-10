@@ -236,13 +236,17 @@ func (s *Service) myTasks(w http.ResponseWriter, r *http.Request) error {
 
 // SearchMatch is the task part of unified search (ADR-0062), shared by GET /api/search and
 // tasks/search: the condition over tasks t (JOIN boards b) — words of title and description
-// (searchq tsquery, simple config: tasks_search_idx), the title with typos or as a substring
-// (pg_trgm: tasks_title_trgm_idx), the key ABC-12 in any spelling (ParseLooseKey: abc12, abc 12, abc_12, the Russian layout; a bare
+// (searchq tsquery, simple config: tasks_search_fold_idx), the title with typos or as a substring
+// (pg_trgm: tasks_title_fold_trgm_idx), the key ABC-12 in any spelling (ParseLooseKey: abc12, abc 12, abc_12, the Russian layout; a bare
 // number 12 is the number on every board), or a board key prefix (ABC) — and
 // keyMatch, the exact-key condition ("false" when q is no key) that callers list first, and
 // rank, which adds its own parameters when called (after cond's, so that a count over cond
 // alone has no unused parameter): the best of ts_rank_cd and the title's word similarity, 0..1.
+//
+// «е» and «ё» are one letter (CBF-169): the query is folded here and the indexes are over folded
+// text, so both spellings find the same tasks in the same order.
 func SearchMatch(pq searchq.Query, raw string, a *Args) (cond, keyMatch string, rank func() string) {
+	pq = pq.Folded()
 	ts := a.Add(pq.TS) + "::text"
 	parts := []string{
 		SearchVector + " @@ to_tsquery('simple', " + ts + ")",
@@ -257,7 +261,7 @@ func SearchMatch(pq searchq.Query, raw string, a *Args) (cond, keyMatch string, 
 		parts = append(parts, "b.key LIKE "+a.Add(strings.ToUpper(raw)+"%"))
 	}
 	rank = func() string {
-		return "greatest(ts_rank_cd(" + SearchVector + ", to_tsquery('simple', " + ts + ")), word_similarity(" + a.Add(pq.Text) + "::text, t.title))"
+		return "greatest(ts_rank_cd(" + SearchVector + ", to_tsquery('simple', " + ts + ")), word_similarity(" + a.Add(pq.Text) + "::text, " + searchq.FoldSQL("t.title") + "))"
 	}
 	return "(" + strings.Join(parts, " OR ") + ")", keyMatch, rank
 }

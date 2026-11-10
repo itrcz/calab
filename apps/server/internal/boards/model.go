@@ -147,8 +147,9 @@ func InScale(scale string, n int16) bool {
 	return slices.Contains(vs, n)
 }
 
-// SearchVector is the indexed text of a task (migration 00046, tasks_search_idx).
-const SearchVector = "to_tsvector('simple', t.title || ' ' || t.description)"
+// SearchVector is the indexed text of a task with «ё» folded to «е» (searchq.FoldSQL; migration
+// 00152, tasks_search_fold_idx): match it with the tsquery of a searchq.Query.Folded.
+const SearchVector = "to_tsvector('simple', translate(t.title || ' ' || t.description, 'Ёё', 'Ее'))"
 
 var statusTypeDB = map[v1.BoardStatusType]string{
 	v1.BoardStatusType_BOARD_STATUS_TYPE_BACKLOG:   "backlog",

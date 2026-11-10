@@ -33,7 +33,7 @@ func (s *Service) canvas(ctx context.Context, tx pgx.Tx, req *request, sc *scope
 		members[sp.id] = sp.m
 	}
 	q := s.db.Q.WithTx(tx)
-	rows, err := q.SearchCanvasItems(ctx, sqlc.SearchCanvasItemsParams{Tsq: req.q.TS, Words: req.q.Text, Phrase: searchq.Like(req.q.Text),
+	rows, err := q.SearchCanvasItems(ctx, sqlc.SearchCanvasItemsParams{Tsq: req.fq.TS, Words: req.fq.Text, Phrase: searchq.Like(req.fq.Text),
 		Now: req.now, WorkspaceIds: sc.workspaceIDs(), Lim: candidateCap})
 	if err != nil || len(rows) == 0 {
 		return err
@@ -79,7 +79,7 @@ func (s *Service) canvas(ctx context.Context, tx pgx.Tx, req *request, sc *scope
 	for i, r := range list {
 		pageIDs[i] = r.ID
 	}
-	heads, err := q.CanvasSearchHeadlines(ctx, sqlc.CanvasSearchHeadlinesParams{Tsq: req.q.TS, Options: searchq.HeadlineOptions, Ids: pageIDs})
+	heads, err := q.CanvasSearchHeadlines(ctx, sqlc.CanvasSearchHeadlinesParams{Tsq: req.fq.TS, Options: searchq.HeadlineOptions, Ids: pageIDs})
 	if err != nil {
 		return err
 	}

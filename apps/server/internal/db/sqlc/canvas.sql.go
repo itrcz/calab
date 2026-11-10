@@ -1809,14 +1809,14 @@ SELECT w.id, w.workspace_id, w.parent_id, w.kind, w.name, w.updated_at, w.update
     ((greatest(
         ts_rank_cd(to_tsvector('russian', w.name || ' ' || w.plain_text) || to_tsvector('simple', w.name || ' ' || w.plain_text),
                    to_tsquery('russian', $1::text) || to_tsquery('simple', $1::text)),
-        word_similarity($2::text, w.name)))
+        word_similarity($2::text, translate(w.name, 'Ёё', 'Ее'))))
      * (1.0 / (1.0 + greatest(0, extract(epoch FROM ($3::timestamptz - w.updated_at)))::float8 / 2592000.0)))::float8 AS score
 FROM canvas_items w
 WHERE w.workspace_id = ANY($4::uuid[]) AND w.trashed_at IS NULL
   AND ((to_tsvector('russian', w.name || ' ' || w.plain_text) || to_tsvector('simple', w.name || ' ' || w.plain_text))
           @@ (to_tsquery('russian', $1::text) || to_tsquery('simple', $1::text))
-       OR $2::text <% w.name
-       OR w.name ILIKE $5::text)
+       OR $2::text <% translate(w.name, 'Ёё', 'Ее')
+       OR translate(w.name, 'Ёё', 'Ее') ILIKE $5::text)
 ORDER BY score DESC, w.id DESC
 LIMIT $6
 `
@@ -1845,8 +1845,9 @@ type SearchCanvasItemsRow struct {
 // Search candidates (ADR-0126 §6, the shape of SearchWikiPages): live canvases and folders of the
 // given workspaces matching the full-text query (tsq: searchq.Query.TS, over
 // canvas_items_search_idx; the expression is search.CanvasVector) or, by name, the words with
-// typos or as substrings (words: searchq.Query.Text, phrase: searchq.Like(Query.Text), over
-// canvas_items_name_trgm_idx). Ranked by greatest(ts_rank_cd, word_similarity) × freshness
+// typos or as substrings (words: searchq.Query.Text, phrase: searchq.Like(Query.Text) of the Folded
+// query — «ё» = «е», CBF-169 — over
+// canvas_items_name_fold_trgm_idx). Ranked by greatest(ts_rank_cd, word_similarity) × freshness
 // 1 / (1 + days / 30) of updated_at at now, then id; at most lim (the candidate cap). The access
 // filter (perm.ComputeCanvasItemIn over CanvasItemPaths) and the keyset page are applied by the
 // caller; the snippets come from CanvasSearchHeadlines.

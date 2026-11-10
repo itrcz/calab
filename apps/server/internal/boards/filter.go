@@ -11,6 +11,7 @@ import (
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/searchq"
 )
 
 // Filter limits (ADR-0042 §3).
@@ -208,12 +209,13 @@ func condition(c *v1.TaskCondition, env FilterEnv, a *Args) (string, error) {
 }
 
 // TextCondition matches words of the title / description, a title substring, or the task key
-// (FNG-12 exactly, FNG as a board key prefix).
+// (FNG-12 exactly, FNG as a board key prefix); «е» and «ё» alike (searchq.Fold).
 func TextCondition(q string, a *Args) string {
-	like := a.Add("%" + escapeLike(q) + "%")
+	fq := searchq.Fold(q)
+	like := a.Add("%" + escapeLike(fq) + "%")
 	parts := []string{
-		SearchVector + " @@ plainto_tsquery('simple', " + a.Add(q) + ")",
-		"t.title ILIKE " + like,
+		SearchVector + " @@ plainto_tsquery('simple', " + a.Add(fq) + ")",
+		searchq.FoldSQL("t.title") + " ILIKE " + like,
 	}
 	if kq, ok := ParseLooseKey(q); ok {
 		if len(kq.Prefixes) == 0 {

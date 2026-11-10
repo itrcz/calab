@@ -112,15 +112,16 @@ SELECT coalesce((SELECT ds.cleared_before FROM dm_state ds WHERE ds.user_id = sq
 -- name: ListDMCandidates :many
 -- Users the caller may start a DM with: full members of a workspace the caller is a full
 -- member of; not guest accounts, not disabled, not the caller. q matches the display name
--- or a workspace nickname (case-insensitive substring; '' = everyone).
+-- or a workspace nickname (case-insensitive substring, «ё» = «е»: q comes folded, searchq.Fold;
+-- '' = everyone).
 SELECT u.* FROM users u
 WHERE u.id <> sqlc.arg('user_id') AND NOT u.is_guest AND u.disabled_at IS NULL
   AND EXISTS (
     SELECT 1 FROM workspace_members a
     JOIN workspace_members b ON b.workspace_id = a.workspace_id AND b.user_id = u.id AND b.role <> 'guest'
     WHERE a.user_id = sqlc.arg('user_id') AND a.role <> 'guest'
-      AND (sqlc.arg('q')::text = '' OR u.display_name ILIKE '%' || sqlc.arg('q')::text || '%'
-           OR b.nickname ILIKE '%' || sqlc.arg('q')::text || '%')
+      AND (sqlc.arg('q')::text = '' OR translate(u.display_name, 'Ёё', 'Ее') ILIKE '%' || sqlc.arg('q')::text || '%'
+           OR translate(b.nickname, 'Ёё', 'Ее') ILIKE '%' || sqlc.arg('q')::text || '%')
   )
 ORDER BY lower(u.display_name), u.id
 LIMIT sqlc.arg('lim');

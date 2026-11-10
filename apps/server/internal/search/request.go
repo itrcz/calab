@@ -56,9 +56,10 @@ func parseType(s string) (v1.SearchType, bool) {
 type request struct {
 	raw   string // q, trimmed
 	q     searchq.Query
-	all   bool      // scope=all or scope=dms
-	dms   bool      // scope=dms: only the caller's DMs (no workspaces, no notes)
-	ws    uuid.UUID // scope=<workspace>
+	fq    searchq.Query // q.Folded (ё = е, CBF-169): every section but messages and transcripts
+	all   bool          // scope=all or scope=dms
+	dms   bool          // scope=dms: only the caller's DMs (no workspaces, no notes)
+	ws    uuid.UUID     // scope=<workspace>
 	types []v1.SearchType
 	feed  bool // type=…: one section with a cursor
 	limit int
@@ -101,7 +102,7 @@ func parseRequest(r *http.Request, now time.Time) (*request, error) {
 	if err != nil {
 		return nil, httpx.Validation("q", "search query has no words")
 	}
-	req.q = q
+	req.q, req.fq = q, q.Folded()
 	switch s := v.Get("scope"); s {
 	case "all":
 		req.all = true
