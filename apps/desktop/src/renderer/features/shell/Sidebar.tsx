@@ -1674,6 +1674,13 @@ function VoiceMember({
     disabled: !draggable,
   });
 
+  const icons = isMe ? (
+    // #96: my row draws the self panel's view (useSelfMic), not this server copy.
+    <SelfVoiceStateIcons onPhone={onPhone} />
+  ) : (
+    // CBF-82: someone else in push-to-talk mode: the pale crossed mic until they speak.
+    <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted} pttIdle={state.ptt && !talking} onPhone={onPhone} connectionLost={lost} />
+  );
   const row = (
     <li
       ref={setNodeRef}
@@ -1745,13 +1752,8 @@ function VoiceMember({
         )
       ) : null}
       {state.musician ? <MusicianIcon /> : null}
-      {isMe ? (
-        // #96: my row draws the self panel's view (useSelfMic), not this server copy.
-        <SelfVoiceStateIcons onPhone={onPhone} />
-      ) : (
-        // CBF-82: someone else in push-to-talk mode: the pale crossed mic until they speak.
-        <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted} pttIdle={state.ptt && !talking} onPhone={onPhone} connectionLost={lost} />
-      )}
+      {/* CBF-172: while sharing, the mic icons sit in a fixed slot, so muting never shifts LIVE or the camera. */}
+      {state.streaming ? <span className="flex min-w-4 shrink-0 items-center justify-end gap-2">{icons}</span> : icons}
     </li>
   );
   // Shared member menu (PEOPLE): profile (dialog), mention, volume, moderation, «Переместить в ›»…

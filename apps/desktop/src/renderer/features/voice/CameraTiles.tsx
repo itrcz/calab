@@ -154,6 +154,13 @@ function TileName({ userId, wsId, small, className }: { userId: string; wsId: st
   const lost = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.connectionLost ?? false) : false)) && userId !== me;
   const live = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.streaming ?? false) : false));
   const label = userId === me ? t('video.you', { name }) : name;
+  const icon = lost ? (
+    <WifiOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('call.connectionLost')} role="img" data-voice-icon="connection-lost" />
+  ) : onPhone ? (
+    <Phone className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('call.onPhone')} role="img" data-voice-icon="on-phone" />
+  ) : muted ? (
+    <MicOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('shell.mutedState')} role="img" />
+  ) : null;
   return (
     <span
       className={cx(
@@ -162,13 +169,8 @@ function TileName({ userId, wsId, small, className }: { userId: string; wsId: st
         className,
       )}
     >
-      {lost ? (
-        <WifiOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('call.connectionLost')} role="img" data-voice-icon="connection-lost" />
-      ) : onPhone ? (
-        <Phone className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('call.onPhone')} role="img" data-voice-icon="on-phone" />
-      ) : muted ? (
-        <MicOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('shell.mutedState')} role="img" />
-      ) : null}
+      {/* CBF-172: a sharing speaker keeps a fixed icon slot, so the mic appearing never shifts the name or LIVE. */}
+      {live ? <span className={cx('flex shrink-0 items-center justify-center', small ? 'size-3' : 'size-3.5')}>{icon}</span> : icon}
       <span className="min-w-0 truncate" title={label}>
         {label}
       </span>

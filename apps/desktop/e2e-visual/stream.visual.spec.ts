@@ -233,6 +233,44 @@ test('stream-annotate', async ({ open, win, mock, shot }) => {
   }
 });
 
+// CBF-172: the sharing speaker mutes / unmutes — the LIVE chip (and the camera / icons next to it)
+// must not move: the same bounding boxes with the mic crossed out and without.
+test('stream-live-chip-mic', async ({ open, win, mock, shot }) => {
+  await open();
+  await inVoice(win);
+  const vera = await startPublisher({ userId: IDS.users.vera, name: 'Вера Ким', roomId: IDS.rooms.meeting });
+  try {
+    const row = win.locator('aside').getByRole('listitem', { name: /Вера Ким/ }).first();
+    const chip = row.getByText('LIVE', { exact: true });
+    await expect(chip).toBeVisible({ timeout: 30_000 });
+    await win.addStyleTag({ content: 'video { visibility: hidden !important; }' });
+    const setMuted = async (muted: boolean): Promise<void> => {
+      mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.meeting, muted });
+      if (muted) await expect(row.getByRole('img', { name: 'Микрофон выключен' })).toBeVisible();
+      else await expect(row.getByRole('img', { name: 'Микрофон выключен' })).toHaveCount(0);
+      await settle(win);
+    };
+    await setMuted(false);
+    const open0 = await chip.boundingBox();
+    const name0 = await row.getByTestId('speaker-name').boundingBox();
+    await checkpoint(shot, 'stream-live-chip-unmuted', { axe: false });
+    await setMuted(true);
+    const open1 = await chip.boundingBox();
+    const name1 = await row.getByTestId('speaker-name').boundingBox();
+    await checkpoint(shot, 'stream-live-chip-muted', { axe: false });
+    const mic = await row.getByRole('img', { name: 'Микрофон выключен' }).boundingBox();
+    const rb = await row.boundingBox();
+    expect(open0).not.toBeNull();
+    expect(open1).toEqual(open0);
+    expect(name1?.x).toBe(name0?.x);
+    // The crossed mic sits right of LIVE, inside the row.
+    expect(mic?.x ?? 0).toBeGreaterThanOrEqual((open1?.x ?? 0) + (open1?.width ?? 0));
+    expect((mic?.x ?? 0) + (mic?.width ?? 0)).toBeLessThanOrEqual((rb?.x ?? 0) + (rb?.width ?? 0));
+  } finally {
+    await vera.stop();
+  }
+});
+
 test('stream-annotate-presenter', async ({ open, win, shot }) => {
   await open();
   await inVoice(win);
