@@ -21,21 +21,21 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tiptap/core": "3.32.0",
-    "@tiptap/extension-code-block": "3.32.0",
-    "@tiptap/extension-highlight": "3.32.0",
-    "@tiptap/extension-list": "3.32.0",
-    "@tiptap/extension-mention": "3.32.0",
-    "@tiptap/extension-table": "3.32.0",
-    "@tiptap/pm": "3.32.0",
-    "@tiptap/starter-kit": "3.32.0",
-    "@tiptap/y-tiptap": "3.0.10",
+    "@tiptap/core": "3.33.0",
+    "@tiptap/extension-code-block": "3.33.0",
+    "@tiptap/extension-highlight": "3.33.0",
+    "@tiptap/extension-list": "3.33.0",
+    "@tiptap/extension-mention": "3.33.0",
+    "@tiptap/extension-table": "3.33.0",
+    "@tiptap/pm": "3.33.0",
+    "@tiptap/starter-kit": "3.33.0",
+    "@tiptap/y-tiptap": "3.2.0",
     "yjs": "13.6.33"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
     "typescript": "^5.9.0",
-    "vitest": "^5.0.4"
+    "vitest": "^5.1.0"
   },
   "license": "BUSL-1.1"
 }
