@@ -525,7 +525,7 @@ test('invite-email', async ({ open, win, mock, shot }) => {
   await roles.getByRole('button', { name: 'Добавить роль' }).click();
   await win.getByTestId('invite-role-picker').getByRole('option', { name: /Дизайн/ }).click();
   await expect(roles.getByTestId('role-chip')).toHaveText('Дизайн');
-  const linkRoles = win.getByRole('dialog').locator('[data-settings-row]').filter({ hasText: 'Выдаются при входе' });
+  const linkRoles = win.getByRole('dialog').locator('div[data-settings-row]').filter({ hasText: 'Выдаются при входе' });
   await linkRoles.getByRole('button', { name: 'Добавить роль' }).click();
   await win.getByTestId('invite-role-picker').getByRole('option', { name: /Модератор/ }).click();
   await expect(linkRoles.getByTestId('role-chip')).toHaveText('Модератор');

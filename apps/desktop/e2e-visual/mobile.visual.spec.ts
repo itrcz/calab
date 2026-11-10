@@ -2846,7 +2846,7 @@ test('m-room-invite', async ({ page }) => {
   const emailRoles = dialog.getByTestId('invite-email-roles');
   await emailRoles.getByRole('button', { name: 'Добавить роль' }).tap();
   await page.getByTestId('invite-role-picker').getByRole('option', { name: /Дизайн/ }).tap();
-  const linkRoles = dialog.locator('[data-settings-row]').filter({ hasText: 'Выдаются при входе' });
+  const linkRoles = dialog.locator('div[data-settings-row]').filter({ hasText: 'Выдаются при входе' });
   await linkRoles.getByRole('button', { name: 'Добавить роль' }).tap();
   await page.getByTestId('invite-role-picker').getByRole('option', { name: /Модератор/ }).tap();
   await expect(linkRoles.getByTestId('role-chip')).toHaveText('Модератор');
