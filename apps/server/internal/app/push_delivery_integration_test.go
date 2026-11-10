@@ -82,6 +82,51 @@ func deliverPush(t *testing.T, s *push.Service) {
 		t.Fatal(err)
 	}
 }
+
+// observePush enqueues the routing intent for a message. Observe is best effort by design (its enqueue
+// is bounded to 100ms and only logs on failure), so on a starved runner the intent can be dropped. The
+// intent key is deduplicated, so re-observing until the row exists is safe and deterministic.
+func observePush(t *testing.T, s *push.Service, msg *v1.Message) {
+	t.Helper()
+	for attempt := 0; attempt < 50; attempt++ {
+		s.Observe(context.Background(), uuid.Nil, pushMessage(msg))
+		var queued int
+		if err := testDB.Pool.QueryRow(context.Background(), "SELECT count(*) FROM push_intents WHERE event_key=$1", "message:"+msg.Id).Scan(&queued); err != nil {
+			t.Fatal(err)
+		}
+		if queued > 0 {
+			return
+		}
+	}
+	t.Fatal("push routing intent was never enqueued")
+}
+
+// settlePush drives routing and delivery to completion. The service bounds each expansion (500ms) and
+// each dispatch (750ms) and backs a timed-out job off for a second, so on a starved CI runner one pass
+// may legitimately deliver nothing. Backoff is not what these tests assert: after each pass the retried
+// jobs are made due again, with no sleeping, until nothing live is left (bounded by rounds).
+func settlePush(t *testing.T, s *push.Service) {
+	t.Helper()
+	for round := 0; round < 32; round++ {
+		deliverPush(t, s)
+		for _, q := range []string{
+			"UPDATE push_intents SET not_before=now(),lease_until=NULL,attempts=0 WHERE completed_at IS NULL AND expires_at>now() AND not_before>now()",
+			"UPDATE push_deliveries SET not_before=now(),lease_until=NULL,attempts=0 WHERE delivered_at IS NULL AND expires_at>now() AND (not_before>now() OR lease_until<now())",
+		} {
+			if _, err := testDB.Pool.Exec(context.Background(), q); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var live int
+		if err := testDB.Pool.QueryRow(context.Background(), "SELECT (SELECT count(*) FROM push_intents WHERE completed_at IS NULL AND expires_at>now())+(SELECT count(*) FROM push_deliveries WHERE delivered_at IS NULL AND expires_at>now())").Scan(&live); err != nil {
+			t.Fatal(err)
+		}
+		if live == 0 {
+			return
+		}
+	}
+	t.Fatal("push routing and delivery did not settle")
+}
 func pushAll(t *testing.T, u *user, room string) {
 	t.Helper()
 	if _, err := testDB.Pool.Exec(context.Background(), "INSERT INTO room_notification_settings(user_id,room_id,level) VALUES($1,$2,'all') ON CONFLICT(user_id,room_id) DO UPDATE SET level='all'", u.id, room); err != nil {
@@ -327,8 +372,8 @@ func TestPushMessageTapRetentionAndBoundedAdmission(t *testing.T) {
 	pushAll(t, bob, room.Id)
 	endpoint := registerPush(t, server, bob, uuid.NewString(), uuid.NewString(), 200)
 	msg := dmPost(t, o, room.Id, "read this later")
-	s.Observe(context.Background(), uuid.Nil, pushMessage(msg))
-	deliverPush(t, s)
+	observePush(t, s, msg)
+	settlePush(t, s)
 	receipt := rec.sent()[0]
 	if receipt.ExpiresAt-receipt.DeliveryExpiresAt != int64(7*24*time.Hour/time.Millisecond) || receipt.DeliveryExpiresAt > time.Now().Add(5*time.Minute).UnixMilli() {
 		t.Fatal("delivery and navigation deadlines were not separated")
@@ -353,8 +398,8 @@ func TestPushMessageTapRetentionAndBoundedAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := dmPost(t, o, room.Id, "new delivery after receipt cap")
-	s.Observe(context.Background(), uuid.Nil, pushMessage(fresh))
-	deliverPush(t, s)
+	observePush(t, s, fresh)
+	settlePush(t, s)
 	if len(rec.sent()) != 2 {
 		t.Fatal("retained receipts blocked fresh delivery")
 	}
