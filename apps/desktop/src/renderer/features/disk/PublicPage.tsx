@@ -2,10 +2,10 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import type { OfficeConfigResponse, PublicDiskEntry, PublicDiskFile, PublicDiskFolder } from '@calaba/protocol';
 import { DiskItemKind } from '@calaba/protocol';
 import * as DialogP from '../../components/radix/dialog';
-import { ArrowLeft, ChevronRight, Download, Folder, Link2Off } from 'lucide-react';
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowLeft, ChevronRight, Download, EyeOff, Folder, Link2Off, Lock } from 'lucide-react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { MediaImg } from '../../components/MediaImg';
-import { Button, IconButton, Spinner, cx } from '../../components/ui';
+import { Button, IconButton, Input, Spinner, cx } from '../../components/ui';
 import { getLocale, t, useLocale } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { textKind } from '../../lib/diskPreview';
@@ -27,14 +27,21 @@ import { FileTypeIcon } from './visuals';
  * browser back works), a file opens in the app's viewers or as a card with «Скачать»;
  * «Скачать всё» is the open folder as a zip. What the server does not list (trashed,
  * «Только выбранные» inside) is not reachable. No socket, no session; `noindex,nofollow` and
- * `no-referrer` as metas, like the wiki's public page.
+ * `no-referrer` as metas, like the wiki's public page. A link with a password (ADR-0167) shows
+ * only the password form until it is unlocked; a «Без скачивания» link has no download buttons
+ * and no «Скачать всё», and a file without a viewer is the card «Просмотр недоступен».
  */
-type Meta = { kind: 'loading' } | { kind: 'gone' } | { kind: 'ready'; meta: PublicDiskFile };
+type Meta = { kind: 'loading' } | { kind: 'gone' } | { kind: 'locked' } | { kind: 'ready'; meta: PublicDiskFile };
+
+/** A request of the page answered «the link needs its password» (the unlock expired or the password changed). */
+const isLocked = (e: unknown): boolean => e instanceof ApiError && e.code === 'ERROR_CODE_LINK_PASSWORD_REQUIRED';
 
 export function DiskPublicPage({ code }: { code: string }): ReactNode {
   useLocale();
   const [meta, setMeta] = useState<Meta>({ kind: 'loading' });
   const [open, setOpen] = useState<PublicFile | null>(null);
+  // Bumped by an unlock: the meta is read again (now with the cookie).
+  const [round, setRound] = useState(0);
 
   useEffect(() => {
     const robots = document.createElement('meta');
@@ -54,6 +61,11 @@ export function DiskPublicPage({ code }: { code: string }): ReactNode {
     const ctl = new AbortController();
     diskPublic.meta(code, ctl.signal).then(
       (m) => {
+        if (m.locked) {
+          setMeta({ kind: 'locked' });
+          document.title = 'Calab';
+          return;
+        }
         setMeta({ kind: 'ready', meta: m });
         document.title = `${m.name} · Calab`;
       },
@@ -63,10 +75,16 @@ export function DiskPublicPage({ code }: { code: string }): ReactNode {
       },
     );
     return () => ctl.abort();
-  }, [code]);
+  }, [code, round]);
 
   const close = useCallback(() => setOpen(null), []);
+  const relock = useCallback(() => {
+    setOpen(null);
+    setMeta({ kind: 'locked' });
+  }, []);
+  const unlocked = useCallback(() => setRound((n) => n + 1), []);
   if (meta.kind === 'gone') return <Gone />;
+  if (meta.kind === 'locked') return <PasswordGate code={code} onUnlocked={unlocked} />;
   return (
     <div className="h-full overflow-y-auto bg-bg text-fg mobile:pt-[var(--safe-top,0px)]" data-testid="disk-public">
       <div className="mx-auto flex min-h-full w-full max-w-[960px] flex-col px-8 mobile:px-4">
@@ -74,7 +92,7 @@ export function DiskPublicPage({ code }: { code: string }): ReactNode {
           {meta.kind === 'loading' ? (
             <Loading />
           ) : meta.meta.kind === DiskItemKind.FOLDER ? (
-            <FolderView code={code} meta={meta.meta} onOpen={setOpen} onGone={() => setMeta({ kind: 'gone' })} />
+            <FolderView code={code} meta={meta.meta} onOpen={setOpen} onGone={() => setMeta({ kind: 'gone' })} onLocked={relock} />
           ) : (
             <FileView code={code} meta={meta.meta} onOpen={setOpen} />
           )}
@@ -83,7 +101,7 @@ export function DiskPublicPage({ code }: { code: string }): ReactNode {
           {t('disk.pub.footer')}
         </footer>
       </div>
-      {open ? <PublicViewer code={code} file={open} onClose={close} /> : null}
+      {open && meta.kind === 'ready' ? <PublicViewer code={code} file={open} viewOnly={meta.meta.viewOnly} onClose={close} /> : null}
     </div>
   );
 }
@@ -105,6 +123,74 @@ function Gone(): ReactNode {
         <p className="text-body text-muted">{t('disk.pub.goneText')}</p>
       </div>
     </div>
+  );
+}
+
+/**
+ * The password form of a protected link (ADR-0167): nothing about the item before the unlock. A
+ * wrong password and a missing one read the same; too many tries say so.
+ */
+function PasswordGate({ code, onUnlocked }: { code: string; onUnlocked: () => void }): ReactNode {
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = (e: SyntheticEvent): void => {
+    e.preventDefault();
+    if (!pw || busy) return;
+    setBusy(true);
+    setError('');
+    diskPublic.unlock(code, pw).then(
+      () => onUnlocked(),
+      (err: unknown) => {
+        setBusy(false);
+        const status = err instanceof ApiError ? err.status : 0;
+        setError(status === 429 ? t('disk.pub.tooMany') : status === 403 ? t('disk.pub.wrongPassword') : t('disk.pub.unlockFailed'));
+      },
+    );
+  };
+  return (
+    <div className="grid h-full place-items-center overflow-y-auto bg-bg px-6 text-fg mobile:px-4" data-testid="disk-public-locked">
+      <form className="flex w-full max-w-[360px] flex-col items-center gap-3 text-center" onSubmit={submit}>
+        <Lock className="size-10 text-muted" strokeWidth={1.25} aria-hidden />
+        <h1 className="text-title font-semibold">{t('disk.pub.locked')}</h1>
+        <p className="text-body text-muted">{t('disk.pub.lockedText')}</p>
+        <div className="mt-2 flex w-full flex-col gap-2">
+          <Input
+            type="password"
+            autoFocus
+            autoComplete="current-password"
+            value={pw}
+            maxLength={128}
+            onChange={(e) => {
+              setPw(e.target.value);
+              setError('');
+            }}
+            placeholder={t('disk.pub.password')}
+            aria-label={t('disk.pub.password')}
+            aria-invalid={error ? true : undefined}
+            data-testid="disk-public-password"
+          />
+          {error ? (
+            <p className="text-left text-caption text-danger-text" role="alert" data-testid="disk-public-password-error">
+              {error}
+            </p>
+          ) : null}
+          <Button type="submit" variant="primary" disabled={!pw} busy={busy} data-testid="disk-public-unlock">
+            {t('disk.pub.unlock')}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/** The caption of a «Без скачивания» link. */
+function ViewOnlyNote(): ReactNode {
+  return (
+    <p className="flex items-center gap-1.5 text-caption text-muted" data-testid="disk-public-view-only">
+      <EyeOff className="size-3.5 shrink-0" aria-hidden />
+      {t('disk.pub.viewOnly')}
+    </p>
   );
 }
 
@@ -135,16 +221,23 @@ function FileView({ code, meta, onOpen }: { code: string; meta: PublicDiskFile; 
           {exp ? ` · ${exp}` : ''}
         </p>
       </div>
+      {meta.viewOnly ? <ViewOnlyNote /> : null}
       <div className="flex flex-wrap justify-center gap-2">
         {view !== 'card' ? (
-          <Button variant="secondary" onClick={() => onOpen(f)} data-testid="disk-public-open">
+          <Button variant={meta.viewOnly ? 'primary' : 'secondary'} onClick={() => onOpen(f)} data-testid="disk-public-open">
             {t('disk.open')}
           </Button>
+        ) : meta.viewOnly ? (
+          <p className="text-body text-muted" data-testid="disk-public-noview">
+            {t('disk.pub.noViewText')}
+          </p>
         ) : null}
-        <Button variant="primary" onClick={() => downloadUrl(diskPublic.contentUrl(code, ''))} data-testid="disk-public-download">
-          <Download className="size-4" aria-hidden />
-          {t('disk.download')}
-        </Button>
+        {meta.viewOnly ? null : (
+          <Button variant="primary" onClick={() => downloadUrl(diskPublic.contentUrl(code, ''))} data-testid="disk-public-download">
+            <Download className="size-4" aria-hidden />
+            {t('disk.download')}
+          </Button>
+        )}
       </div>
     </section>
   );
@@ -154,7 +247,19 @@ function FileView({ code, meta, onOpen }: { code: string; meta: PublicDiskFile; 
 
 type Listing = { key: string; folder: PublicDiskFolder; items: PublicDiskEntry[]; next: string } | { key: string; failed: true };
 
-function FolderView({ code, meta, onOpen, onGone }: { code: string; meta: PublicDiskFile; onOpen: (f: PublicFile) => void; onGone: () => void }): ReactNode {
+function FolderView({
+  code,
+  meta,
+  onOpen,
+  onGone,
+  onLocked,
+}: {
+  code: string;
+  meta: PublicDiskFile;
+  onOpen: (f: PublicFile) => void;
+  onGone: () => void;
+  onLocked: () => void;
+}): ReactNode {
   const [folderId, setFolderId] = useState(() => folderParam(location.search));
   const [res, setRes] = useState<Listing | null>(null);
   const [more, setMore] = useState(false);
@@ -168,14 +273,15 @@ function FolderView({ code, meta, onOpen, onGone }: { code: string; meta: Public
       (f) => setRes({ key, folder: f, items: f.items, next: f.nextCursor }),
       (e: unknown) => {
         if (ctl.signal.aborted) return;
+        if (isLocked(e)) onLocked();
         // The open folder left the link (moved, made «Только выбранные», trashed) — or the link is gone.
-        if (e instanceof ApiError && e.status === 404 && folderId) setRes({ key, failed: true });
+        else if (e instanceof ApiError && e.status === 404 && folderId) setRes({ key, failed: true });
         else if (e instanceof ApiError && e.status === 404) onGone();
         else setRes({ key, failed: true });
       },
     );
     return () => ctl.abort();
-  }, [code, folderId, key, onGone]);
+  }, [code, folderId, key, onGone, onLocked]);
 
   useEffect(() => {
     const on = (): void => setFolderId(folderParam(location.search));
@@ -217,6 +323,7 @@ function FolderView({ code, meta, onOpen, onGone }: { code: string; meta: Public
   const rootId = path[0]?.id ?? meta.id;
   const name = cur && 'folder' in cur ? cur.folder.name : meta.name;
   const exp = until(meta);
+  const viewOnly = meta.viewOnly;
   return (
     <section className="flex flex-col gap-4" data-testid="disk-public-folder">
       <header className="flex items-start gap-3 mobile:flex-col mobile:items-stretch">
@@ -235,12 +342,15 @@ function FolderView({ code, meta, onOpen, onGone }: { code: string; meta: Public
               {name}
             </h1>
             {exp ? <p className="text-caption text-muted">{exp}</p> : null}
+            {viewOnly ? <ViewOnlyNote /> : null}
           </div>
         </div>
-        <Button variant="secondary" className="shrink-0 mobile:self-start" onClick={downloadAll} disabled={!cur || 'failed' in cur} data-testid="disk-public-download-all">
-          <Download className="size-4" aria-hidden />
-          {t('disk.pub.downloadAll')}
-        </Button>
+        {viewOnly ? null : (
+          <Button variant="secondary" className="shrink-0 mobile:self-start" onClick={downloadAll} disabled={!cur || 'failed' in cur} data-testid="disk-public-download-all">
+            <Download className="size-4" aria-hidden />
+            {t('disk.pub.downloadAll')}
+          </Button>
+        )}
       </header>
       {zipNote ? <p className="text-caption text-muted">{zipNote}</p> : null}
       {path.length > 1 ? <Crumbs path={path} rootId={rootId} onGo={go} /> : null}
@@ -258,7 +368,7 @@ function FolderView({ code, meta, onOpen, onGone }: { code: string; meta: Public
         <>
           <div className="flex flex-col border-t border-line" role="list" data-testid="disk-public-list">
             {cur.items.map((e) => (
-              <Row key={e.id} code={code} entry={e} rootId={rootId} onFolder={go} onFile={onOpen} />
+              <Row key={e.id} code={code} entry={e} rootId={rootId} viewOnly={viewOnly} onFolder={go} onFile={onOpen} />
             ))}
           </div>
           {cur.next ? (
@@ -300,12 +410,14 @@ const Row = memo(function Row({
   code,
   entry,
   rootId,
+  viewOnly,
   onFolder,
   onFile,
 }: {
   code: string;
   entry: PublicDiskEntry;
   rootId: string;
+  viewOnly: boolean;
   onFolder: (id: string, rootId: string) => void;
   onFile: (f: PublicFile) => void;
 }): ReactNode {
@@ -335,7 +447,7 @@ const Row = memo(function Row({
         <span className="w-24 shrink-0 text-right text-caption tabular-nums text-muted mobile:hidden">{folder ? '' : fmt.size(entry.size)}</span>
         <span className="w-36 shrink-0 truncate text-right text-caption text-muted mobile:hidden">{changed}</span>
       </button>
-      {f ? (
+      {viewOnly ? null : f ? (
         <IconButton label={t('disk.pub.downloadName', { name: entry.name })} size="sm" onClick={() => downloadUrl(diskPublic.contentUrl(code, entry.id))} data-testid="disk-public-row-download">
           <Download className="size-4" aria-hidden />
         </IconButton>
@@ -353,12 +465,15 @@ const Row = memo(function Row({
  * the app's PDF viewer, office documents in the read-only office viewer, anything else a card with
  * «Скачать». Closing unmounts everything it ran (the media element, the editor's frame).
  */
-function PublicViewer({ code, file, onClose }: { code: string; file: PublicFile; onClose: () => void }): ReactNode {
+function PublicViewer({ code, file, viewOnly, onClose }: { code: string; file: PublicFile; viewOnly: boolean; onClose: () => void }): ReactNode {
   const phone = useUi((s) => s.phone.on);
   const view = publicView(file, phone);
-  const download = (): void => downloadUrl(diskPublic.contentUrl(code, file.id));
+  // «Без скачивания» (ADR-0167): no download anywhere in the viewer.
+  const download = viewOnly ? undefined : (): void => downloadUrl(diskPublic.contentUrl(code, file.id));
   if (view === 'pdf') {
-    return <PdfViewer file={{ id: file.id, name: file.name, size: file.size }} path={diskPublic.contentPath(code, file.id)} onDownload={download} onClose={onClose} />;
+    return (
+      <PdfViewer file={{ id: file.id, name: file.name, size: file.size }} path={diskPublic.contentPath(code, file.id)} {...(download ? { onDownload: download } : { noDownload: true })} onClose={onClose} />
+    );
   }
   const tk = textKind(file);
   return (
@@ -377,9 +492,11 @@ function PublicViewer({ code, file, onClose }: { code: string; file: PublicFile;
           }}
         >
           <ViewerBar title={file.name} meta={fmt.size(file.size)}>
-            <IconButton label={t('lightbox.download')} onClick={download} className={onDark} data-testid="disk-public-viewer-download">
-              <Download className="size-5" />
-            </IconButton>
+            {download ? (
+              <IconButton label={t('lightbox.download')} onClick={download} className={onDark} data-testid="disk-public-viewer-download">
+                <Download className="size-5" />
+              </IconButton>
+            ) : null}
           </ViewerBar>
           <div
             className="flex min-h-0 flex-1 items-center justify-center px-6 pb-6 mobile:px-2"
@@ -411,15 +528,25 @@ function PublicViewer({ code, file, onClose }: { code: string; file: PublicFile;
   );
 }
 
-function NoPreview({ file, onDownload, failed }: { file: PublicFile; onDownload: () => void; failed?: boolean }): ReactNode {
+/** A file without a viewer: «Скачать» — or, on a «Без скачивания» link (no `onDownload`), «Просмотр недоступен». */
+function NoPreview({ file, onDownload, failed }: { file: PublicFile; onDownload: (() => void) | undefined; failed?: boolean }): ReactNode {
   return (
     <div className="flex max-w-[360px] flex-col items-center gap-3 rounded-[var(--radius-card)] bg-elev p-6 text-center text-fg" data-testid="disk-public-nopreview">
       <FileTypeIcon file={metaOf(file)} className="size-16" />
-      <p className="text-body text-muted">{failed ? t('disk.pub.officeFailed') : t('disk.pub.noPreview')}</p>
-      <Button variant="primary" onClick={onDownload}>
-        <Download className="size-4" aria-hidden />
-        {t('disk.download')}
-      </Button>
+      {onDownload ? (
+        <>
+          <p className="text-body text-muted">{failed ? t('disk.pub.officeFailed') : t('disk.pub.noPreview')}</p>
+          <Button variant="primary" onClick={onDownload}>
+            <Download className="size-4" aria-hidden />
+            {t('disk.download')}
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="text-body font-semibold">{t('disk.pub.noView')}</p>
+          <p className="text-caption text-muted">{t('disk.pub.noViewText')}</p>
+        </>
+      )}
     </div>
   );
 }
@@ -427,7 +554,7 @@ function NoPreview({ file, onDownload, failed }: { file: PublicFile; onDownload:
 const appTheme = (): 'dark' | 'light' => (document.documentElement.dataset['theme'] === 'light' ? 'light' : 'dark');
 
 /** Office documents read-only in the Document Server's viewer (ADR-0143 host page; ADR-0165 link config). */
-function OfficeView({ code, file, onDownload }: { code: string; file: PublicFile; onDownload: () => void }): ReactNode {
+function OfficeView({ code, file, onDownload }: { code: string; file: PublicFile; onDownload: (() => void) | undefined }): ReactNode {
   const [cfg, setCfg] = useState<OfficeConfigResponse | null>(null);
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);

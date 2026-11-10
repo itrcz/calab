@@ -302,6 +302,11 @@ export type ActivityKey =
   | 'disk.act.share'
   | 'disk.act.linkOn'
   | 'disk.act.linkOff'
+  | 'disk.act.passwordOn'
+  | 'disk.act.passwordChange'
+  | 'disk.act.passwordOff'
+  | 'disk.act.viewOnlyOn'
+  | 'disk.act.viewOnlyOff'
   | 'disk.act.trash'
   | 'disk.act.restore'
   | 'disk.act.delete'
@@ -341,6 +346,14 @@ export function describeActivity(a: Pick<DiskActivity, 'kind' | 'before' | 'afte
       return { key: 'disk.act.linkOn', params: { name } };
     case DiskActivityKind.LINK_OFF:
       return { key: 'disk.act.linkOff', params: { name } };
+    case DiskActivityKind.LINK_PASSWORD_ON:
+      return { key: a.after?.['changed'] === true ? 'disk.act.passwordChange' : 'disk.act.passwordOn', params: { name } };
+    case DiskActivityKind.LINK_PASSWORD_OFF:
+      return { key: 'disk.act.passwordOff', params: { name } };
+    case DiskActivityKind.LINK_VIEW_ONLY_ON:
+      return { key: 'disk.act.viewOnlyOn', params: { name } };
+    case DiskActivityKind.LINK_VIEW_ONLY_OFF:
+      return { key: 'disk.act.viewOnlyOff', params: { name } };
     case DiskActivityKind.TRASH:
       return { key: 'disk.act.trash', params: { name } };
     case DiskActivityKind.RESTORE:

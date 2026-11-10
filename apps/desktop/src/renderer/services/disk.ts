@@ -14,6 +14,7 @@ import {
   EmptyDiskTrashResponseSchema,
   ListDiskItemsResponseSchema,
   UpdateDiskItemRequestSchema,
+  UpdateDiskLinkRequestSchema,
   UpdateDiskPermissionsRequestSchema,
   type DiskActivityPage,
   type DiskItem,
@@ -93,6 +94,9 @@ export const diskApi = {
   /** A live link is returned as is (idempotent): also how the URL of an existing link is read. */
   createLink: (id: string, expiresAtMs?: number): Promise<DiskLinkResponse> =>
     call('POST', `${I(id)}/link`, DiskLinkResponseSchema, body(CreateDiskLinkRequestSchema, expiresAtMs ? { expiresAt: timestampFromMs(expiresAtMs) } : {})),
+  /** The live link's password (`''` removes it) and «Без скачивания» (ADR-0167); unset fields stay. */
+  updateLink: (id: string, init: MessageInitShape<typeof UpdateDiskLinkRequestSchema>): Promise<DiskLinkResponse> =>
+    call('PATCH', `${I(id)}/link`, DiskLinkResponseSchema, body(UpdateDiskLinkRequestSchema, init)),
   deleteLink: (id: string) => callEmpty('DELETE', `${I(id)}/link`),
   usage: (ws: string): Promise<DiskUsage> => call('GET', `${W(ws)}/usage`, DiskUsageSchema),
   activity: (ws: string, cursor?: string, actor?: string): Promise<DiskActivityPage> => call('GET', `${W(ws)}/activity${qs({ cursor, actor })}`, DiskActivityPageSchema),

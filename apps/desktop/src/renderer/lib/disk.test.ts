@@ -224,6 +224,14 @@ describe('the journal', () => {
     expect(describeActivity(act(DiskActivityKind.UNSPECIFIED, null, null)).key).toBe('disk.act.other');
   });
 
+  it('the link password and «Без скачивания» (ADR-0167)', () => {
+    expect(describeActivity(act(DiskActivityKind.LINK_PASSWORD_ON, null, null, 'Docs')).key).toBe('disk.act.passwordOn');
+    expect(describeActivity(create(DiskActivitySchema, { kind: DiskActivityKind.LINK_PASSWORD_ON, itemName: 'Docs', after: { changed: true } })).key).toBe('disk.act.passwordChange');
+    expect(describeActivity(act(DiskActivityKind.LINK_PASSWORD_OFF, null, null)).key).toBe('disk.act.passwordOff');
+    expect(describeActivity(act(DiskActivityKind.LINK_VIEW_ONLY_ON, null, null)).key).toBe('disk.act.viewOnlyOn');
+    expect(describeActivity(act(DiskActivityKind.LINK_VIEW_ONLY_OFF, null, null)).key).toBe('disk.act.viewOnlyOff');
+  });
+
   it('groups by local day keeping the order', () => {
     const day = Date.UTC(2026, 9, 14, 12);
     const g = activityDays([act(DiskActivityKind.UPLOAD, null, null, 'a', day), act(DiskActivityKind.UPLOAD, null, null, 'b', day - 60_000), act(DiskActivityKind.UPLOAD, null, null, 'c', day - 3 * 86_400_000)]);

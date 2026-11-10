@@ -1,5 +1,5 @@
-import { OfficeConfigResponseSchema, PublicDiskFileSchema, PublicDiskFolderSchema } from '@calaba/protocol';
-import { call, qs } from '../lib/api/client';
+import { OfficeConfigResponseSchema, PublicDiskFileSchema, PublicDiskFolderSchema, UnlockDiskLinkRequestSchema } from '@calaba/protocol';
+import { body, call, callEmpty, qs } from '../lib/api/client';
 import { platform } from '../platform';
 
 /**
@@ -7,7 +7,9 @@ import { platform } from '../platform';
  * `GET /api/public/disk/{code}` (the linked file or folder), `…/items?parent=` (a folder of the
  * link, read-only), the bytes and thumbnails of a file (`…/content` for a file link,
  * `…/items/{id}/content` inside a folder link), «Скачать всё» (`…/archive?parent=`) and the
- * office viewer's view-only configuration (`…/office?item=`). No auth, no sockets.
+ * office viewer's view-only configuration (`…/office?item=`). No auth, no sockets. A link with a
+ * password (ADR-0167) is opened by `unlock`: the server sets an HttpOnly cookie scoped to the
+ * link's path, which every later request of the page (fetches, <img>, <video>) carries.
  */
 const base = (code: string): string => `/api/public/disk/${encodeURIComponent(code)}`;
 
@@ -16,6 +18,8 @@ const of = (code: string, itemId: string): string => (itemId ? `${base(code)}/it
 
 export const diskPublic = {
   meta: (code: string, signal?: AbortSignal) => call('GET', base(code), PublicDiskFileSchema, undefined, signal),
+  /** 204 + the unlock cookie; a wrong password is 403 LINK_PASSWORD_REQUIRED, too many tries 429. */
+  unlock: (code: string, password: string) => callEmpty('POST', `${base(code)}/unlock`, body(UnlockDiskLinkRequestSchema, { password })),
   folder: (code: string, parent: string, cursor: string, signal?: AbortSignal) =>
     call('GET', `${base(code)}/items${qs({ parent, cursor })}`, PublicDiskFolderSchema, undefined, signal),
   office: (code: string, itemId: string, p: { theme: 'dark' | 'light'; phone: boolean; lang: string }, signal?: AbortSignal) =>
@@ -29,7 +33,8 @@ export const diskPublic = {
   /** Whether «Скачать всё» fits (`ok`), is over the ceiling (`large`) or asked too often (`busy`); a network failure says ok. */
   archiveCheck: async (code: string, parent: string): Promise<'ok' | 'large' | 'busy' | 'gone'> => {
     try {
-      const res = await fetch(`${platform.apiBase}${base(code)}/archive${qs({ parent, check: 1 })}`, { cache: 'no-store', credentials: 'omit' });
+      // same-origin: the unlock cookie of a protected link goes along (ADR-0167).
+      const res = await fetch(`${platform.apiBase}${base(code)}/archive${qs({ parent, check: 1 })}`, { cache: 'no-store', credentials: 'same-origin' });
       return res.status === 413 ? 'large' : res.status === 429 ? 'busy' : res.status === 404 ? 'gone' : 'ok';
     } catch {
       return 'ok';

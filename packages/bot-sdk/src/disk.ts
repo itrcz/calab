@@ -16,6 +16,7 @@ import {
   EmptyDiskTrashResponseSchema,
   ListDiskItemsResponseSchema,
   UpdateDiskItemRequestSchema,
+  UpdateDiskLinkRequestSchema,
   UpdateDiskPermissionsRequestSchema,
   type DiskItem,
   type DiskLinkResponse,
@@ -129,11 +130,27 @@ export function createDiskApi(rest: Rest) {
       rest.call(DiskPermissionsResponseSchema, 'PUT', `${itemPath(itemId)}/permissions`, {
         json: Rest.body(UpdateDiskPermissionsRequestSchema, { entries: entries ?? [], ...(restricted !== undefined ? { restricted } : {}) }),
       }),
-    /** The public link of a file (anyone with the URL downloads it). */
+    /**
+     * The public link of a file or a folder (anyone with the URL reads it without signing in).
+     * `password` (4..128 characters) and `viewOnly` («Без скачивания») apply to a new link only;
+     * `update` changes them on the live one (ADR-0167).
+     */
     link: {
-      on: (itemId: string, expiresAt?: Date): Promise<DiskLinkResponse> =>
+      on: (itemId: string, expiresAt?: Date, opts: { password?: string; viewOnly?: boolean } = {}): Promise<DiskLinkResponse> =>
         rest.call(DiskLinkResponseSchema, 'POST', `${itemPath(itemId)}/link`, {
-          json: Rest.body(CreateDiskLinkRequestSchema, expiresAt ? { expiresAt: { seconds: BigInt(Math.floor(expiresAt.getTime() / 1000)), nanos: 0 } } : {}),
+          json: Rest.body(CreateDiskLinkRequestSchema, {
+            ...(expiresAt ? { expiresAt: { seconds: BigInt(Math.floor(expiresAt.getTime() / 1000)), nanos: 0 } } : {}),
+            ...(opts.password ? { password: opts.password } : {}),
+            ...(opts.viewOnly ? { viewOnly: true } : {}),
+          }),
+        }),
+      /** The live link's password (`''` removes it) and «Без скачивания»; omitted = unchanged. */
+      update: (itemId: string, init: { password?: string; viewOnly?: boolean }): Promise<DiskLinkResponse> =>
+        rest.call(DiskLinkResponseSchema, 'PATCH', `${itemPath(itemId)}/link`, {
+          json: Rest.body(UpdateDiskLinkRequestSchema, {
+            ...(init.password !== undefined ? { password: init.password } : {}),
+            ...(init.viewOnly !== undefined ? { viewOnly: init.viewOnly } : {}),
+          }),
         }),
       off: async (itemId: string): Promise<void> => {
         await rest.request('DELETE', `${itemPath(itemId)}/link`);
