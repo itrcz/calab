@@ -219,6 +219,8 @@ export const enDisk: DictShape<typeof ruDisk> = {
   'disk.new.phone': '“{name}” is created. You can edit it on a computer',
   // public link page (ADR-0165)
   'disk.link.hintFolder': 'Anyone with the link can see the folder and everything in it without signing in, and download the files. “Selected people only” folders inside stay hidden',
+  'disk.link.hintViewOnly': 'Anyone with the link can view the file in the browser without signing in',
+  'disk.link.hintFolderViewOnly': 'Anyone with the link can see the folder and everything in it without signing in, and view the files in the browser. “Selected people only” folders inside stay hidden',
   'disk.pub.footer': 'Opened via link · Calab',
   'disk.pub.gone': 'The link is no longer valid',
   'disk.pub.goneText': 'It was turned off, it expired, or the file was deleted.',

@@ -219,6 +219,8 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.new.phone': '«{name}» creado. Puede editarlo en un ordenador',
   // public link page (ADR-0165)
   'disk.link.hintFolder': 'Cualquiera con el enlace verá la carpeta y todo su contenido sin iniciar sesión y podrá descargar los archivos. Las carpetas «Solo seleccionados» de dentro no se ven',
+  'disk.link.hintViewOnly': 'Quien tenga el enlace podrá ver el archivo en el navegador sin iniciar sesión',
+  'disk.link.hintFolderViewOnly': 'Cualquiera con el enlace verá la carpeta y todo su contenido sin iniciar sesión y podrá ver los archivos en el navegador. Las carpetas «Solo seleccionados» de dentro no se ven',
   'disk.pub.footer': 'Abierto por enlace · Calab',
   'disk.pub.gone': 'El enlace ya no es válido',
   'disk.pub.goneText': 'Se desactivó, caducó o el archivo se eliminó.',

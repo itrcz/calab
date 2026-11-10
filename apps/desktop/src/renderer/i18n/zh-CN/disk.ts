@@ -219,6 +219,8 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.new.phone': '已创建“{name}”。可在电脑上编辑',
   // public link page (ADR-0165)
   'disk.link.hintFolder': '任何拥有链接的人无需登录即可查看该文件夹及其全部内容并下载文件。其中“仅限选定成员”的文件夹不可见',
+  'disk.link.hintViewOnly': '持有链接的任何人无需登录即可在浏览器中查看此文件',
+  'disk.link.hintFolderViewOnly': '任何拥有链接的人无需登录即可查看该文件夹及其全部内容并在浏览器中查看文件。其中“仅限选定成员”的文件夹不可见',
   'disk.pub.footer': '通过链接打开 · Calab',
   'disk.pub.gone': '链接已失效',
   'disk.pub.goneText': '链接已关闭、已过期，或文件已被删除。',

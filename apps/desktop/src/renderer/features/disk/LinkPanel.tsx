@@ -65,9 +65,12 @@ export function LinkPanel({ itemId }: { itemId: string }): ReactNode {
     }
   };
   const until = item.link?.expiresAt ? timestampDate(item.link.expiresAt) : null;
+  // The hint promises a download only while the link allows one (ADR-0167).
+  const viewOnly = !!item.link?.viewOnly;
+  const hint = isFolder(item) ? (viewOnly ? 'disk.link.hintFolderViewOnly' : 'disk.link.hintFolder') : viewOnly ? 'disk.link.hintViewOnly' : 'disk.link.hint';
   return (
     <div className="flex flex-col gap-4" data-testid="disk-link">
-      <Switch checked={on} onChange={toggle} label={t('disk.link.on')} hint={t(isFolder(item) ? 'disk.link.hintFolder' : 'disk.link.hint')} disabled={busy} />
+      <Switch checked={on} onChange={toggle} label={t('disk.link.on')} hint={t(hint)} disabled={busy} />
       {on ? (
         <>
           <div className="flex items-center gap-2">

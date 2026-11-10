@@ -411,7 +411,7 @@ export class DiskMock {
     let link = this.links.get(id);
     if (!link) throw notFound();
     if (init.password !== undefined && (init.password || link.hasPassword)) {
-      if (init.password && [...init.password].length < 4) throw new DiskError(422, ErrorCode.VALIDATION, '4 to 128 characters', 'password');
+      if (init.password && Array.from(init.password).length < 4) throw new DiskError(422, ErrorCode.VALIDATION, '4 to 128 characters', 'password');
       const had = link.hasPassword;
       if (init.password) this.linkPasswords.set(id, init.password);
       else this.linkPasswords.delete(id);

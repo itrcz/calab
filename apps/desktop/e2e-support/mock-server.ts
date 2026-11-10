@@ -9228,7 +9228,10 @@ class MockImpl {
       noContent(c.res);
     }, false));
     this.route('GET', '/api/public/disk/:code', pubDisk((c) => {
-      if (!d().linkUnlocked(p0(c), cookies(c.req)['calab_dl'])) return sendMsg(c.res, 200, PublicDiskFileSchema, { locked: true });
+      if (!d().linkUnlocked(p0(c), cookies(c.req)['calab_dl'])) {
+        sendMsg(c.res, 200, PublicDiskFileSchema, { locked: true });
+        return;
+      }
       const { link, item } = d().publicLink(p0(c));
       const base = { name: item.name, id: item.id, kind: item.kind, viewOnly: link.viewOnly, ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) };
       const f = pubFile(item);
