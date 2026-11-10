@@ -98,34 +98,36 @@ func observePush(t *testing.T, s *push.Service, msg *v1.Message) {
 			return
 		}
 	}
-	t.Fatal("push routing intent was never enqueued")
+	t.Fatalf("push routing intent for message:%s was never enqueued", msg.Id)
 }
 
-// settlePush drives routing and delivery to completion. The service bounds each expansion (500ms) and
-// each dispatch (750ms) and backs a timed-out job off for a second, so on a starved CI runner one pass
-// may legitimately deliver nothing. Backoff is not what these tests assert: after each pass the retried
-// jobs are made due again, with no sleeping, until nothing live is left (bounded by rounds).
-func settlePush(t *testing.T, s *push.Service) {
+// settlePush drives routing and delivery of one message to completion. The service bounds each expansion
+// (500ms) and each dispatch (750ms) and backs a timed-out job off for a second, so on a starved CI runner
+// one pass may legitimately deliver nothing. Backoff is not what these tests assert: after each pass this
+// message's retried jobs are made due again, with no sleeping, until none is live (bounded by rounds).
+// Scoped to the message's event key so rows other tests left backed off or exhausted stay untouched.
+func settlePush(t *testing.T, s *push.Service, msg *v1.Message) {
 	t.Helper()
+	key := "message:" + msg.Id
 	for round := 0; round < 32; round++ {
 		deliverPush(t, s)
 		for _, q := range []string{
-			"UPDATE push_intents SET not_before=now(),lease_until=NULL,attempts=0 WHERE completed_at IS NULL AND expires_at>now() AND not_before>now()",
-			"UPDATE push_deliveries SET not_before=now(),lease_until=NULL,attempts=0 WHERE delivered_at IS NULL AND expires_at>now() AND (not_before>now() OR lease_until<now())",
+			"UPDATE push_intents SET not_before=now(),lease_until=NULL,attempts=0 WHERE event_key=$1 AND completed_at IS NULL AND expires_at>now() AND not_before>now()",
+			"UPDATE push_deliveries SET not_before=now(),lease_until=NULL,attempts=0 WHERE event_key=$1 AND delivered_at IS NULL AND expires_at>now() AND (not_before>now() OR lease_until<now())",
 		} {
-			if _, err := testDB.Pool.Exec(context.Background(), q); err != nil {
+			if _, err := testDB.Pool.Exec(context.Background(), q, key); err != nil {
 				t.Fatal(err)
 			}
 		}
 		var live int
-		if err := testDB.Pool.QueryRow(context.Background(), "SELECT (SELECT count(*) FROM push_intents WHERE completed_at IS NULL AND expires_at>now())+(SELECT count(*) FROM push_deliveries WHERE delivered_at IS NULL AND expires_at>now())").Scan(&live); err != nil {
+		if err := testDB.Pool.QueryRow(context.Background(), "SELECT (SELECT count(*) FROM push_intents WHERE event_key=$1 AND completed_at IS NULL AND expires_at>now())+(SELECT count(*) FROM push_deliveries WHERE event_key=$1 AND delivered_at IS NULL AND expires_at>now())", key).Scan(&live); err != nil {
 			t.Fatal(err)
 		}
 		if live == 0 {
 			return
 		}
 	}
-	t.Fatal("push routing and delivery did not settle")
+	t.Fatalf("push routing and delivery of %s did not settle", key)
 }
 func pushAll(t *testing.T, u *user, room string) {
 	t.Helper()
@@ -373,7 +375,10 @@ func TestPushMessageTapRetentionAndBoundedAdmission(t *testing.T) {
 	endpoint := registerPush(t, server, bob, uuid.NewString(), uuid.NewString(), 200)
 	msg := dmPost(t, o, room.Id, "read this later")
 	observePush(t, s, msg)
-	settlePush(t, s)
+	settlePush(t, s, msg)
+	if len(rec.sent()) != 1 {
+		t.Fatalf("expected one delivered push, got %d", len(rec.sent()))
+	}
 	receipt := rec.sent()[0]
 	if receipt.ExpiresAt-receipt.DeliveryExpiresAt != int64(7*24*time.Hour/time.Millisecond) || receipt.DeliveryExpiresAt > time.Now().Add(5*time.Minute).UnixMilli() {
 		t.Fatal("delivery and navigation deadlines were not separated")
@@ -399,9 +404,9 @@ func TestPushMessageTapRetentionAndBoundedAdmission(t *testing.T) {
 	}
 	fresh := dmPost(t, o, room.Id, "new delivery after receipt cap")
 	observePush(t, s, fresh)
-	settlePush(t, s)
+	settlePush(t, s, fresh)
 	if len(rec.sent()) != 2 {
-		t.Fatal("retained receipts blocked fresh delivery")
+		t.Fatalf("retained receipts blocked fresh delivery: sent %d", len(rec.sent()))
 	}
 	var count int
 	if err := testDB.Pool.QueryRow(context.Background(), "SELECT count(*) FROM push_deliveries WHERE device_id=$1", endpoint.Id).Scan(&count); err != nil || count != 2048 {
