@@ -84,6 +84,7 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/public/forms/{code}/submissions",
 		"POST /api/public/forms/{code}/files",
 		"GET /api/public/disk/{code}",
+		"POST /api/public/disk/{code}/unlock",
 		"GET /api/public/disk/{code}/content",
 		"GET /api/public/disk/{code}/thumbnail",
 		"GET /api/public/disk/{code}/office",
@@ -368,6 +369,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/disk/items/{id}/permissions",
 		"PUT /api/disk/items/{id}/permissions",
 		"POST /api/disk/items/{id}/link",
+		"PATCH /api/disk/items/{id}/link",
 		"DELETE /api/disk/items/{id}/link",
 	}},
 	{access: botAllow, why: "Wiki (ADR-0096 §2 addendum): the wiki bits of the roles and the page overrides", routes: []string{

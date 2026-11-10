@@ -1030,6 +1030,15 @@ func (s *Service) serve(w http.ResponseWriter, r *http.Request, f sqlc.File, key
 }
 
 func (s *Service) serveWith(w http.ResponseWriter, r *http.Request, f sqlc.File, key, contentType, etag, name, cacheControl string) error {
+	disp := "attachment"
+	if pbconv.IsImage(contentType) {
+		disp = "inline"
+	}
+	return s.serveAs(w, r, f, key, contentType, etag, name, cacheControl, disp)
+}
+
+// serveAs is serveWith with the Content-Disposition type given.
+func (s *Service) serveAs(w http.ResponseWriter, r *http.Request, f sqlc.File, key, contentType, etag, name, cacheControl, disp string) error {
 	rc, _, err := s.store.Get(r.Context(), key)
 	if errors.Is(err, blob.ErrNotFound) {
 		return httpx.NotFound("file")
@@ -1044,10 +1053,6 @@ func (s *Service) serveWith(w http.ResponseWriter, r *http.Request, f sqlc.File,
 	h.Set("Cache-Control", cacheControl)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	disp := "attachment"
-	if pbconv.IsImage(contentType) {
-		disp = "inline"
-	}
 	h.Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": name}))
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deadlineFor(f.Size)))
 	http.ServeContent(w, r, "", f.CreatedAt, rc) // Range, If-None-Match, If-Range
@@ -1084,6 +1089,13 @@ func (s *Service) ServeLinked(w http.ResponseWriter, r *http.Request, f sqlc.Fil
 		return s.serveThumb(w, r, f, serve)
 	}
 	return serve(w, r, f, f.Key, f.Mime, f.Sha256, f.Name)
+}
+
+// ServeLinkedInline is ServeLinked of the file's bytes with Content-Disposition: inline whatever
+// the type: a view-only public link (ADR-0167) serves only what the page views in the browser.
+// The sandbox CSP and nosniff stay, so an HTML or SVG file opened directly runs nothing.
+func (s *Service) ServeLinkedInline(w http.ResponseWriter, r *http.Request, f sqlc.File) error {
+	return s.serveAs(w, r, f, f.Key, f.Mime, f.Sha256, f.Name, "no-store", "inline")
 }
 
 func (s *Service) serveThumb(w http.ResponseWriter, r *http.Request, f sqlc.File, serve serveFunc) error {

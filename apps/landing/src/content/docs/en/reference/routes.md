@@ -407,6 +407,7 @@ Available without a token. A bot may call them, but anonymously — its permissi
 | `GET` | `/api/public/disk/{code}/items/{id}/content` | no authentication |
 | `GET` | `/api/public/disk/{code}/items/{id}/thumbnail` | no authentication |
 | `GET` | `/api/public/disk/{code}/archive` | no authentication |
+| `POST` | `/api/public/disk/{code}/unlock` | no authentication |
 | `GET` | `/api/public/forms/{code}` | no authentication |
 | `POST` | `/api/public/forms/{code}/submissions` | no authentication |
 | `GET` | `/api/room-invites/{code}` | no authentication |
@@ -520,6 +521,7 @@ These answer a bot with `403 FORBIDDEN` and `reason: "BOT_NOT_ALLOWED"`. For the
 | `GET` | `/api/disk/items/{id}/activity` | Disk |
 | `DELETE` | `/api/disk/items/{id}/link` | Disk |
 | `POST` | `/api/disk/items/{id}/link` | Disk |
+| `PATCH` | `/api/disk/items/{id}/link` | Disk |
 | `GET` | `/api/disk/items/{id}/path` | Disk |
 | `GET` | `/api/disk/items/{id}/permissions` | Disk |
 | `PUT` | `/api/disk/items/{id}/permissions` | Disk |

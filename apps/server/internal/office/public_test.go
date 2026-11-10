@@ -22,10 +22,10 @@ func TestPublicView(t *testing.T) {
 	if !h.svc.Opens("plan.docx", 10) || h.svc.Opens("photo.png", 10) || h.svc.Opens("plan.docx", h.svc.cfg.MaxSize+1) {
 		t.Fatal("Opens")
 	}
-	if _, err := h.svc.PublicView(context.Background(), f.ID, "photo.png", 10, false, false, "ru"); err == nil {
+	if _, err := h.svc.PublicView(context.Background(), f.ID, "photo.png", 10, false, false, false, "ru"); err == nil {
 		t.Fatal("an unsupported type opened")
 	}
-	resp, err := h.svc.PublicView(context.Background(), f.ID, "plan.docx", 7, true, false, "en")
+	resp, err := h.svc.PublicView(context.Background(), f.ID, "plan.docx", 7, true, false, false, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +58,25 @@ func TestPublicView(t *testing.T) {
 	if w.Code != http.StatusOK || w.Body.String() != "PK-docx" {
 		t.Fatalf("download %d %q", w.Code, w.Body.String())
 	}
+	if dig(cfg, "document", "permissions", "download") != true {
+		t.Fatalf("download off on a plain link: %v", dig(cfg, "document", "permissions"))
+	}
+	// A view-only link (ADR-0167): no download, print or copy in the viewer.
+	resp, err = h.svc.PublicView(context.Background(), f.ID, "plan.docx", 7, false, false, true, "ru")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg = nil
+	if err := json.Unmarshal([]byte(resp.GetConfigJson()), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"download", "print", "copy"} {
+		if dig(cfg, "document", "permissions", k) != false {
+			t.Fatalf("view-only %s: %v", k, dig(cfg, "document", "permissions"))
+		}
+	}
 	h.svc.cfg.Enabled = false
-	if _, err := h.svc.PublicView(context.Background(), f.ID, "plan.docx", 7, false, false, ""); err == nil || h.svc.Opens("plan.docx", 1) {
+	if _, err := h.svc.PublicView(context.Background(), f.ID, "plan.docx", 7, false, false, false, ""); err == nil || h.svc.Opens("plan.docx", 1) {
 		t.Fatal("opened while off")
 	}
 }

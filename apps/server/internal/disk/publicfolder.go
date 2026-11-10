@@ -169,7 +169,7 @@ func (s *Service) publicItems(w http.ResponseWriter, r *http.Request) error {
 			files[f.ID] = f
 		}
 	}
-	out := &v1.PublicDiskFolder{Id: folder.ID.String(), Name: folder.Name}
+	out := &v1.PublicDiskFolder{Id: folder.ID.String(), Name: folder.Name, ViewOnly: row.link.ViewOnly}
 	if row.link.ExpiresAt != nil {
 		out.ExpiresAt = timestamppb.New(*row.link.ExpiresAt)
 	}
@@ -353,7 +353,8 @@ func (s *Service) archiveEntries(ctx context.Context, folder sqlc.DiskItem) ([]a
 // (no CPU spent on media that is compressed already); ceilings ArchiveMaxBytes /
 // ArchiveMaxItems (413), its own per-IP limit, counted as one download of the link. With
 // ?check=1 it only answers whether the archive fits (204 or 413) — under the read limit, not
-// counted —, so the page can explain a refusal instead of downloading an error.
+// counted —, so the page can explain a refusal instead of downloading an error. A view-only link
+// (ADR-0167) has no archive: 403.
 func (s *Service) publicArchive(w http.ResponseWriter, r *http.Request) error {
 	check := r.URL.Query().Get("check") == "1"
 	limit := s.LinkArchiveLimit
@@ -363,6 +364,9 @@ func (s *Service) publicArchive(w http.ResponseWriter, r *http.Request) error {
 	row, err := s.linkedFolder(w, r, limit)
 	if err != nil {
 		return err
+	}
+	if row.link.ViewOnly {
+		return errViewOnly
 	}
 	chain, err := s.folderParam(r, row.item)
 	if err != nil {

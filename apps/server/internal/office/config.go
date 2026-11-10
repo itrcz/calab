@@ -52,6 +52,9 @@ type opening struct {
 	callback string // "" = none (view only of an attachment)
 	itemID   string
 	fileID   uuid.UUID
+	// noDownload: a view-only public link (ADR-0167) — the viewer offers no download, print or
+	// copy. A barrier in the editor's UI, not a protection: the file URL is in the configuration.
+	noDownload bool
 }
 
 // config: GET /api/office/config?item=|file=&theme=dark|light&phone=1&lang=ru.
@@ -285,7 +288,7 @@ func (s *Service) sign(op opening, uid uuid.UUID, name string, light, phone bool
 			"url":      op.fileURL,
 			"permissions": map[string]any{
 				"edit": edit, "comment": edit, "review": edit, "fillForms": edit, "modifyFilter": edit,
-				"download": true, "print": true, "copy": true, "chat": false, "protect": false,
+				"download": !op.noDownload, "print": !op.noDownload, "copy": !op.noDownload, "chat": false, "protect": false,
 			},
 		},
 		"editorConfig": editorConfig,

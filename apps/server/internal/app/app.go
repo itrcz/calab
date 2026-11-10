@@ -507,9 +507,12 @@ func New(d Deps) *App {
 	filesSvc.Routes(mux, private)
 	diskSvc := disk.New(d.DB, pub, filesSvc, planSvc)
 	diskSvc.PublicURL = d.Config.PublicAppURL
-	diskSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link:", 60, 60)        // public link page + thumbnail: 60 per minute per IP
-	diskSvc.LinkDownloadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-dl:", 30, 30) // public downloads (each Range request): 30 per minute per IP
-	diskSvc.LinkArchiveLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-zip:", 3, 0.2) // «Скачать всё» of a folder link: 3 at once, then one per 5 minutes per IP
+	diskSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link:", 60, 60)           // public link page + thumbnail: 60 per minute per IP
+	diskSvc.LinkDownloadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-dl:", 30, 30)    // public downloads (each Range request): 30 per minute per IP
+	diskSvc.LinkArchiveLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-zip:", 3, 0.2)    // «Скачать всё» of a folder link: 3 at once, then one per 5 minutes per IP
+	diskSvc.LinkUnlockLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-pw:", 5, 5)        // password attempts on a protected link (ADR-0167): 5 at once, 5 per minute per IP
+	diskSvc.LinkUnlockLinkLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-pwl:", 20, 10) // and 20 at once, 10 per minute per link (whatever the IPs)
+	diskSvc.UnlockKey = disk.DeriveUnlockKey([]byte(d.Config.JWTSecret))
 	diskSvc.Routes(mux, private)
 	// Office editing (ADR-0143): the routes are always registered (one route table); off = 404.
 	oc := d.Config.Office

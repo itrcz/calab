@@ -52,7 +52,8 @@ func itemProto(it sqlc.DiskItem, f *sqlc.File, shared bool, link *sqlc.DiskLink,
 
 func linkProto(l sqlc.DiskLink) *v1.DiskLink {
 	out := &v1.DiskLink{Code: l.Code, CreatedBy: idp(l.CreatedBy), CreatedAt: timestamppb.New(l.CreatedAt),
-		Downloads: uint32(max(l.Downloads, 0)), ItemId: l.ItemID.String()} //nolint:gosec // non-negative counter
+		Downloads: uint32(max(l.Downloads, 0)), ItemId: l.ItemID.String(), //nolint:gosec // non-negative counter
+		HasPassword: l.PasswordHash != nil, ViewOnly: l.ViewOnly}
 	if l.ExpiresAt != nil {
 		out.ExpiresAt = timestamppb.New(*l.ExpiresAt)
 	}
@@ -147,7 +148,9 @@ var activityKinds = map[string]v1.DiskActivityKind{
 	"share": v1.DiskActivityKind_DISK_ACTIVITY_KIND_SHARE, "link_on": v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_ON,
 	"link_off": v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_OFF, "trash": v1.DiskActivityKind_DISK_ACTIVITY_KIND_TRASH,
 	"restore": v1.DiskActivityKind_DISK_ACTIVITY_KIND_RESTORE, "delete": v1.DiskActivityKind_DISK_ACTIVITY_KIND_DELETE,
-	"edit": v1.DiskActivityKind_DISK_ACTIVITY_KIND_EDIT,
+	"edit":             v1.DiskActivityKind_DISK_ACTIVITY_KIND_EDIT,
+	"link_password_on": v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_PASSWORD_ON, "link_password_off": v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_PASSWORD_OFF,
+	"link_view_only_on": v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_ON, "link_view_only_off": v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_OFF,
 }
 
 func activityProto(a sqlc.DiskActivity) *v1.DiskActivity {

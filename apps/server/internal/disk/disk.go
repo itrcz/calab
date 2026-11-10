@@ -56,6 +56,12 @@ type Service struct {
 	LinkReadLimit, LinkDownloadLimit Limiter
 	// LinkArchiveLimit: «Скачать всё» of a folder link per client IP (ADR-0165). nil = none.
 	LinkArchiveLimit Limiter
+	// LinkUnlockLimit / LinkUnlockLinkLimit: password attempts on a protected link per client IP
+	// and per link (ADR-0167). nil = none.
+	LinkUnlockLimit, LinkUnlockLinkLimit Limiter
+	// UnlockKey signs the unlock cookies of protected links (DeriveUnlockKey); empty = such a
+	// link never unlocks.
+	UnlockKey []byte
 	// ArchiveMaxBytes / ArchiveMaxItems bound «Скачать всё»; 0 = ArchiveMaxBytes / ArchiveMaxItems.
 	ArchiveMaxBytes int64
 	ArchiveMaxItems int
@@ -101,8 +107,10 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("PUT /api/disk/items/{id}/permissions", s.setPermissions)
 	h("POST /api/disk/items/{id}/take-over", s.takeOver)
 	h("POST /api/disk/items/{id}/link", s.createLink)
+	h("PATCH /api/disk/items/{id}/link", s.updateLink)
 	h("DELETE /api/disk/items/{id}/link", s.deleteLink)
 	mux.Handle("GET /api/public/disk/{code}", httpx.HandlerFunc(s.publicFile))
+	mux.Handle("POST /api/public/disk/{code}/unlock", httpx.HandlerFunc(s.publicUnlock))
 	mux.Handle("GET /api/public/disk/{code}/content", httpx.HandlerFunc(s.publicContent))
 	mux.Handle("GET /api/public/disk/{code}/thumbnail", httpx.HandlerFunc(s.publicThumbnail))
 	mux.Handle("GET /api/public/disk/{code}/office", httpx.HandlerFunc(s.publicOffice))

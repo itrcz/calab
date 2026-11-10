@@ -407,6 +407,7 @@ order: 1
 | `GET` | `/api/public/disk/{code}/items/{id}/content` | без авторизации |
 | `GET` | `/api/public/disk/{code}/items/{id}/thumbnail` | без авторизации |
 | `GET` | `/api/public/disk/{code}/archive` | без авторизации |
+| `POST` | `/api/public/disk/{code}/unlock` | без авторизации |
 | `GET` | `/api/public/forms/{code}` | без авторизации |
 | `POST` | `/api/public/forms/{code}/submissions` | без авторизации |
 | `GET` | `/api/room-invites/{code}` | без авторизации |
@@ -496,6 +497,7 @@ order: 1
 | `GET` | `/api/disk/items/{id}/activity` | Диск |
 | `DELETE` | `/api/disk/items/{id}/link` | Диск |
 | `POST` | `/api/disk/items/{id}/link` | Диск |
+| `PATCH` | `/api/disk/items/{id}/link` | Диск |
 | `GET` | `/api/disk/items/{id}/path` | Диск |
 | `GET` | `/api/disk/items/{id}/permissions` | Диск |
 | `PUT` | `/api/disk/items/{id}/permissions` | Диск |

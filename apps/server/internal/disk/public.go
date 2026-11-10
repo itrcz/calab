@@ -26,8 +26,9 @@ var errNoLink = httpx.NotFound("link")
 type PublicOffice interface {
 	// Opens reports whether a file of this name and size opens in the viewer.
 	Opens(name string, size int64) bool
-	// PublicView signs a view-only configuration of the file for an anonymous visitor.
-	PublicView(ctx context.Context, fileID uuid.UUID, title string, size int64, light, phone bool, lang string) (*v1.OfficeConfigResponse, error)
+	// PublicView signs a view-only configuration of the file for an anonymous visitor;
+	// noDownload (a «Без скачивания» link, ADR-0167) also turns off download, print and copy.
+	PublicView(ctx context.Context, fileID uuid.UUID, title string, size int64, light, phone, noDownload bool, lang string) (*v1.OfficeConfigResponse, error)
 }
 
 // linkRow is a live link with its item.
@@ -36,11 +37,22 @@ type linkRow struct {
 	item sqlc.DiskItem
 }
 
-// linked resolves an anonymous visit of a public link (ADR-0094 §3, ADR-0165): the live link
-// (not revoked, not expired) with its item — a file in the trash or restricted too, a folder not
-// in the trash —, in a workspace that is not suspended and whose identity policy allows public
-// capabilities (like public forms). limit is spent first, per client IP.
+// linked resolves an anonymous visit of a public link (resolveLink) that the visitor may read: a
+// link with a password needs a valid unlock (ADR-0167), else errLocked.
 func (s *Service) linked(w http.ResponseWriter, r *http.Request, limit Limiter) (linkRow, error) {
+	row, err := s.resolveLink(w, r, limit)
+	if err == nil && !s.unlocked(r, row.link) {
+		err = errLocked
+	}
+	return row, err
+}
+
+// resolveLink resolves an anonymous visit of a public link (ADR-0094 §3, ADR-0165): the live
+// link (not revoked, not expired) with its item — a file in the trash or restricted too, a
+// folder not in the trash —, in a workspace that is not suspended and whose identity policy
+// allows public capabilities (like public forms). limit is spent first, per client IP. It does
+// not check the link's password: linked does.
+func (s *Service) resolveLink(w http.ResponseWriter, r *http.Request, limit Limiter) (linkRow, error) {
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Robots-Tag", "noindex, nofollow")
@@ -110,13 +122,18 @@ func (s *Service) officeOpens(name string, size int64) bool {
 }
 
 // publicFile: GET /api/public/disk/{code} — PublicDiskFile, anonymous. A folder link answers
-// its name and kind only (the contents: publicItems).
+// its name and kind only (the contents: publicItems). A locked link (ADR-0167) answers locked
+// and nothing else.
 func (s *Service) publicFile(w http.ResponseWriter, r *http.Request) error {
-	row, err := s.linked(w, r, s.LinkReadLimit)
+	row, err := s.resolveLink(w, r, s.LinkReadLimit)
 	if err != nil {
 		return err
 	}
-	out := &v1.PublicDiskFile{Name: row.item.Name, Id: row.item.ID.String()}
+	if !s.unlocked(r, row.link) {
+		httpx.Write(w, http.StatusOK, &v1.PublicDiskFile{Locked: true})
+		return nil
+	}
+	out := &v1.PublicDiskFile{Name: row.item.Name, Id: row.item.ID.String(), ViewOnly: row.link.ViewOnly}
 	if row.link.ExpiresAt != nil {
 		out.ExpiresAt = timestamppb.New(*row.link.ExpiresAt)
 	}
@@ -140,8 +157,12 @@ func (s *Service) publicFile(w http.ResponseWriter, r *http.Request) error {
 }
 
 // serveCounted serves the bytes of a linked file (Range); a request from the start of the file
-// counts as a download of the link (no lock: one UPDATE of a counter).
+// counts as a download of the link (no lock: one UPDATE of a counter). A view-only link
+// (ADR-0167) serves only files of the page's in-browser viewers, inline.
 func (s *Service) serveCounted(w http.ResponseWriter, r *http.Request, link sqlc.DiskLink, it sqlc.DiskItem, f sqlc.File) error {
+	if link.ViewOnly && !viewable(it.Name, f.Mime) {
+		return errViewOnly
+	}
 	if rg := r.Header.Get("Range"); r.Method == http.MethodGet && (rg == "" || strings.HasPrefix(rg, "bytes=0-")) {
 		if err := db.GuardExec(r.Context(), s.db, func(q *sqlc.Queries) error {
 			return q.CountDiskLinkDownload(r.Context(), link.ID)
@@ -150,6 +171,9 @@ func (s *Service) serveCounted(w http.ResponseWriter, r *http.Request, link sqlc
 		}
 	}
 	f.Name = it.Name // the name on the Disk (a renamed file downloads as such)
+	if link.ViewOnly {
+		return s.files.ServeLinkedInline(w, r, f)
+	}
 	return s.files.ServeLinked(w, r, f, false)
 }
 
@@ -199,7 +223,7 @@ func (s *Service) publicOffice(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return errNoItem
 	}
-	out, err := s.Office.PublicView(ctx, f.ID, it.Name, f.Size, qs.Get("theme") == "light", qs.Get("phone") == "1", qs.Get("lang"))
+	out, err := s.Office.PublicView(ctx, f.ID, it.Name, f.Size, qs.Get("theme") == "light", qs.Get("phone") == "1", row.link.ViewOnly, qs.Get("lang"))
 	if err != nil {
 		return err
 	}

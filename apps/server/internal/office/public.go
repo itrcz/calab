@@ -21,7 +21,7 @@ func (s *Service) Opens(name string, size int64) bool {
 // (ADR-0165; disk.PublicOffice): the attachment path — a short-lived URL token pinned to the
 // file, no session, no callback — for an anonymous visitor (a fresh user id per open, «Гость»).
 // The caller checked the link and the file's place in it.
-func (s *Service) PublicView(ctx context.Context, fileID uuid.UUID, title string, size int64, light, phone bool, lang string) (*v1.OfficeConfigResponse, error) {
+func (s *Service) PublicView(ctx context.Context, fileID uuid.UUID, title string, size int64, light, phone, noDownload bool, lang string) (*v1.OfficeConfigResponse, error) {
 	if !s.cfg.Enabled {
 		return nil, httpx.NotFound("office")
 	}
@@ -37,7 +37,7 @@ func (s *Service) PublicView(ctx context.Context, fileID uuid.UUID, title string
 		return nil, err
 	}
 	op := opening{format: fm, mode: v1.OfficeMode_OFFICE_MODE_VIEW, key: viewKey(s.cfg.URLKey, "a-", fileID, ""), title: title,
-		fileURL: s.cfg.APIURL + "/api/office/file/" + tok, fileID: fileID}
+		fileURL: s.cfg.APIURL + "/api/office/file/" + tok, fileID: fileID, noDownload: noDownload}
 	name := "Guest"
 	if lang == "" || strings.HasPrefix(strings.ToLower(lang), "ru") {
 		name = "Гость"
