@@ -6,7 +6,7 @@ import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { isSafeHref } from '../../lib/markdown/parse';
 import { openContentLink } from '../../services/contentLink';
-import { unfurl } from '../../services/chat';
+import { peekUnfurl, unfurl } from '../../services/chat';
 import { ownBoardLink } from '../../lib/ownBoardLink';
 import { useSession } from '../../stores/session';
 import { TaskLinkCard } from '../boards/TaskLinkCard';
@@ -22,11 +22,14 @@ const isProxied = (p: string): boolean => p.startsWith('/api/unfurl/image');
  */
 export function LinkPreview({ url, onHide }: { url: string; onHide?: (() => void) | undefined }): ReactNode {
   // undefined while loading; null = nothing to show (the server had no preview, or no access).
-  const [card, setCard] = useState<UnfurlResponse | null | undefined>(undefined);
+  // An answer already in is drawn on the first render: a remounted row keeps its height (#313).
+  const [got, setGot] = useState<{ url: string; card: UnfurlResponse | null } | null>(null);
+  const card = got?.url === url ? got.card : peekUnfurl(url);
   useEffect(() => {
+    if (peekUnfurl(url) !== undefined) return;
     let alive = true;
     void unfurl(url).then((c) => {
-      if (alive) setCard(c);
+      if (alive) setGot({ url, card: c });
     });
     return () => {
       alive = false;

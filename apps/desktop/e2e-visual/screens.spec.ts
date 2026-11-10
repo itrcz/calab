@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { create } from '@bufbuild/protobuf';
 import { AiState, FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, ReportReason, RoomPermissionOverrideSchema, UserReportSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
-import { FREE_PLAN_LIMITS, defaultSettings, mockPdf, ts } from '../e2e-support/fixtures';
+import { FREE_PLAN_LIMITS, UNFURLS, defaultSettings, mockPdf, ts } from '../e2e-support/fixtures';
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
@@ -1517,6 +1517,24 @@ test('chat-link-preview', async ({ open, win, mock, shot }) => {
   }).toPass({ timeout: 10_000 });
   await expect(hidePreview).toBeFocused();
   await checkpoint(shot, 'chat-link-preview');
+
+  // GitHub #313: a run of links (cards, one with a picture, and «preview not found» ones), the room
+  // opened afresh: the feed settles at its end with every row shown, never an empty hidden list.
+  const urls = Object.keys(UNFURLS);
+  let last = '';
+  for (let i = 0; i < 12; i++) {
+    const url = i % 3 === 2 ? `https://calaba.test/missing/${i}` : (urls[i % urls.length] ?? '');
+    last = mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: `Сводка ${i + 1}: ${url}` }).id;
+  }
+  await win.locator('aside').getByRole('button', { name: /разработка/ }).first().click();
+  await expect(win.getByRole('heading', { name: 'разработка' })).toBeVisible();
+  await win.locator('aside').getByRole('button', { name: /общий/ }).first().click();
+  await expect(win.getByRole('heading', { name: 'общий' })).toBeVisible();
+  const list = win.locator('[data-testid="virtuoso-item-list"]').first();
+  await expect.poll(() => list.evaluate((el) => getComputedStyle(el).visibility), { message: 'the feed stays hidden', timeout: 5000 }).toBe('visible');
+  await expect(win.locator(`[data-message-id="${last}"]`)).toBeVisible();
+  await win.waitForFunction(() => [...document.querySelectorAll('[data-virtuoso-scroller] img')].every((i) => (i as HTMLImageElement).complete));
+  await checkpoint(shot, 'chat-link-preview-run');
 });
 
 test('chat-mention-popover', async ({ open, win, mock, shot }) => {

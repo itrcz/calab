@@ -16,7 +16,7 @@ vi.mock('./gateway', () => ({ sendTyping: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { fail: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
 
-const { sendMessage, retrySend, loadPins, resyncPins, unfurl } = await import('./chat');
+const { sendMessage, retrySend, loadPins, resyncPins, unfurl, peekUnfurl, resetChatCaches } = await import('./chat');
 const { ApiError } = await import('../lib/api/client');
 const { useMessages } = await import('../stores/messages');
 
@@ -141,5 +141,25 @@ describe('chat.unfurl', () => {
     unfurlGet.mockImplementation((u) => Promise.resolve(create(UnfurlResponseSchema, u.endsWith('/empty') ? { url: u } : { url: u, title: 'Title' })));
     await expect(unfurl('https://example.test/empty')).resolves.toBeNull();
     await expect(unfurl('https://example.test/card')).resolves.toMatchObject({ title: 'Title' });
+  });
+
+  // GitHub #313: a row the feed remounts draws its preview at the final height on the first render.
+  it('peekUnfurl: the answer synchronously once it is in (a card or null), nothing before or after a reset', async () => {
+    unfurlGet.mockReset();
+    let answer: (r: UnfurlResponse) => void = () => undefined;
+    unfurlGet.mockImplementation((u) => (u.endsWith('/slow') ? new Promise((res) => (answer = res)) : Promise.reject(new ApiError('ERROR_CODE_NOT_FOUND', 'preview not found', 404))));
+    const slow = 'https://example.test/peek/slow';
+    const missing = 'https://example.test/peek/missing';
+    expect(peekUnfurl(slow)).toBeUndefined();
+    const p = unfurl(slow);
+    expect(peekUnfurl(slow)).toBeUndefined(); // on its way
+    answer(create(UnfurlResponseSchema, { url: slow, title: 'Slow card' }));
+    await p;
+    expect(peekUnfurl(slow)).toMatchObject({ title: 'Slow card' });
+    await unfurl(missing);
+    expect(peekUnfurl(missing)).toBeNull(); // «preview not found» is an answer too: no card, no growth later
+    resetChatCaches();
+    expect(peekUnfurl(slow)).toBeUndefined();
+    expect(peekUnfurl(missing)).toBeUndefined();
   });
 });

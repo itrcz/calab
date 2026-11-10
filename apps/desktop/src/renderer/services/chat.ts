@@ -352,6 +352,9 @@ export async function resyncPins(): Promise<void> {
 // ---- link previews: one request per URL per session (the server caches for everyone)
 
 const unfurlCache = new Map<string, Promise<UnfurlResponse | null>>();
+// The answers already in, by URL (same keys as unfurlCache): a row the virtualised feed remounts
+// draws its preview at its final height on the first render (GitHub #313, peekUnfurl).
+const unfurlDone = new Map<string, UnfurlResponse | null>();
 const UNFURL_CACHE_MAX = 300;
 
 export function unfurl(url: string): Promise<UnfurlResponse | null> {
@@ -362,11 +365,29 @@ export function unfurl(url: string): Promise<UnfurlResponse | null> {
     () => null,
   );
   unfurlCache.set(url, p);
+  void p.then((r) => {
+    // Not if the cache was cleared (sign-out, revoked rooms) or the entry evicted meanwhile.
+    if (unfurlCache.get(url) === p) unfurlDone.set(url, r);
+  });
   if (unfurlCache.size > UNFURL_CACHE_MAX) {
     const oldest = unfurlCache.keys().next().value;
-    if (oldest !== undefined) unfurlCache.delete(oldest);
+    if (oldest !== undefined) {
+      unfurlCache.delete(oldest);
+      unfurlDone.delete(oldest);
+    }
   }
   return p;
+}
+
+/**
+ * The preview of `url` if its answer is already in (null: there is none), undefined if not asked or
+ * still on its way. A row remounted by the virtualised feed (scrolled back into its overscan) used
+ * to draw no preview on its first render and the card a render later, even with the answer cached:
+ * every remount grew the row after Virtuoso had measured it, which restarted Virtuoso's scroll to
+ * the bottom while opening a room — a room of links never settled and stayed hidden (GitHub #313).
+ */
+export function peekUnfurl(url: string): UnfurlResponse | null | undefined {
+  return unfurlDone.get(url);
 }
 
 export interface OutgoingFile {
@@ -542,6 +563,7 @@ export function resetChatCaches(): void {
   newerLoading.clear();
   pinsLoading.clear();
   unfurlCache.clear();
+  unfurlDone.clear();
   sentRead.clear();
   pendingRead.clear();
   lastTyping.clear();
@@ -563,4 +585,5 @@ export function clearChatRooms(ids: ReadonlySet<string>): void {
     readTimers.delete(id);
   }
   unfurlCache.clear();
+  unfurlDone.clear();
 }

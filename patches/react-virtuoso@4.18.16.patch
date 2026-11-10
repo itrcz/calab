@@ -1,5 +1,5 @@
 diff --git a/dist/index.mjs b/dist/index.mjs
-index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c870f5686d7 100644
+index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a0fb6956c6dc552ba7aaff72c3607c825b755a1e 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
 @@ -332,8 +332,14 @@ function An(t, e, n, o, r, s, i, l, c) {
@@ -18,7 +18,29 @@ index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c87
  }
  function ko(t, e, n, o) {
    const r = t.length;
-@@ -2065,6 +2071,7 @@ function oo(t) {
+@@ -1106,7 +1112,7 @@ const fe = Z(
+     { log: m }
+   ]) => {
+     const h = K(), y = K(), R = w(0);
+-    let I = null, g = null, a = null;
++    let I = null, g = null, a = null, dvLoc = null, dvTries = 0;
+     function T() {
+       I !== null && (I(), I = null), a !== null && (a(), a = null), g && (clearTimeout(g), g = null), M(c, !1);
+     }
+@@ -1123,10 +1129,11 @@ const fe = Z(
+             U
+           ]) => {
+             const q = Zn(x), { align: $, behavior: j, offset: J } = q, dt = u - 1, pt = qn(q, C, dt);
++            x !== dvLoc ? (dvLoc = x, dvTries = 0) : dvTries++;
+             let It = ce(pt, C.offsetTree, O) + b;
+             $ === "end" ? (It += V + Rt(C.sizeTree, pt)[1] - B + U, pt === dt && (It += z)) : $ === "center" ? It += (V + Rt(C.sizeTree, pt)[1] - B + U) / 2 : It -= p, J !== void 0 && J !== 0 && (It += J);
+             const Ft = (ht) => {
+-              T(), ht ? (F("retrying to scroll to", { location: x }, mt.DEBUG), M(h, x)) : (M(y, !0), F("list did not change, scroll successful", {}, mt.DEBUG));
++              T(), ht && dvTries < 30 ? (F("retrying to scroll to", { location: x }, mt.DEBUG), M(h, x)) : (dvLoc = null, M(y, !0), F("list did not change, scroll successful", {}, mt.DEBUG));
+             };
+             if (T(), j === "smooth") {
+               let ht = !1;
+@@ -2065,6 +2072,7 @@ function oo(t) {
    let e = !1, n;
    return (() => (e || (e = !0, n = t()), n));
  }
@@ -26,7 +48,7 @@ index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c87
  const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.test(navigator.userAgent)), sr = Z(
    ([
      { deviation: t, deviationCommitted: e, scrollBy: n, scrollingInProgress: o, scrollTop: r },
-@@ -2093,10 +2100,10 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+@@ -2093,10 +2101,10 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
        )
      );
      function g(x) {
@@ -39,7 +61,7 @@ index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c87
      }), X(
        S(
          at(gt(i, !1), t, R),
-@@ -2116,13 +2123,13 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+@@ -2116,13 +2124,13 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
      function T() {
        if (a === null)
          return;
@@ -57,7 +79,7 @@ index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c87
      }), X(
        S(
          f,
-@@ -2145,7 +2152,8 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
+@@ -2145,7 +2153,8 @@ const rr = oo(() => /iP(ad|od|hone)/i.test(navigator.userAgent) && /WebKit/i.tes
          })
        ),
        (x) => {
@@ -67,7 +89,7 @@ index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c87
        }
      ), { deviation: t };
    },
-@@ -2473,7 +2481,7 @@ const ur = /* @__PURE__ */ Z(() => {
+@@ -2473,7 +2482,7 @@ const ur = /* @__PURE__ */ Z(() => {
    ([t, e]) => ({ ...t, ...e }),
    st(ro, ur)
  ), dr = ({ height: t }) => /* @__PURE__ */ G("div", { style: { height: t } }), fr = { overflowAnchor: "none", position: Qe(), zIndex: 1 }, lo = { overflowAnchor: "none" }, mr = { ...lo, display: "inline-block", height: "100%" }, Hn = /* @__PURE__ */ E.memo(function({ showTopList: e = !1 }) {
@@ -76,7 +98,7 @@ index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c87
      o,
      h,
      m,
-@@ -2483,13 +2491,21 @@ const ur = /* @__PURE__ */ Z(() => {
+@@ -2483,13 +2492,21 @@ const ur = /* @__PURE__ */ Z(() => {
      s,
      I,
      A("skipAnimationFrameInResizeObserver")
@@ -101,7 +123,7 @@ index d2fd370c5b8cdd0c571e588f8024a890f63a01fe..a5b1d98a670c1d2c7bb5df2ceb143c87
    }, [a, x]);
    const C = A("EmptyPlaceholder"), B = A("ScrollSeekPlaceholder") ?? dr, u = A("ListComponent"), p = A("ItemComponent"), b = A("GroupComponent"), z = A("computeItemKey"), F = A("isSeeking"), O = A("groupIndices").length > 0, V = A("alignToBottom"), U = A("initialItemFinalLocationReached"), q = e ? {} : {
      boxSizing: "border-box",
-@@ -2512,7 +2528,7 @@ const ur = /* @__PURE__ */ Z(() => {
+@@ -2512,7 +2529,7 @@ const ur = /* @__PURE__ */ Z(() => {
      {
        ...rt(u, f),
        "data-testid": e ? "virtuoso-top-item-list" : "virtuoso-item-list",

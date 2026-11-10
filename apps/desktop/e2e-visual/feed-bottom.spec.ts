@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { UNFURLS } from '../e2e-support/fixtures';
 import { IDS, type MockServer } from '../e2e-support/mock-server';
 import { expect, signIn, test } from './calendarWeb';
 
@@ -169,3 +170,103 @@ for (const size of SIZES) {
     await expectAtEnd(page, (await bottom(page)).key, 'my own message sent from above');
   });
 }
+
+/**
+ * GitHub #313: a room whose last messages are links (a bot posting a run of them) — cards, one with
+ * a picture, and «preview not found» (404) — each preview answering late, at its own moment.
+ * Virtuoso keeps its list `visibility: hidden` until its scroll to the bottom lands; every row
+ * growing after it was measured restarts that scroll. The feed must settle at its end, shown, and
+ * stop moving.
+ */
+const KNOWN = Object.keys(UNFURLS);
+
+function seedLinks(mock: MockServer, count: number): string {
+  let last = '';
+  for (let i = 0; i < count; i++) {
+    const url = i % 3 === 2 ? `https://calaba.test/missing/${i}` : (KNOWN[i % KNOWN.length] ?? PREVIEW_URL);
+    last = mock.injectMessage({ roomId: ROOM, authorId: IDS.users.boris, content: `Отчёт ${i + 1}: ${url}` }).id;
+  }
+  mock.markRead(IDS.users.anna, ROOM, last);
+  return last;
+}
+
+async function openGeneral(page: Page, mock: MockServer, size: { width: number; height: number }): Promise<void> {
+  await page.setViewportSize(size);
+  await signIn(page, mock);
+  if (size.width < 500) await page.getByText('общий').first().click();
+  else await page.locator('aside').getByRole('button', { name: /общий/ }).first().click();
+  await expect(page.locator('[data-virtuoso-scroller]').first()).toBeVisible();
+}
+
+interface Remounts {
+  mounted: number;
+  bare: string[];
+}
+
+for (const size of SIZES) {
+  const name = `${size.width}x${size.height}`;
+
+  test(`feed ${name}: a room of late link previews opens at its end, shown and still (#313)`, async ({ page, mock }) => {
+    const last = seedLinks(mock, 30);
+    // Every preview answers late, each after its own delay (40–1000 ms), out of order.
+    let n = 0;
+    await page.route(/\/api\/unfurl/, async (r) => {
+      await new Promise((res) => setTimeout(res, 40 + ((n++ * 137) % 960)));
+      await r.continue().catch(() => undefined);
+    });
+    await openGeneral(page, mock, size);
+    const list = page.locator('[data-testid="virtuoso-item-list"]').first();
+    await expect.poll(() => list.evaluate((el) => getComputedStyle(el).visibility), { message: 'the feed stays hidden', timeout: 5000 }).toBe('visible');
+    await expectAtEnd(page, last, 'opened with late previews');
+    // Still: nothing keeps scrolling, the geometry no longer changes.
+    const sample = (): Promise<string> =>
+      page.evaluate(() => {
+        const el = document.querySelector<HTMLElement>('[data-virtuoso-scroller]');
+        const items = el?.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]');
+        return `${el?.scrollTop ?? -1}/${el?.scrollHeight ?? -1}/${items?.style.paddingTop ?? ''}/${items?.style.paddingBottom ?? ''}`;
+      });
+    await page.waitForTimeout(2500);
+    const a = await sample();
+    await page.waitForTimeout(800);
+    expect(await sample(), 'the feed keeps moving').toBe(a);
+    expect(await page.locator('[data-virtuoso-scroller]').first().getAttribute('data-scrolling'), 'the feed keeps scrolling').toBeNull();
+  });
+
+  // The engine of #313: a row Virtuoso remounts (scrolled back into its overscan) drew no preview
+  // on its first commit and the card a render later, even with the answer cached — it grew after
+  // being measured. Now a remounted row carries its card (or, for a 404, nothing) from the start.
+  test(`feed ${name}: a remounted link row has its preview from its first commit (#313)`, async ({ page, mock }) => {
+    seedLinks(mock, 30);
+    await openGeneral(page, mock, size);
+    await expect(page.locator('[data-testid="link-preview"]').last()).toBeVisible();
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const list = document.querySelector('[data-testid="virtuoso-item-list"]');
+      if (!list) throw new Error('no feed');
+      const seen: Remounts = { mounted: 0, bare: [] };
+      (window as unknown as { gh313: Remounts }).gh313 = seen;
+      // Runs right after React's commit, before its passive effects: the row as it is measured.
+      new MutationObserver((records) => {
+        for (const r of records)
+          for (const node of r.addedNodes) {
+            if (!(node instanceof HTMLElement)) continue;
+            const row = node.querySelector<HTMLElement>('[data-message-id]');
+            const text = row?.textContent ?? '';
+            if (!row || !(text.includes('calaba.test/docs/') || text.includes('calaba.test/board'))) continue;
+            seen.mounted++;
+            if (!row.querySelector('[data-testid="link-preview"]')) seen.bare.push(row.dataset['messageId'] ?? '');
+          }
+      }).observe(list, { childList: true });
+    });
+    const scroller = page.locator('[data-virtuoso-scroller]').first();
+    // Far up (the bottom rows unmount), then back down (they mount again, answers cached).
+    await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+    await page.waitForTimeout(400);
+    await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await page.waitForTimeout(400);
+    const seen = await page.evaluate(() => (window as unknown as { gh313: Remounts }).gh313);
+    expect(seen.mounted, 'no link row was remounted').toBeGreaterThan(0);
+    expect(seen.bare, 'remounted rows drew their preview a render late').toEqual([]);
+  });
+}
+
