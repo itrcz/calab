@@ -134,6 +134,7 @@ func TestCursor(t *testing.T) {
 func TestMarkWords(t *testing.T) {
 	cases := map[string]string{
 		"Отчёт за квартал.pdf": "\u0002Отчёт\u0003 за квартал.pdf",
+		"Отчет за ёлку.pdf":    "\u0002Отчет\u0003 за ёлку.pdf", // «е» = «ё» both ways (CBF-169)
 		"report-report.txt":    "\u0002report\u0003-\u0002report\u0003.txt",
 		"a\u0002b.txt":         "ab.txt",
 	}

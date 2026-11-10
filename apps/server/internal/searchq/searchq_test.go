@@ -2,6 +2,7 @@ package searchq
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -131,6 +132,31 @@ func TestParseLimits(t *testing.T) {
 	}
 	if n := utf8.RuneCountInString(q.Words[0]); n != maxWord {
 		t.Fatalf("word length %d", n)
+	}
+}
+
+// CBF-169: «ё» folds to «е» on the query side; Parse itself keeps the word (messages use it as
+// typed), Folded folds TS, Words and Text, TitleMatch folds both the column and the words.
+func TestFold(t *testing.T) {
+	if got := Fold("Фёдор ЁЖ ель"); got != "Федор ЕЖ ель" {
+		t.Fatal(got)
+	}
+	q, err := Parse(`"Позвонить Фёдоров" отчёт`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.TS != `('позвонить' <-> 'фёдоров') & 'отчёт':*` {
+		t.Fatalf("Parse folded: %q", q.TS)
+	}
+	f := q.Folded()
+	if f.TS != `('позвонить' <-> 'федоров') & 'отчет':*` || f.Text != "позвонить федоров отчет" || f.Words[1] != "федоров" || q.Words[1] != "фёдоров" {
+		t.Fatalf("Folded: %+v (q %+v)", f, q)
+	}
+	var args []any
+	add := func(v any) string { args = append(args, v); return "$" + strconv.Itoa(len(args)) }
+	sql := TitleMatch("t.title", q, add)
+	if !strings.Contains(sql, "<% translate(t.title, 'Ёё', 'Ее')") || args[2] != "федоров" || args[3] != "%федоров%" {
+		t.Fatalf("TitleMatch: %s %v", sql, args)
 	}
 }
 
