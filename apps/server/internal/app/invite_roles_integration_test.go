@@ -144,4 +144,32 @@ func TestInviteRoles(t *testing.T) {
 	if !slices.Contains(am.GetMember().GetRoleIds(), team.GetId()) {
 		t.Fatalf("added: roles %v", am.GetMember().GetRoleIds())
 	}
+
+	// A standing link is a delegated grant, re-checked against its author's current roles on
+	// every join: demoted (no right to assign any more) — nobody gets the role; departed — the
+	// same; the author rejoining by their own link gets nothing either.
+	st, byMgr := link(mgr, team.GetId())
+	if st != 201 {
+		t.Fatalf("link by mgr: %d", st)
+	}
+	if st, _ := setMemberRoles(o, wid, mgr.id); st != 200 {
+		t.Fatalf("demote mgr: %d", st)
+	}
+	demoted := register(t, byMgr.GetCode())
+	if ids := memberRoleIDs(t, o, wid, demoted.id); slices.Contains(ids, team.GetId()) {
+		t.Fatalf("link of a demoted author gives its role: %v", ids)
+	}
+	st, byAdm := link(adm, team.GetId())
+	if st != 201 {
+		t.Fatalf("link by adm: %d", st)
+	}
+	adm.must(204, "DELETE", base+"/members/"+adm.id, nil, nil)
+	departed := register(t, byAdm.GetCode())
+	if ids := memberRoleIDs(t, o, wid, departed.id); slices.Contains(ids, team.GetId()) {
+		t.Fatalf("link of a departed author gives its role: %v", ids)
+	}
+	adm.must(200, "POST", "/api/invites/"+byAdm.GetCode()+"/join", nil, nil)
+	if ids := memberRoleIDs(t, o, wid, adm.id); slices.Contains(ids, team.GetId()) {
+		t.Fatalf("author rejoining by their own link gets its role: %v", ids)
+	}
 }

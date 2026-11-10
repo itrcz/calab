@@ -856,7 +856,9 @@ type Invite struct {
 	Uses        uint32                 `protobuf:"varint,6,opt,name=uses,proto3" json:"uses,omitempty"`
 	ExpiresAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
 	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	// Custom roles given on joining by it (ADR-0026 addendum 2026-11-10); deleted ones are skipped.
+	// Custom roles given on joining by it (ADR-0026 addendum 2026-11-10), as far as its author may
+	// give them at that moment; deleted ones, and all of them once the author left or lost the
+	// right, are skipped.
 	RoleIds       []string `protobuf:"bytes,9,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -255,10 +255,38 @@ func emailInvitePB(e sqlc.EmailInvite, roles []uuid.UUID) *v1.EmailInvite {
 	}
 }
 
-// GiveInviteRoles gives user, who has just joined by invitation inviteID, its custom roles
-// (ADR-0026 addendum 2026-11-10): those that still exist, deleted ones silently skipped.
-func GiveInviteRoles(ctx context.Context, q *sqlc.Queries, inviteID, user uuid.UUID) error {
-	return q.AddInviteRoles(ctx, sqlc.AddInviteRolesParams{UserID: user, InviteID: inviteID, Billing: int64(perm.Billing)})
+// GiveInviteRoles gives user, who has just joined by invitation inv (inside the join's
+// transaction, after the membership row), its custom roles (ADR-0026 addendum 2026-11-10): those
+// its author may give *now*, by the rules of inviteRoles against the author's current roles — a
+// standing link is a delegated grant, so a demoted or departed author's links hand out nothing,
+// and a role raised above the author since is skipped like a deleted one. The author joining by
+// their own link gets nothing: the self rule of memberRolesGuard (ADR-0029) would otherwise be
+// walked around by leaving and coming back. Skipped roles are silent, like deleted ones.
+func GiveInviteRoles(ctx context.Context, q *sqlc.Queries, inv sqlc.WorkspaceInvite, user uuid.UUID) error {
+	if len(inv.RoleIds) == 0 || inv.CreatedBy == user {
+		return nil
+	}
+	author, ok, err := perm.LoadMember(ctx, q, inv.WorkspaceID, inv.CreatedBy)
+	if err != nil {
+		return err
+	}
+	if !ok || !mayAssignRoles(author) {
+		return nil
+	}
+	rows, err := q.ListWorkspaceRoles(ctx, inv.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	give := make([]uuid.UUID, 0, len(inv.RoleIds))
+	for _, rr := range rows {
+		if rr.Builtin == nil && slices.Contains(inv.RoleIds, rr.ID) && checkAssignable(author, rr) == nil {
+			give = append(give, rr.ID)
+		}
+	}
+	if len(give) == 0 {
+		return nil
+	}
+	return q.AddMemberRolesIfExist(ctx, sqlc.AddMemberRolesIfExistParams{UserID: user, WorkspaceID: inv.WorkspaceID, RoleIds: give})
 }
 
 // createEmailInvite: POST /api/workspaces/{id}/invites/email {email, role?}.
@@ -587,7 +615,11 @@ func acceptEmailInvite(ctx context.Context, tx pgx.Tx, q *sqlc.Queries, pl *plan
 		}
 		return m, false, err
 	}
-	if err := GiveInviteRoles(ctx, sq, ei.InviteID, user); err != nil {
+	inv, err := sq.GetInvite(ctx, ei.InviteID)
+	if err != nil {
+		return m, false, err
+	}
+	if err := GiveInviteRoles(ctx, sq, inv, user); err != nil {
 		return m, false, err
 	}
 	return m, true, sp.Commit(ctx)

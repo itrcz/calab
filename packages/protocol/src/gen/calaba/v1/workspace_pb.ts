@@ -438,7 +438,9 @@ export type Invite = Message<"calaba.v1.Invite"> & {
   createdAt?: Timestamp | undefined;
 
   /**
-   * Custom roles given on joining by it (ADR-0026 addendum 2026-11-10); deleted ones are skipped.
+   * Custom roles given on joining by it (ADR-0026 addendum 2026-11-10), as far as its author may
+   * give them at that moment; deleted ones, and all of them once the author left or lost the
+   * right, are skipped.
    *
    * @generated from field: repeated string role_ids = 9;
    */

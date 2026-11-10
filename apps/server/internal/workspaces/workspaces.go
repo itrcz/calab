@@ -1014,7 +1014,7 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		added = true
-		return GiveInviteRoles(r.Context(), q, inv.ID, uid(r))
+		return GiveInviteRoles(r.Context(), q, inv, uid(r))
 	})
 	if err != nil {
 		return err

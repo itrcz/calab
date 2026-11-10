@@ -12,31 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const addInviteRoles = `-- name: AddInviteRoles :exec
-INSERT INTO member_roles (workspace_id, user_id, role_id)
-SELECT i.workspace_id, $1::uuid, wr.id
-FROM workspace_invites i
-JOIN workspaces w ON w.id = i.workspace_id
-JOIN workspace_roles wr ON wr.workspace_id = i.workspace_id AND wr.id = ANY (i.role_ids)
-WHERE i.id = $2::uuid AND wr.builtin IS NULL
-  AND (wr.permissions & $3::bigint = 0 OR i.created_by = w.owner_id)
-ON CONFLICT DO NOTHING
-`
-
-type AddInviteRolesParams struct {
-	UserID   uuid.UUID
-	InviteID uuid.UUID
-	Billing  int64
-}
-
-// The custom roles of invitation invite_id given to user_id who joined by it (ADR-0026 addendum
-// 2026-11-10): those that still exist; one that has billing bits only when the workspace owner
-// made the invitation (ADR-0087: money rights are the owner's to hand out).
-func (q *Queries) AddInviteRoles(ctx context.Context, arg AddInviteRolesParams) error {
-	_, err := q.db.Exec(ctx, addInviteRoles, arg.UserID, arg.InviteID, arg.Billing)
-	return err
-}
-
 const addMemberRolesIfExist = `-- name: AddMemberRolesIfExist :exec
 INSERT INTO member_roles (workspace_id, user_id, role_id)
 SELECT wr.workspace_id, $1::uuid, wr.id FROM workspace_roles wr
@@ -50,8 +25,9 @@ type AddMemberRolesIfExistParams struct {
 	RoleIds     []uuid.UUID
 }
 
-// Custom roles given to a member who has just been added (ADR-0026 addendum 2026-11-10), checked
-// by the caller; one deleted in between is skipped.
+// Custom roles given to a member who has just been added or joined by an invitation (ADR-0026
+// addendum 2026-11-10), checked by the caller (inviteRoles / GiveInviteRoles); one deleted in
+// between is skipped.
 func (q *Queries) AddMemberRolesIfExist(ctx context.Context, arg AddMemberRolesIfExistParams) error {
 	_, err := q.db.Exec(ctx, addMemberRolesIfExist, arg.UserID, arg.WorkspaceID, arg.RoleIds)
 	return err
@@ -149,6 +125,27 @@ func (q *Queries) DeleteInvite(ctx context.Context, arg DeleteInviteParams) (int
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getInvite = `-- name: GetInvite :one
+SELECT id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at, role_ids FROM workspace_invites WHERE id = $1
+`
+
+func (q *Queries) GetInvite(ctx context.Context, id uuid.UUID) (WorkspaceInvite, error) {
+	row := q.db.QueryRow(ctx, getInvite, id)
+	var i WorkspaceInvite
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Code,
+		&i.CreatedBy,
+		&i.MaxUses,
+		&i.Uses,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.RoleIds,
+	)
+	return i, err
 }
 
 const getInviteByCode = `-- name: GetInviteByCode :one

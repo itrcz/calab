@@ -96,6 +96,10 @@ type Service struct {
 	// AdmitSeat is the billing hook of that join (ADR-0080, plans.Service.AdmitSeat): called in
 	// the same transaction after the membership row is written. Optional.
 	AdmitSeat func(ctx context.Context, q *sqlc.Queries, wsID, userID uuid.UUID, role string) error
+	// InviteRoles gives the new member the invitation's custom roles (ADR-0026 addendum
+	// 2026-11-10, workspaces.GiveInviteRoles): called in the same transaction after the
+	// membership row and the seat. Optional.
+	InviteRoles func(ctx context.Context, q *sqlc.Queries, inv sqlc.WorkspaceInvite, userID uuid.UUID) error
 
 	// billingEnforced: BILLING_ENABLED && BILLING_ENFORCEMENT_ENABLED (billing suspension).
 	billingEnforced atomic.Bool
@@ -483,10 +487,11 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 					return err
 				}
 			}
-			// The invitation's custom roles (ADR-0026 addendum 2026-11-10), as on every join by it
-			// (workspaces.GiveInviteRoles).
-			if err := q.AddInviteRoles(ctx, sqlc.AddInviteRolesParams{UserID: user.ID, InviteID: inv.ID, Billing: int64(perm.Billing)}); err != nil {
-				return err
+			// The invitation's custom roles (ADR-0026 addendum 2026-11-10), as on every join by it.
+			if s.InviteRoles != nil {
+				if err := s.InviteRoles(ctx, q, *inv, user.ID); err != nil {
+					return err
+				}
 			}
 			joined = &m
 		}

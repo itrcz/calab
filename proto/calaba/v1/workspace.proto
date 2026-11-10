@@ -131,7 +131,9 @@ message Invite {
   uint32 uses = 6;
   google.protobuf.Timestamp expires_at = 7; // unset = never
   google.protobuf.Timestamp created_at = 8;
-  // Custom roles given on joining by it (ADR-0026 addendum 2026-11-10); deleted ones are skipped.
+  // Custom roles given on joining by it (ADR-0026 addendum 2026-11-10), as far as its author may
+  // give them at that moment; deleted ones, and all of them once the author left or lost the
+  // right, are skipped.
   repeated string role_ids = 9;
 }
 

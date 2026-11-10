@@ -342,6 +342,7 @@ func New(d Deps) *App {
 	authSvc.AdmitSeat = func(ctx context.Context, q *sqlc.Queries, wsID, userID uuid.UUID, role string) error {
 		return planSvc.AdmitSeat(ctx, q, wsID, userID, userID, role)
 	}
+	authSvc.InviteRoles = workspaces.GiveInviteRoles
 	authSvc.Mail = mailSvc
 	authSvc.Conversions = metrikaSvc
 	botSvc.SetAuth(authSvc)

@@ -49,4 +49,16 @@ func TestAdminAssignsRoleOfPrivateRoom(t *testing.T) {
 	if st, _ := setMemberRoles(adm, wid, a.id, plain.GetId()); st != 200 {
 		t.Fatalf("admin takes the role back: %d", st)
 	}
+	// Nor by the back door of an invitation (CBF-174): a link with the role, made by the admin,
+	// gives it to others — not to the admin coming back by it after leaving.
+	var cr2 v1.CreateInviteResponse
+	adm.must(201, "POST", "/api/workspaces/"+wid+"/invites", &v1.CreateInviteRequest{MaxUses: 5, RoleIds: []string{team.GetId()}}, &cr2)
+	adm.must(204, "DELETE", "/api/workspaces/"+wid+"/members/"+adm.id, nil, nil)
+	adm.must(200, "POST", "/api/invites/"+cr2.GetInvite().GetCode()+"/join", nil, nil)
+	if ids := memberRoleIDs(t, o, wid, adm.id); len(ids) != 1 {
+		t.Fatalf("admin rejoined by their own link: roles %v, want the member role only", ids)
+	}
+	if _, st := roomPerms(t, adm, rid); st != 404 {
+		t.Fatalf("the admin sees the private room after rejoining by their own link: %d", st)
+	}
 }
