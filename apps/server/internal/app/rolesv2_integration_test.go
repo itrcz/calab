@@ -213,19 +213,31 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 	admin.must(404, "GET", "/api/boards/"+bid+"/activity", nil, nil)
 	pmo.must(404, "GET", "/api/boards/"+bid+"/activity", nil, nil)
 	pm.must(200, "GET", "/api/boards/"+bid+"/activity", nil, nil)
-	// An admin who cannot see the board may not open it by handing out the role that sees it.
-	if st, _ := setMemberRoles(admin, wid, plain.id, sales.GetId()); st != 403 {
-		t.Fatalf("admin grants the sales role: %d, want 403", st)
+	// The board invited the sales role: an admin who cannot see it hands the role to others
+	// (ADR-0026 addendum 2026-11-10, CBF-173), but not to themselves nor to a bot.
+	adminRole := builtinRole(t, o, wid, adminR).GetId()
+	if st, _ := setMemberRoles(admin, wid, plain.id, sales.GetId()); st != 200 {
+		t.Fatalf("admin grants the sales role to a member: %d, want 200", st)
 	}
-	// Nor open it partly: a role that is create-only there (ADR-0115) lists the board and lets
-	// its holders create and see their cards. A role without an override on it is fine.
+	plain.must(200, "GET", "/api/boards/"+bid, nil, nil)
+	if st, _ := setMemberRoles(admin, wid, admin.id, adminRole, sales.GetId()); st != 403 {
+		t.Fatalf("admin grants the sales role to themselves: %d, want 403", st)
+	}
+	if st, _ := setMemberRoles(admin, wid, btOut.id, sales.GetId()); st != 403 {
+		t.Fatalf("admin grants the sales role to a bot: %d, want 403", st)
+	}
+	if st, _ := setMemberRoles(admin, wid, plain.id); st != 200 {
+		t.Fatalf("admin takes the sales role back: %d", st)
+	}
+	// The same for a role that opens it partly: create-only there (ADR-0115) lists the board and
+	// lets its holders create and see their cards. A role without an override on it is fine.
 	free, clerks := newRole(t, o, wid, "free", 0), newRole(t, o, wid, "clerks", 0)
 	setBoardPerms(pm, bid, 200, append(cloneBoardOverrides(t, pm, bid), roleOv(clerks.GetId(), perm.CreateTasks, 0))...)
 	if st, _ := setMemberRoles(admin, wid, plain.id, free.GetId()); st != 200 {
 		t.Fatalf("admin grants a role the board does not name: %d, want 200", st)
 	}
-	if st, _ := setMemberRoles(admin, wid, plain.id, clerks.GetId()); st != 403 {
-		t.Fatalf("admin grants a create-only role: %d, want 403", st)
+	if st, _ := setMemberRoles(admin, wid, admin.id, adminRole, clerks.GetId()); st != 403 {
+		t.Fatalf("admin grants themselves a create-only role: %d, want 403", st)
 	}
 	if st, _ := setMemberRoles(adminOv, wid, plain.id, clerks.GetId()); st != 200 {
 		t.Fatalf("admin who sees the board grants a create-only role: %d, want 200", st)
@@ -256,8 +268,8 @@ func TestRolesV2ClosedBoard(t *testing.T) {
 	blind := register(t, code)
 	o.must(200, "PATCH", base+"/members/"+blind.id, &v1.UpdateMemberRequest{Role: &adminR}, nil)
 	pm.must(204, "DELETE", "/api/boards/"+bid, nil, nil)
-	if st, _ := setMemberRoles(blind, wid, plain.id, sales.GetId()); st != 403 {
-		t.Fatalf("admin grants the sales role of an archived closed board: %d, want 403", st)
+	if st, _ := setMemberRoles(blind, wid, blind.id, adminRole, sales.GetId()); st != 403 {
+		t.Fatalf("admin grants themselves the sales role of an archived closed board: %d, want 403", st)
 	}
 }
 

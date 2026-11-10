@@ -79,6 +79,7 @@ export const ruPeople = {
   'people.removeGuestConfirm': 'Удалить гостя {name}? Доступ к комнатам пропадёт сразу.',
   'people.err.roomFull': 'Комната заполнена',
   'people.err.forbidden': 'Недостаточно прав',
+  'people.err.rolePrivate': 'Роль открывает приватную комнату или доску, которую вы не видите: себе или боту её выдаст только тот, кто их видит',
 
   // nickname dialog
   'people.nick.titleSelf': 'Ник в «{ws}»',

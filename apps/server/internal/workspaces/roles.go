@@ -492,10 +492,7 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 		if err := q.LockWorkspaceRoles(r.Context(), wsID.String()); err != nil {
 			return err
 		}
-		guard, err := newRestrictedGuard(r.Context(), q, wsID, actor, uid(r))
-		if err != nil {
-			return err
-		}
+		var err error
 		m, err = q.GetMember(r.Context(), sqlc.GetMemberParams{WorkspaceID: wsID, UserID: target})
 		if db.IsNotFound(err) {
 			return httpx.NotFound("member")
@@ -534,6 +531,10 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 			base = perm.RoleGuest
 		}
 		tu, err := q.GetUser(r.Context(), target)
+		if err != nil {
+			return err
+		}
+		guard, err := memberRolesGuard(r.Context(), q, wsID, actor, uid(r), tu)
 		if err != nil {
 			return err
 		}
@@ -745,8 +746,8 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 	return out, nil
 }
 
-// restrictedGuard stops a role change by a non-owner (member roles, role order, role
-// deletion) that would let someone see a restricted room the actor cannot see themselves
+// restrictedGuard stops a role change by a non-owner (role order, role deletion; member roles
+// only one's own and a bot's — memberRolesGuard) that would let someone see a restricted room the actor cannot see themselves
 // (ADR-0029): access to such a room is the owner's list, and an admin must not reach it by
 // handing out a role with an allow, taking away or deleting a role with a deny, or reordering
 // roles so that an allow wins. Take it before the change and check it after, in the same
@@ -754,6 +755,19 @@ func restrictedViews(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID) (map[
 type restrictedGuard struct {
 	actor  uuid.UUID
 	before map[uuid.UUID]map[uuid.UUID]bool // nil: the owner who sees private acts, nothing to check
+}
+
+// memberRolesGuard is the guard of giving / taking roles of member target (ADR-0026 addendum
+// 2026-11-10, CBF-173). A private room or board that invited a role lets in whoever holds it:
+// who holds it is role management, by the hierarchy, like in Discord — so giving the role to
+// someone else is not guarded (since ADR-0078 every private room is closed to admins, and the
+// guard made every role invited anywhere unassignable for them). Guarded stays what would let
+// the actor in: their own roles, and a bot's (a bot is driven by whoever manages it).
+func memberRolesGuard(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, actor perm.Member, actorID uuid.UUID, target sqlc.User) (restrictedGuard, error) {
+	if target.ID != actorID && !target.IsBot {
+		return restrictedGuard{}, nil
+	}
+	return newRestrictedGuard(ctx, q, wsID, actor, actorID)
 }
 
 func newRestrictedGuard(ctx context.Context, q *sqlc.Queries, wsID uuid.UUID, actor perm.Member, actorID uuid.UUID) (restrictedGuard, error) {

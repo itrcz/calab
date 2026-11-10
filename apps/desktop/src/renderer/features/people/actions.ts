@@ -15,6 +15,8 @@ import { memberName, rolesOf, useWorkspaces } from '../../stores/workspaces';
 export function peopleError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.is('ERROR_CODE_ROOM_FULL')) return t('people.err.roomFull');
+    // The role guard (ADR-0026 addendum 2026-11-10): the role would let me (or a bot) into a private room or board.
+    if (e.is('ERROR_CODE_FORBIDDEN') && e.reason === 'OWNER_ONLY') return t('people.err.rolePrivate');
     if (e.is('ERROR_CODE_FORBIDDEN')) return t('people.err.forbidden');
   }
   return errorText(e);

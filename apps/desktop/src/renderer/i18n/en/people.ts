@@ -81,6 +81,7 @@ export const enPeople: DictShape<typeof ruPeople> = {
   'people.removeGuestConfirm': 'Remove guest {name}? They’ll lose access to rooms immediately.',
   'people.err.roomFull': 'The room is full',
   'people.err.forbidden': 'You don’t have permission',
+  'people.err.rolePrivate': 'This role opens a private room or board you can’t see: only someone who sees it can give the role to themselves or a bot',
 
   // nickname dialog
   'people.nick.titleSelf': 'Nickname in “{ws}”',

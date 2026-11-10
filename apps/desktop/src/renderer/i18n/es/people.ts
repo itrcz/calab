@@ -81,6 +81,7 @@ export const esPeople: DictShape<typeof enPeople> = {
   'people.removeGuestConfirm': '¿Quitar al invitado {name}? Perderá acceso a las salas de inmediato.',
   'people.err.roomFull': 'La sala está llena',
   'people.err.forbidden': 'No tienes permiso',
+  'people.err.rolePrivate': 'Este rol abre una sala o tablero privado que no ves: solo quien lo ve puede asignárselo a sí mismo o a un bot',
 
   // nickname dialog
   'people.nick.titleSelf': 'Apodo en «{ws}»',

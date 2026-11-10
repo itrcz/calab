@@ -257,23 +257,32 @@ func TestRestrictedFlagManageRoom(t *testing.T) {
 	}
 }
 
-// Role membership is no way in (ADR-0029): an admin who cannot see the room may not hand
-// themselves or anyone else a role that opens it; the owner and an admin who sees it may.
+// Role membership is no way in for oneself (ADR-0029, ADR-0026 addendum 2026-11-10): an admin
+// who cannot see the room may not hand themselves a role that opens it; giving it to others is
+// role management (CBF-173: the room invited the role, its holders are who role managers make
+// them); the owner and an admin who sees it may do both.
 func TestRestrictedRoleGrant(t *testing.T) {
 	f := setupRestricted(t)
 	adminID := builtinRole(t, f.o, f.wid, v1.WorkspaceRole_WORKSPACE_ROLE_ADMIN).GetId()
-	for target, ids := range map[*user][]string{f.admin: {adminID, f.insiders}, f.member: {f.insiders}} {
-		st, _ := setMemberRoles(f.admin, f.wid, target.id, ids...)
-		if st != 403 {
-			t.Fatalf("admin grants insiders to %s: %d, want 403", target.id, st)
-		}
-		var e v1.ApiError
-		if err := protojson.Unmarshal(f.admin.lastBody, &e); err != nil || e.GetReason() != "OWNER_ONLY" {
-			t.Fatalf("admin grants insiders: %s, want OWNER_ONLY", f.admin.lastBody)
-		}
+	st, _ := setMemberRoles(f.admin, f.wid, f.admin.id, adminID, f.insiders)
+	if st != 403 {
+		t.Fatalf("admin grants insiders to themselves: %d, want 403", st)
+	}
+	var e v1.ApiError
+	if err := protojson.Unmarshal(f.admin.lastBody, &e); err != nil || e.GetReason() != "OWNER_ONLY" {
+		t.Fatalf("admin grants insiders to themselves: %s, want OWNER_ONLY", f.admin.lastBody)
 	}
 	if _, st := roomPerms(t, f.admin, f.rid); st != 404 {
 		t.Fatalf("admin sees the room after a refused grant: %d", st)
+	}
+	if st, _ := setMemberRoles(f.admin, f.wid, f.member.id, f.insiders); st != 200 {
+		t.Fatalf("admin who cannot see the room grants insiders to a member: %d, want 200", st)
+	}
+	if _, st := roomPerms(t, f.member, f.rid); st != 200 {
+		t.Fatalf("member given insiders: %d, want 200", st)
+	}
+	if st, _ := setMemberRoles(f.admin, f.wid, f.member.id); st != 200 {
+		t.Fatalf("admin takes insiders back: %d, want 200", st)
 	}
 	if st, _ := setMemberRoles(f.adminUser, f.wid, f.member.id, f.insiders); st != 200 {
 		t.Fatalf("admin who sees the room grants insiders: %d, want 200", st)

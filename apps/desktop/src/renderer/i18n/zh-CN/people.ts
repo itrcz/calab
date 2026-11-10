@@ -81,6 +81,7 @@ export const zhPeople: DictShape<typeof enPeople> = {
   'people.removeGuestConfirm': '移除访客{name}？将立即失去房间访问权限。',
   'people.err.roomFull': '房间已满',
   'people.err.forbidden': '权限不足',
+  'people.err.rolePrivate': '此角色可进入你看不到的私密房间或看板：只有能看到它的人才能把该角色授予自己或机器人',
 
   // nickname dialog
   'people.nick.titleSelf': '"{ws}"中的昵称',
