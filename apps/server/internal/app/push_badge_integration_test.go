@@ -84,7 +84,7 @@ func badgeReadEvent() *v1.DispatchEvent {
 	return &v1.DispatchEvent{Event: &v1.DispatchEvent_ReadStateUpdate{ReadStateUpdate: &v1.ReadStateUpdate{}}}
 }
 
-func registerBadgeDevice(t *testing.T, server *httptest.Server, u *user) {
+func registerBadgeDevice(t *testing.T, server *httptest.Server, u *user) *v1.RegisterPushDeviceResponse {
 	t.Helper()
 	var endpoint v1.RegisterPushDeviceResponse
 	token := strings.Repeat(strings.ReplaceAll(uuid.NewString(), "-", ""), 2)
@@ -92,6 +92,7 @@ func registerBadgeDevice(t *testing.T, server *httptest.Server, u *user) {
 	t.Cleanup(func() {
 		_, _ = testDB.Pool.Exec(context.Background(), "DELETE FROM push_devices WHERE id=$1", endpoint.Id)
 	})
+	return &endpoint
 }
 
 func TestPushBadgeDebouncesAndRetriesUnacceptedCount(t *testing.T) {

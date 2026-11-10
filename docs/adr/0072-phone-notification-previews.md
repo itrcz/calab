@@ -212,12 +212,23 @@ same pass. A user can start at most one pass per second. Per process, at most fo
 workers perform DB/provider work and 128 users wait; overflow is debug-logged and
 left to the next alert/foreground reconciliation. Each endpoint gets a 750 ms
 transaction/provider budget within the existing three-second user pass.
-Unchanged counts for the same endpoint version skip APNs, using a bounded
-4,096-entry, five-minute process-local cache of accepted badge and alert sends.
-Failures are not cached; restart/eviction may cause an extra refresh. This cache
-does not bypass fresh authorization or count calculation, and is not shared across
-server replicas. No unread ledger, migration, public API, periodic polling or
-background fetch is added.
+Unchanged counts for the same endpoint version skip APNs using the shared Valkey
+key `push:badge:<device>:<version>` (under `REDIS_KEY_PREFIX`), with a five-minute
+TTL. Both alert and badge-only sends update it under the existing endpoint DB lock.
+Before sending, an atomic operation replaces the old count with a unique pending
+token, which never deduplicates. Completion writes the accepted count, or deletes
+a rejected attempt, only if that token is still current. Thus a provider timeout
+cannot leave an old accepted count, and a late cache completion cannot overwrite
+a newer attempt. A crash/canceled completion leaves a non-deduplicating token
+until the next attempt or expiry; eviction only causes an extra refresh.
+Each cache operation has a 50 ms budget within the endpoint's 750 ms. If preparation
+fails, an ordinary alert still delivers without a badge; a badge-only refresh is
+deferred to the next read/alert/foreground. Cache completion failure leaves the
+pending token, so the next correct refresh is not suppressed. Authorization and
+count calculation are always fresh. No unread ledger, migration, public API,
+periodic polling or background fetch is added.
+The row lock covers the provider call; a same-device ordinary alert can wait for
+that lock and exhaust its own 750 ms budget, then retry through existing delivery.
 
 The iOS host advertises optional `notificationsBadgeVersion: 1`. The existing
 origin/main-frame/document/sequence gate accepts only integer counts 0–99,999.

@@ -31,9 +31,22 @@ Review follow-up (PR #320, base efc7fb9aafb69140d902c657c77f74b1b8882dc1):
   allow at most four active badge workers and 128 pending users per process.
 - Bound each endpoint transaction/provider call to 750 ms, within the existing
   three-second user pass. Keep fresh authorization and endpoint locking unchanged.
-- Skip an unchanged count for the same endpoint version using a bounded, five-minute
-  in-memory cache of accepted sends; ordinary APNs alerts update that cache too.
-  Failures never populate it. This is a best-effort optimization, not an unread ledger.
+- Skip an unchanged count for the same endpoint version using the shared five-minute
+  Valkey cache described below; ordinary APNs alerts update that cache too.
+  This is a best-effort optimization, not an unread ledger.
 - Scope: push service, targeted PG17 race tests, ADR/backlog. No mobile changes,
   schema/proto changes or deployment. Verify bursts, unchanged/failed sends,
   alert-to-read-to-zero, concurrency and provider deadlines; then update PR and notify reviewer.
+
+Replica-cache correction (2026-11-10, base 0fe1bd6f6):
+- Replace the local accepted-count map with one Valkey key per endpoint/version,
+  TTL five minutes. Both alert and badge-only paths use it under the existing DB lock.
+- Invalidate the old value before sending; only an accepted send writes a new value.
+  A rejected/timed-out attempt therefore cannot leave an old count to suppress a refresh.
+- Use a unique pending token and atomic compare-on-completion so a late cache write
+  cannot overwrite a newer attempt. A pending token never suppresses delivery.
+- Cache operations are bounded by the endpoint budget. If invalidation is unavailable,
+  ordinary alerts still deliver without a badge; badge-only updates defer to the next
+  read/alert/foreground. No stale cache is allowed to suppress a later correct update.
+- Verify A:3 → B:4 → A:3 with real PG17/Valkey, including provider timeout/failure and
+  cache failure. Keep worker/debounce limits; no mobile, schema or permission changes.

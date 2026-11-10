@@ -21,6 +21,7 @@ import (
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/google/uuid"
+	"github.com/redis/rueidis"
 )
 
 // Payload carries opaque routing and authorized, bounded presentation (ADR-0072).
@@ -86,20 +87,20 @@ type Service struct {
 	badgeMu                   sync.Mutex
 	badgePending              map[uuid.UUID]bool
 	badgeWorkers              chan struct{}
-	badgeSent                 map[uuid.UUID]sentBadge
 	db                        *db.DB
+	redis                     rueidis.Client
 	providers                 map[v1.PushProvider]Provider
 }
 
 // New copies configured providers; no sender means no routing or delivery.
-func New(d *db.DB, providers map[v1.PushProvider]Provider) *Service {
+func New(d *db.DB, redis rueidis.Client, providers map[v1.PushProvider]Provider) *Service {
 	copyProviders := make(map[v1.PushProvider]Provider, len(providers))
 	for kind, provider := range providers {
 		if provider.Sender != nil && (kind == v1.PushProvider_PUSH_PROVIDER_APNS || kind == v1.PushProvider_PUSH_PROVIDER_VOIP || kind == v1.PushProvider_PUSH_PROVIDER_FCM) {
 			copyProviders[kind] = provider
 		}
 	}
-	return &Service{db: d, providers: copyProviders, badgeWorkers: make(chan struct{}, 4), badgeSent: make(map[uuid.UUID]sentBadge)}
+	return &Service{db: d, redis: redis, providers: copyProviders, badgeWorkers: make(chan struct{}, 4)}
 }
 
 type routeMux interface{ Handle(string, http.Handler) }
