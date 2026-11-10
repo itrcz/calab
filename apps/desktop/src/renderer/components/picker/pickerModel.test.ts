@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildRows, filterItems, matchRank, moveActive, navCount, normalize, rowOfNav, type PickerGroup, type PickerItem } from './pickerModel';
+import { parseQuery } from '../../lib/memberSearch';
+import { buildRows, filterItems, matchItem, moveActive, navCount, normalize, rowOfNav, type PickerGroup, type PickerItem } from './pickerModel';
 
 const item = (id: string, ...search: string[]): PickerItem => ({ id, search });
 
@@ -7,15 +8,15 @@ describe('picker search', () => {
   it('ignores case, accents and ё', () => {
     expect(normalize('  Ёлка ')).toBe('елка');
     expect(normalize('José')).toBe('jose');
-    expect(matchRank(item('a', 'Фёдор'), normalize('ФЕД'))).toBe(0);
+    expect(matchItem(item('a', 'Фёдор'), parseQuery('ФЕД'))?.rank).toBe(1);
   });
 
   it('matches any field: name, nickname, email', () => {
     const anna = item('anna', 'Аня', 'Анна Петрова', 'anna@calab.io');
-    expect(matchRank(anna, normalize('петров'))).toBe(1);
-    expect(matchRank(anna, normalize('calab'))).toBe(1);
-    expect(matchRank(anna, normalize('етр'))).toBe(2);
-    expect(matchRank(anna, normalize('борис'))).toBeNull();
+    expect(matchItem(anna, parseQuery('петров'))?.rank).toBe(2);
+    expect(matchItem(anna, parseQuery('calab'))?.rank).toBe(2);
+    expect(matchItem(anna, parseQuery('етр'))?.rank).toBe(3);
+    expect(matchItem(anna, parseQuery('борис'))).toBeNull();
   });
 
   it('puts prefix matches first, keeps the original order within a rank', () => {

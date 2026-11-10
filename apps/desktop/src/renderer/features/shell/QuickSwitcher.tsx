@@ -9,6 +9,8 @@ import { getLocale, t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
 import { translitIncludes } from '../../lib/mentions';
+import { parseQuery } from '../../lib/memberSearch';
+import { matchMember } from '../people/memberPickItems';
 import { voice } from '../../services/voice';
 import { can, isOwnerRoles, roomPerms } from '../../lib/permissions';
 import { joinOutcome } from '../../lib/voiceEntry';
@@ -164,10 +166,12 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const memberItems = useMemo(() => {
     if (!needle || author || !activeWs) return [];
     const ms = Object.values(workspaces[activeWs]?.members ?? {});
+    const pq = parseQuery(text);
+    // The shared people matcher (names, username, email, phone, extension; CBF-175) + transliteration.
     return ms
-      .filter((m) => [m.nickname, m.user?.displayName ?? ''].some((n) => foldSearch(n).includes(needle)) || translitIncludes([m.nickname, m.user?.displayName ?? ''], needle))
+      .filter((m) => matchMember(m, pq) !== null || translitIncludes([m.nickname, m.user?.displayName ?? ''], needle))
       .slice(0, MAX_MEMBERS);
-  }, [needle, author, activeWs, workspaces]);
+  }, [needle, text, author, activeWs, workspaces]);
 
   // Unified search (ADR-0062): one debounced request, the previous one aborted, answers cached.
   const summary = useSearchSummary(text, scope, !author && !tasksMode);
@@ -757,7 +761,7 @@ function RowBody({ it, q, workspaceName, activeWs, rooms }: { it: Item; q: strin
           </span>
           <RoleMark role={it.member.role} custom={look} tone="role" />
         </span>
-        <span className={sub}>{t('search.memberHint')}</span>
+        <span className={sub}>{matchMember(it.member, parseQuery(q))?.hint || t('search.memberHint')}</span>
       </>
     );
   }

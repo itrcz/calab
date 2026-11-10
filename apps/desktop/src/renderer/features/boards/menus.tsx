@@ -21,6 +21,7 @@ import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
+import { searchOf } from '../people/memberPickItems';
 import { MonthPicker } from '../calendar/MonthPicker';
 import { useToday } from '../calendar/MiniCalendar';
 import { doneType } from './model';
@@ -145,7 +146,7 @@ export function ChoiceMenu({
                 {c.icon ? <span className="grid size-5 shrink-0 place-items-center">{c.icon}</span> : null}
                 <span className="flex min-w-0 flex-1 flex-col" {...(c.title ? { title: c.title } : {})}>
                   <span className="truncate">{c.label}</span>
-                  {c.hint ? <span className={cx('truncate text-caption', active ? 'opacity-75' : 'text-muted')}>{c.hint}</span> : null}
+                  {c.hint || c.matchedBy ? <span className={cx('truncate text-caption', active ? 'opacity-75' : 'text-muted')}>{c.hint || c.matchedBy}</span> : null}
                 </span>
                 {c.caption ? <span className={cx('shrink-0 text-caption', active ? 'opacity-75' : 'text-muted')}>{c.caption}</span> : null}
                 {c.note ? <span className={cx('shrink-0 text-caption tabular-nums', active ? 'opacity-75' : 'text-muted')}>{c.note}</span> : null}
@@ -271,7 +272,7 @@ export function AssigneeMenu({
     const me = myUserId();
     const person = (id: string, name: string, fileId: string): Choice => ({
       id,
-      search: id === me ? [name, t('people.you'), t('boards.me')] : [name],
+      ...searchOf(members, id, id === me ? [t('people.you'), t('boards.me')] : []),
       label: name,
       icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
       checked: value.includes(id),
@@ -346,7 +347,7 @@ export function ApproverMenu({
       return {
         ...acc,
         id,
-        search: [name],
+        ...searchOf(members, id),
         label: name,
         icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
         checked: on,
@@ -415,7 +416,7 @@ export function WatcherMenu({
       return {
         ...accessChoice(access.get(id)),
         id,
-        search: [name],
+        ...searchOf(members, id),
         label: name,
         icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
         checked: on,

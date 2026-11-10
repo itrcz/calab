@@ -5,7 +5,7 @@ import type { DictShape } from '../types';
 export const enPicker: DictShape<typeof ruPicker> = {
   'picker.empty': "No one found",
   'picker.noRooms': "No rooms found",
-  'picker.searchPeople': "Name, nickname or email",
+  'picker.searchPeople': "Name, nickname, email or phone",
   'picker.searchRooms': "Find a room",
   'picker.roles': "Roles",
   'picker.members': "Members",

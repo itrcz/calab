@@ -3,10 +3,16 @@
  * flat row list the view renders (headers + items) and keyboard movement. No React here.
  */
 
+import { foldQuery, haystackOf, matchHaystack, parseQuery, type Match, type ParsedQuery } from '../../lib/memberSearch';
+
 /** One choosable entry. `search` holds every field the query matches (name, nickname, email…). */
 export interface PickerItem {
   id: string;
   search: readonly string[];
+  /** Contact fields (email, phone, extension) the query also matches, kept out of `search` (lib/memberSearch.ts). */
+  searchHidden?: readonly string[];
+  /** Set by the filter when only a contact field matched: the row shows it instead of its secondary text. */
+  matchedBy?: string;
   /** Shown but not choosable (e.g. the owner in room permissions: always full access). */
   disabled?: boolean;
 }
@@ -32,43 +38,26 @@ export const PICKER_VIRTUAL_MIN = 50;
 /** Row height (px): 32 on the desktop (docs/08). */
 export const PICKER_ROW_PX = 32;
 
-/** Case-, accent- and «ё»-insensitive form used for matching. */
-export function normalize(s: string): string {
-  return s
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLocaleLowerCase()
-    .replace(/ё/g, 'е')
-    .trim();
-}
+export { foldQuery as normalize };
 
 /**
- * Match rank of an item for a normalized needle: 0 = a field starts with it, 1 = a word inside a
- * field starts with it, 2 = contained anywhere, null = no match. Empty needle matches everything (0).
+ * Match of an item for a parsed query (lib/memberSearch.ts, the one matcher): rank 0 exact name …
+ * 4 contact field only (`hint` = that contact), null = no match. Empty query matches everything.
  */
-export function matchRank(item: PickerItem, needle: string): number | null {
-  if (!needle) return 0;
-  let best: number | null = null;
-  for (const raw of item.search) {
-    const f = normalize(raw);
-    if (!f) continue;
-    const at = f.indexOf(needle);
-    if (at < 0) continue;
-    const r = at === 0 ? 0 : /[\s._@-]/.test(f[at - 1] ?? '') ? 1 : 2;
-    if (best === null || r < best) best = r;
-    if (best === 0) break;
-  }
-  return best;
+export function matchItem(item: PickerItem, q: ParsedQuery): Match | null {
+  return matchHaystack(haystackOf(item.search, item.searchHidden), q);
 }
 
 /** Items of a group that match the query, best matches first (stable within a rank). */
 export function filterItems<T extends PickerItem>(items: readonly T[], query: string): T[] {
-  const needle = normalize(query);
-  if (!needle) return [...items];
+  const q = parseQuery(query);
+  if (!q.words.length) return [...items];
   const ranked: Array<{ item: T; rank: number; i: number }> = [];
   items.forEach((item, i) => {
-    const rank = matchRank(item, needle);
-    if (rank !== null) ranked.push({ item, rank, i });
+    const m = matchItem(item, q);
+    if (!m) return;
+    // Found by a contact (email, phone…) only: the row shows it as its secondary line.
+    ranked.push({ item: m.hint ? { ...item, matchedBy: m.hint } : item, rank: m.rank, i });
   });
   ranked.sort((a, b) => a.rank - b.rank || a.i - b.i);
   return ranked.map((r) => r.item);

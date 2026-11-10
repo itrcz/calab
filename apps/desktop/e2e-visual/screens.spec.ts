@@ -2038,6 +2038,16 @@ test('settings-role-edit', async ({ open, win, mock, shot }) => {
   await expect(dialog.getByTestId('role-perm-MANAGE_ROLES')).not.toBeChecked();
   await expect(dialog.getByTestId('role-member')).toHaveCount(2);
   await checkpoint(shot, 'settings-role-edit');
+  // CBF-175: the member picker finds people by phone / email, the matched contact is the row's secondary line.
+  await dialog.getByTestId('role-add-member').click();
+  const picker = win.getByTestId('role-member-picker');
+  await picker.getByRole('combobox').fill('+7 912 555');
+  await expect(picker.getByRole('option').filter({ hasText: 'Борис' })).toContainText('+7 912 555-02-02');
+  await checkpoint(shot, 'settings-role-edit-search-phone');
+  await picker.getByRole('combobox').fill('борис calaba');
+  await expect(picker.getByRole('option').filter({ hasText: 'Борис' })).toContainText('boris@calaba.test');
+  await checkpoint(shot, 'settings-role-edit-search-email');
+  await win.keyboard.press('Escape');
   // ADR-0087: the «Биллинг» group closes the matrix — the owner's toggles with «что даёт».
   const billing = dialog.getByTestId('role-billing-group');
   await billing.evaluate((el) => el.scrollIntoView({ block: 'center' }));

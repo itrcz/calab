@@ -31,9 +31,11 @@ export function MemberPickRow({ item, active, trailing }: { item: MemberPickItem
         </span>
         <RoleMark role={item.role} custom={item.custom} tone={tone} />
         {item.guest ? <GuestBadge /> : null}
-        {item.secondary ? (
-          <span className={cx('min-w-0 shrink-[2] truncate text-caption', active ? 'opacity-75' : 'text-muted')} title={item.secondary}>
-            {item.secondary}
+        {item.matchedBy || item.secondary ? (
+          // The contact the query matched (email, phone, extension) takes the secondary slot (CBF-175);
+          // full strength on the accent row: at 75 % it fails the 4.5:1 contrast (axe).
+          <span className={cx('min-w-0 shrink-[2] truncate text-caption', !active && 'text-muted')} title={item.matchedBy || item.secondary}>
+            {item.matchedBy || item.secondary}
           </span>
         ) : null}
       </span>

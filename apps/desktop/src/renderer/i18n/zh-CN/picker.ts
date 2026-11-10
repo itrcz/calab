@@ -5,7 +5,7 @@ import type { DictShape } from '../types';
 export const zhPicker: DictShape<typeof ruPicker> = {
   'picker.empty': "未找到任何人",
   'picker.noRooms': "未找到房间",
-  'picker.searchPeople': "姓名、昵称或邮箱",
+  'picker.searchPeople': "姓名、昵称、邮箱或电话",
   'picker.searchRooms': "查找房间",
   'picker.roles': "角色",
   'picker.members': "成员",

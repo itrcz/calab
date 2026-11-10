@@ -17,6 +17,24 @@ const team = [
 ];
 
 describe('memberItems', () => {
+  it('finds by phone, email, username and extension; the matched contact becomes the hint (CBF-175)', () => {
+    const ivan = create(WorkspaceMemberSchema, {
+      workspaceId: 'w',
+      role: WorkspaceRole.MEMBER,
+      extension: '204',
+      user: create(UserSchema, { id: 'ivan', displayName: 'Иван Фёдоров', username: 'ivanf', email: 'if@calab.io', phone: '+7 (916) 555-01-02' }),
+    });
+    const items = memberItems([ivan, ...team]);
+    expect(filterItems(items, '8 916 555').map((i) => i.userId)).toEqual(['ivan']);
+    expect(filterItems(items, '8 916 555')[0]?.matchedBy).toBe('+7 (916) 555-01-02');
+    expect(filterItems(items, 'if@calab')[0]?.matchedBy).toBe('if@calab.io');
+    expect(filterItems(items, '204')[0]?.matchedBy).toBe('204');
+    expect(filterItems(items, 'ivanf')[0]?.matchedBy).toBeUndefined();
+    expect(filterItems(items, 'федоров иван').map((i) => i.userId)).toEqual(['ivan']);
+    // No contact sent to this viewer: nothing to find (the server decides, ADR-0077).
+    expect(filterItems(memberItems(team), '555')).toEqual([]);
+  });
+
   it('lists every member — owner and admins too (docs/09 #33) — owner → admins → members → guests', () => {
     expect(memberItems(team).map((i) => i.userId)).toEqual(['anna', 'boris', 'vera', 'grigory', 'dina']);
   });

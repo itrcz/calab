@@ -5,7 +5,7 @@
 export const ruPicker = {
   'picker.empty': "Никого не найдено",
   'picker.noRooms': "Комнат не найдено",
-  'picker.searchPeople': "Имя, ник или email",
+  'picker.searchPeople': "Имя, ник, email или телефон",
   'picker.searchRooms': "Найти комнату",
   'picker.roles': "Роли",
   'picker.members': "Участники",

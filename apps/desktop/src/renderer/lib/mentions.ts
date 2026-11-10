@@ -5,6 +5,7 @@
  */
 
 import { getLocale } from '../i18n';
+import { foldQuery } from './memberSearch';
 import { mentionTargets, parseMarkdown } from './markdown/parse';
 import { achievementForMe } from './achievements';
 import type { Message } from '@calaba/protocol';
@@ -171,11 +172,12 @@ export function layoutSwap(query: string): string {
  * (also when it was typed in the other keyboard layout, ranked lower); best first.
  */
 export function filterCandidates(query: string, list: readonly MentionCandidate[], limit = 8): MentionCandidate[] {
-  const q = query.trim().toLowerCase();
+  // «ё» = «е» (CBF-169, the shared fold of lib/memberSearch.ts); @-mentions stay name-only: no contacts.
+  const q = foldQuery(query);
   const swapped = q ? layoutSwap(q) : q;
   const skel = q ? skeleton(q) : '';
   const score = (c: MentionCandidate): number => {
-    const names = [c.name, ...c.alt, ...(c.nick ? [c.nick] : [])].map((n) => n.toLowerCase());
+    const names = [c.name, ...c.alt, ...(c.nick ? [c.nick] : [])].map(foldQuery);
     if (!q) return 1;
     const by = (x: string): number => (names.some((n) => n.startsWith(x)) ? 2 : names.some((n) => n.split(/[\s._-]+/).some((w) => w.startsWith(x))) ? 1 : 0);
     const raw = by(q);

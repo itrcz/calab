@@ -1,6 +1,7 @@
 import { WorkspaceRole, type Role, type User, type WorkspaceMember } from '@calaba/protocol';
 import { customLook, rolesOfMember } from '../../lib/roles';
 import { getLocale } from '../../i18n';
+import { haystackOf, matchHaystack, type Match, type ParsedQuery } from '../../lib/memberSearch';
 import type { PickerItem } from '../../components/picker/pickerModel';
 import { nameOf, roleRank } from './members';
 
@@ -37,6 +38,37 @@ export interface RolePickItem extends PickerItem {
   note: string;
 }
 
+/** Searchable fields of a member (names / contacts), the same arrays for the same member object (cached haystack). */
+const termsCache = new WeakMap<WorkspaceMember, { search: string[]; hidden: string[] }>();
+export function memberTerms(m: WorkspaceMember, knownEmail = ''): { search: string[]; hidden: string[] } {
+  if (!knownEmail) {
+    const hit = termsCache.get(m);
+    if (hit) return hit;
+  }
+  const u = m.user;
+  // Only what the server sent this viewer: contacts are empty where they must not be seen (ADR-0077).
+  const terms = {
+    search: [m.nickname, u?.displayName ?? '', u?.username ?? ''].filter(Boolean),
+    hidden: [u?.email || knownEmail, u?.phone ?? '', m.extension].filter(Boolean),
+  };
+  if (!knownEmail) termsCache.set(m, terms);
+  return terms;
+}
+
+/** `search` / `searchHidden` of a member by id for pickers that build their own rows (task assignee menus). */
+export function searchOf(members: Readonly<Record<string, WorkspaceMember>> | undefined, userId: string, extra: readonly string[] = []): { search: string[]; searchHidden: string[] } {
+  const m = members?.[userId];
+  if (!m) return { search: [...extra], searchHidden: [] };
+  const t = memberTerms(m);
+  return { search: extra.length ? [...t.search, ...extra] : t.search, searchHidden: t.hidden };
+}
+
+/** Whether a member matches a parsed query (names, username, email, phone, extension). */
+export function matchMember(m: WorkspaceMember, q: ParsedQuery): Match | null {
+  const t = memberTerms(m);
+  return matchHaystack(haystackOf(t.search, t.hidden), q);
+}
+
 export type PeoplePickItem = MemberPickItem | RolePickItem;
 
 export interface MemberItemOpts {
@@ -60,6 +92,7 @@ export function memberItems(members: readonly WorkspaceMember[], opts: MemberIte
     const email = opts.emails?.[u.id] ?? '';
     const secondary = m.nickname && m.nickname !== u.displayName ? u.displayName : email;
     const extra = opts.decorate?.(m);
+    const terms = memberTerms(m, email);
     return {
       kind: 'member',
       id: u.id,
@@ -71,7 +104,8 @@ export function memberItems(members: readonly WorkspaceMember[], opts: MemberIte
       custom: opts.roles ? customLook(rolesOfMember(opts.roles, m)) : undefined,
       guest: m.role === WorkspaceRole.GUEST,
       note: extra?.note ?? '',
-      search: [m.nickname, u.displayName, email].filter(Boolean),
+      search: terms.search,
+      searchHidden: terms.hidden,
       ...(extra?.disabled ? { disabled: true } : {}),
     };
   });
