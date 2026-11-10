@@ -2,6 +2,8 @@
 
 Сюда попадают minor-находки ревью и не-блокеры релиза (правило CLAUDE.md «Одно ревью на изменение»). Формат: дата · где · что · почему не сейчас.
 
+- 2026-11-10 · iOS badge, PR #320 re-review · users without iOS endpoints still consume one bounded device-list query per coalesced read burst. A short negative cache could avoid that work, but must be invalidated on endpoint registration; deferred as non-blocking, retaining the existing four-worker/128-user bounds.
+
 - 2026-11-09 · iOS badge, PR #320 review · `badgeCount` reuses `ListDMs` with previews and per-workspace permission queries inside ordinary APNs delivery. A dedicated count query could reduce that cost; deferred as non-blocking to avoid changing SQL/permission semantics in the bounded-delivery fix. Foreground APNs can briefly overwrite a newer web count (documented in ADR-0072); reconcile on the next web count change/foreground return.
 
 - 2026-10-26 · iOS SDK maintenance · Expo/RN/WebView are deliberately excluded from independent Dependabot bumps. Review upstream security advisories manually on every SDK maintenance pass; a bare ignore rule can also suppress security PRs ([GitHub docs](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated)). CI SDK/export checks do not compile native transitive dependencies; keep the local native compile gate. Follow-up: a coordinated native dependency update lane that retains security PR visibility.

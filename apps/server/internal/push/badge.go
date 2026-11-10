@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -13,8 +14,10 @@ import (
 	"github.com/calaba/calaba/server/internal/dms"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
 	"github.com/google/uuid"
+	"github.com/redis/rueidis"
 )
 
 // badgeCount mirrors READY and the desktop badge: unread DMs plus visible-room mentions.
@@ -169,14 +172,16 @@ func (s *Service) syncBadge(parent context.Context, userID uuid.UUID) {
 			if err != nil {
 				return err
 			}
-			if s.badgeUnchanged(device.ID, device.Version, count) {
+			attempt, send, err := s.prepareBadge(deviceCtx, device.ID, device.Version, count, true)
+			if err != nil {
+				return err
+			}
+			if !send {
 				return nil
 			}
 			result := provider.Sender.Send(deviceCtx, Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, Token: device.Token, AppID: device.AppID, Environment: device.Environment},
 				Payload{Version: 1, Kind: "badge", Binding: device.ID.String(), EventID: uuid.NewString(), ReferenceID: userID.String(), ExpiresAt: time.Now().Add(time.Minute).UnixMilli(), Badge: &count})
-			if result.Accepted && !result.Retry && !result.Invalid {
-				s.rememberBadge(device.ID, device.Version, count)
-			}
+			s.finishBadge(deviceCtx, device.ID, device.Version, count, attempt, result)
 			if result.Invalid {
 				_, err = q.DeleteInvalidPushDevice(deviceCtx, sqlc.DeleteInvalidPushDeviceParams{ID: device.ID, Version: device.Version, TokenHash: device.TokenHash, InvalidBefore: result.InvalidBefore})
 			}
@@ -186,26 +191,53 @@ func (s *Service) syncBadge(parent context.Context, userID uuid.UUID) {
 	}
 }
 
-type sentBadge struct {
-	version int64
-	count   int
-	sentAt  time.Time
-}
+// Both paths hold the existing endpoint row lock. Invalidate the previous accepted
+// count BEFORE APNs: a timeout may still have delivered the new count. A pending
+// token never deduplicates, and prevents a late cache write overwriting a newer send.
+var badgeCacheScript = rueidis.NewLuaScript(`
+local current = redis.call('GET', KEYS[1])
+if ARGV[1] == 'prepare' then
+  if ARGV[4] == '1' and current == ARGV[3] then return 0 end
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', 300)
+  return 1
+end
+if current == ARGV[2] then
+  if ARGV[4] == '1' then
+    redis.call('SET', KEYS[1], ARGV[3], 'EX', 300)
+  else
+    redis.call('DEL', KEYS[1])
+  end
+end
+return 1
+`)
 
-// Call under the endpoint lock, after fresh authorization and count calculation.
-// This bounded process-local cache is only a best-effort send optimization.
-func (s *Service) badgeUnchanged(deviceID uuid.UUID, version int64, count int) bool {
-	s.badgeMu.Lock()
-	defer s.badgeMu.Unlock()
-	previous, ok := s.badgeSent[deviceID]
-	return ok && previous.version == version && previous.count == count && time.Since(previous.sentAt) < 5*time.Minute
-}
-
-func (s *Service) rememberBadge(deviceID uuid.UUID, version int64, count int) {
-	s.badgeMu.Lock()
-	defer s.badgeMu.Unlock()
-	if _, exists := s.badgeSent[deviceID]; !exists && len(s.badgeSent) >= 4096 {
-		clear(s.badgeSent) // eviction only permits an extra refresh, never loses unread state
+func (s *Service) badgeCache(ctx context.Context, deviceID uuid.UUID, version int64, operation, attempt string, count int, enabled bool) (int64, error) {
+	if s.redis == nil {
+		return 0, errors.New("push badge cache unavailable")
 	}
-	s.badgeSent[deviceID] = sentBadge{version: version, count: count, sentAt: time.Now()}
+	ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	flag := "0"
+	if enabled {
+		flag = "1"
+	}
+	key := redisx.Key("push:badge:" + deviceID.String() + ":" + strconv.FormatInt(version, 10))
+	return badgeCacheScript.Exec(ctx, s.redis, []string{key}, []string{operation, attempt, strconv.Itoa(count), flag}).AsInt64()
+}
+
+func (s *Service) prepareBadge(ctx context.Context, deviceID uuid.UUID, version int64, count int, deduplicate bool) (string, bool, error) {
+	attempt := "pending:" + uuid.NewString()
+	n, err := s.badgeCache(ctx, deviceID, version, "prepare", attempt, count, deduplicate)
+	if err != nil {
+		slog.DebugContext(ctx, "push badge cache unavailable: deferring badge update")
+	}
+	return attempt, n == 1, err
+}
+
+func (s *Service) finishBadge(ctx context.Context, deviceID uuid.UUID, version int64, count int, attempt string, result Result) {
+	accepted := result.Accepted && !result.Retry && !result.Invalid
+	if _, err := s.badgeCache(ctx, deviceID, version, "finish", attempt, count, accepted); err != nil {
+		// The pending token remains non-deduplicating until expiry or the next send.
+		slog.DebugContext(ctx, "push badge cache completion unavailable")
+	}
 }
