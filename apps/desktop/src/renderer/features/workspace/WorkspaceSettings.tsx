@@ -49,7 +49,7 @@ import { joinLeaveSoundMax } from '../../lib/media/joinLeaveSound';
 import { reportPlanError, workspacePlan } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
-import { EmailInviteCard, EmailInvitesList } from './EmailInvite';
+import { EmailInviteCard, EmailInvitesList, InviteRoles, useInviteRoleChoices, useInviteRoleNames } from './EmailInvite';
 import { BansTab } from './BansTab';
 import { ReportsTab } from './ReportsTab';
 import { FormerTab } from './FormerTab';
@@ -559,10 +559,12 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
   const q = useQuery({ queryKey: ['invites', workspaceId], queryFn: () => api.workspaces.invites(workspaceId) });
   const [maxUses, setMaxUses] = useState(0);
   const [expires, setExpires] = useState(7 * 86400);
+  const [roleIds, setRoleIds] = useState<string[]>([]);
+  const roleChoices = useInviteRoleChoices(workspaceId);
   // The plan's members limit (owner 28.09: free = 50): no new links or invitations at the cap.
   const cap = useMembersCap(workspaceId);
   const create = useMutation({
-    mutationFn: () => api.workspaces.createInvite(workspaceId, { maxUses, expiresInSeconds: expires }),
+    mutationFn: () => api.workspaces.createInvite(workspaceId, { maxUses, expiresInSeconds: expires, roleIds }),
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['invites', workspaceId] });
       if (r.invite) void navigator.clipboard.writeText(inviteLink(r.invite)).then(() => toast.success(t('invite.copied')));
@@ -609,6 +611,12 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
             ))}
           </Select>
         </Row>
+        {/* CBF-174: custom roles given on joining by the link — only those I may give. */}
+        {roleChoices.length > 0 ? (
+          <Row label={t('invite.roles')} hint={t('invite.rolesHint')}>
+            <InviteRoles choices={roleChoices} value={roleIds} onChange={setRoleIds} className="max-w-72 justify-end" />
+          </Row>
+        ) : null}
       </Card>
       <div className="-mt-3 flex justify-end">
         <Button busy={create.isPending} disabled={cap.full} onClick={() => create.mutate()}>
@@ -624,9 +632,7 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
               <code className="selectable min-w-0 flex-1 truncate font-mono text-caption" title={inviteLink(i)}>
                 {inviteLink(i)}
               </code>
-              <span className="shrink-0 text-caption text-faint">
-                {i.uses}/{i.maxUses || '∞'} · {i.expiresAt ? fmt.stamp(timestampDate(i.expiresAt)) : t('invite.never')}
-              </span>
+              <InviteLinkMeta workspaceId={workspaceId} invite={i} />
               <IconButton label={t('invite.copy')} onClick={() => void navigator.clipboard.writeText(inviteLink(i)).then(() => toast.success(t('invite.copied')))}>
                 <Copy className="size-4" />
               </IconButton>
@@ -638,6 +644,17 @@ function InvitesTab({ workspaceId, roomId }: { workspaceId: string; roomId: stri
         </Card>
       ) : null}
     </>
+  );
+}
+
+/** «uses/max · Роли: … · expiry» of an active link. */
+function InviteLinkMeta({ workspaceId, invite: i }: { workspaceId: string; invite: Invite }): ReactNode {
+  const roles = useInviteRoleNames(workspaceId, i.roleIds);
+  const text = [`${i.uses}/${i.maxUses || '∞'}`, roles, i.expiresAt ? fmt.stamp(timestampDate(i.expiresAt)) : t('invite.never')].filter(Boolean).join(' · ');
+  return (
+    <span className="min-w-0 max-w-[50%] shrink truncate text-caption text-faint" title={text}>
+      {text}
+    </span>
   );
 }
 

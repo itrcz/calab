@@ -41,6 +41,7 @@ const KEY = new Set([
   'auth-forgot',
   'verify-banner',
   'invite-email',
+  'invite-email-roles',
   'room-invite',
   'room-invite-voice',
   'onboarding-mic',
@@ -518,6 +519,18 @@ test('invite-email', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('invite-email-found')).toContainText('Егор Лебедев');
   await expect(win.getByRole('button', { name: 'Добавить', exact: true })).toBeVisible();
   await checkpoint(shot, 'invite-email');
+
+  // CBF-174: custom roles in the invitation — the email card and the new link, one chip each.
+  const roles = win.getByTestId('invite-email-roles');
+  await roles.getByRole('button', { name: 'Добавить роль' }).click();
+  await win.getByTestId('invite-role-picker').getByRole('option', { name: /Дизайн/ }).click();
+  await expect(roles.getByTestId('role-chip')).toHaveText('Дизайн');
+  const linkRoles = win.getByRole('dialog').locator('[data-settings-row]').filter({ hasText: 'Выдаются при входе' });
+  await linkRoles.getByRole('button', { name: 'Добавить роль' }).click();
+  await win.getByTestId('invite-role-picker').getByRole('option', { name: /Модератор/ }).click();
+  await expect(linkRoles.getByTestId('role-chip')).toHaveText('Модератор');
+  await linkRoles.scrollIntoViewIfNeeded();
+  await checkpoint(shot, 'invite-email-roles');
 });
 
 /** «Пригласить» from a room (docs/09 #55): the room's guest link first, the workspace invites below. */

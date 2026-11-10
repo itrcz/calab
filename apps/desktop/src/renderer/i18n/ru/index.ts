@@ -686,6 +686,8 @@ export const ru = {
   'ws.role': 'Роль: {name}',
   'invite.new': 'Новое приглашение',
   'invite.createHint': 'Ссылка скопируется в буфер обмена сразу после создания.',
+  'invite.roles': 'Роли',
+  'invite.rolesHint': 'Выдаются при входе по приглашению',
   'invite.active': 'Активные приглашения',
 
   // core (review fixes: links, mic loss, insecure server)

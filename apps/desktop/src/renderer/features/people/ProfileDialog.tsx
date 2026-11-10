@@ -2,7 +2,7 @@ import * as DialogP from '../../components/radix/dialog';
 import { WorkspaceRole } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AtSign, Cake, Ellipsis, MessageCircle, Phone, Plus, X } from 'lucide-react';
+import { AtSign, Cake, Ellipsis, MessageCircle, Phone, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Avatar, avatarColor } from '../../components/Avatar';
 import { Logo } from '../../components/Logo';
@@ -26,22 +26,14 @@ import { useCanCall, useCanDm } from '../dm/canDm';
 import { useOnCall } from '../call/CallBits';
 import { startCall } from '../../services/call';
 import { promoteGuest, toggleMemberRole } from './actions';
-import { MemberPicker } from './MemberPicker';
-import type { PeoplePickItem, RolePickItem } from './memberPickItems';
-import { roleColorCss } from '../../lib/roles';
-import { BotBadge, GuestBadge, roleName, roleTextClass, roleTextStyle } from './MemberBits';
+import type { RolePickItem } from './memberPickItems';
+import { RoleChipList, rolePickItem } from './RoleChipList';
+import { BotBadge, GuestBadge, roleTextClass, roleTextStyle } from './MemberBits';
 import { BotActions, BotAvatarControls, BotDetails, BotHandle } from './BotProfile';
 import { EditBadge } from './ProfileBadge';
 import { BadgeOrRoleMark } from './MemberBadge';
 import { MemberContextMenu, useMemberActions } from './MemberContextMenu';
 import { NOTE_MAX, createNoteSaver, type NoteSaveState, type NoteSaver } from './noteSaver';
-
-/** Role dot colour: owner / admin tokens, the rest neutral. */
-function roleDot(role: WorkspaceRole): string {
-  if (role === WorkspaceRole.OWNER) return 'bg-[var(--color-role-owner)]';
-  if (role === WorkspaceRole.ADMIN) return 'bg-[var(--color-role-admin)]';
-  return 'bg-[var(--color-label-tertiary)]';
-}
 
 /**
  * Banner colour (docs/09 #20: «цвет из аватара»): the average colour of the avatar picture, or the
@@ -345,19 +337,14 @@ function MoreButton({ workspaceId, userId }: { workspaceId: string; userId: stri
 function RoleChips({ workspaceId, userId }: { workspaceId: string; userId: string }): ReactNode {
   const a = useMemberActions(workspaceId, userId);
   const roles = useMemberRoles(workspaceId, userId);
-  const [adding, setAdding] = useState(false);
   const full = roles.some((r) => r.builtin === WorkspaceRole.OWNER || r.builtin === WorkspaceRole.ADMIN);
   const shown = roles.filter((r) => !(full && r.builtin === WorkspaceRole.MEMBER));
   const toggles = new Map((a?.roles ?? []).map((x) => [x.role.id, x]));
-  const items: RolePickItem[] = (a?.roles ?? [])
-    .filter((x) => x.enabled && !x.on)
-    .map((x) => ({ kind: 'role', id: x.role.id, roleId: x.role.id, role: x.role.builtin, color: x.role.color, label: roleName(x.role), note: '', search: [roleName(x.role)] }));
+  const items: RolePickItem[] = (a?.roles ?? []).filter((x) => x.enabled && !x.on).map((x) => rolePickItem(x.role));
   if (a?.promote) {
     items.push({ kind: 'role', id: 'promote', roleId: '', role: WorkspaceRole.MEMBER, color: 0, label: t('role.member'), note: t('people.menu.promote'), search: [t('role.member')] });
   }
-  const pick = (item: PeoplePickItem): void => {
-    setAdding(false);
-    if (item.kind !== 'role') return;
+  const pick = (item: RolePickItem): void => {
     if (item.id === 'promote') {
       promoteGuest(workspaceId, userId);
       return;
@@ -366,49 +353,13 @@ function RoleChips({ workspaceId, userId }: { workspaceId: string; userId: strin
     if (x) void toggleMemberRole(workspaceId, userId, x.role, true);
   };
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {shown.map((r) => {
-        const label = roleName(r);
-        const removable = toggles.get(r.id)?.enabled === true;
-        return (
-          <span key={r.id} className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-line pl-2.5 pr-2.5 text-caption" data-testid="role-chip">
-            <span className={cx('size-2.5 shrink-0 rounded-full', roleDot(r.builtin))} style={r.builtin === WorkspaceRole.UNSPECIFIED && r.color ? { background: roleColorCss(r.color) } : undefined} aria-hidden />
-            <span className="min-w-0 truncate">{label}</span>
-            {removable ? (
-              <button
-                type="button"
-                aria-label={t('people.profile.removeRole', { role: label })}
-                className={cx(CLOSE_HIT, '-mr-1 grid size-5 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg')}
-                onClick={() => void toggleMemberRole(workspaceId, userId, r, false)}
-              >
-                <X className="size-3.5" aria-hidden />
-              </button>
-            ) : null}
-          </span>
-        );
-      })}
-      {items.length > 0 ? (
-        <MemberPicker
-          open={adding}
-          onOpenChange={setAdding}
-          groups={[{ id: 'roles', label: '', items }]}
-          onSelect={pick}
-          placeholder={t('roles.search')}
-          label={t('people.profile.addRole')}
-          testId="role-picker"
-          width={260}
-          align="start"
-        >
-          <button
-            type="button"
-            aria-label={t('people.profile.addRole')}
-            className="grid size-7 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"
-          >
-            <Plus className="size-4" aria-hidden />
-          </button>
-        </MemberPicker>
-      ) : null}
-    </div>
+    <RoleChipList
+      roles={shown}
+      removable={(r) => toggles.get(r.id)?.enabled === true}
+      onRemove={(r) => void toggleMemberRole(workspaceId, userId, r, false)}
+      items={items}
+      onPick={pick}
+    />
   );
 }
 

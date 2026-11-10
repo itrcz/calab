@@ -370,17 +370,17 @@ export const api = {
     /** Invitations by email (ADR-0023): MANAGE_WORKSPACE + a verified address of the caller. */
     lookupInvitee: (id: string, email: string, signal?: AbortSignal) =>
       call('POST', `/api/workspaces/${id}/invites/lookup`, InviteLookupResponseSchema, body(InviteLookupRequestSchema, { email }), signal),
-    /** 201: a found (verified) account becomes a member at once; 409 = already a member. */
-    addMember: (id: string, userId: string) =>
-      call('POST', `/api/workspaces/${id}/members`, AddMemberResponseSchema, body(AddMemberRequestSchema, { userId })),
+    /** 201: a found (verified) account becomes a member at once (with custom `roleIds`, CBF-174); 409 = already a member. */
+    addMember: (id: string, userId: string, roleIds: readonly string[] = []) =>
+      call('POST', `/api/workspaces/${id}/members`, AddMemberResponseSchema, body(AddMemberRequestSchema, { userId, roleIds: [...roleIds] })),
     emailInvites: (id: string) => call('GET', `/api/workspaces/${id}/invites/email`, ListEmailInvitesResponseSchema),
-    /** 201; 429 + Retry-After = the same address was invited < 24 h ago. */
-    createEmailInvite: (id: string, email: string, role?: WorkspaceRole) =>
+    /** 201; 429 + Retry-After = the same address was invited < 24 h ago. `roleIds`: custom roles given on joining (CBF-174). */
+    createEmailInvite: (id: string, email: string, role?: WorkspaceRole, roleIds: readonly string[] = []) =>
       call(
         'POST',
         `/api/workspaces/${id}/invites/email`,
         CreateEmailInviteResponseSchema,
-        body(CreateEmailInviteRequestSchema, role === undefined ? { email } : { email, role }),
+        body(CreateEmailInviteRequestSchema, role === undefined ? { email, roleIds: [...roleIds] } : { email, role, roleIds: [...roleIds] }),
       ),
     revokeEmailInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/email/${inviteId}`),
     /** Bans (docs/09 #32; MANAGE_WORKSPACE): newest first. */

@@ -336,6 +336,8 @@ export interface EmailInviteRec {
   createdAt: Timestamp;
   expiresAt: Timestamp;
   lastSentAt: Timestamp;
+  /** Custom roles given on joining (CBF-174). */
+  roleIds?: string[];
   /** Real time of the last send: the once-a-day rule. */
   lastSentMs: number;
   /** Accepted (the invitee joined): kept for the preview of the link until it expires (docs/09 #36). */

@@ -694,6 +694,8 @@ export const en: Dict = {
   'ws.role': 'Role: {name}',
   'invite.new': 'New invite',
   'invite.createHint': 'The link is copied to the clipboard as soon as it’s created.',
+  'invite.roles': 'Roles',
+  'invite.rolesHint': 'Given on joining by the invite',
   'invite.active': 'Active invites',
 
   // core (review fixes: links, mic loss, insecure server)

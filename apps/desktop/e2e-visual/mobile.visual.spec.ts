@@ -2841,6 +2841,17 @@ test('m-room-invite', async ({ page }) => {
   await expectNoFieldFocus(page, 'room invite');
   // The link carries the mock's (random) port: masked.
   await checkpoint(page, 'm-room-invite', { mask: [dialog.getByRole('textbox', { name: 'Ссылка для гостей' })] });
+
+  // CBF-174: roles of an invitation — the chips wrap under «Роли» on the phone.
+  const emailRoles = dialog.getByTestId('invite-email-roles');
+  await emailRoles.getByRole('button', { name: 'Добавить роль' }).tap();
+  await page.getByTestId('invite-role-picker').getByRole('option', { name: /Дизайн/ }).tap();
+  const linkRoles = dialog.locator('[data-settings-row]').filter({ hasText: 'Выдаются при входе' });
+  await linkRoles.getByRole('button', { name: 'Добавить роль' }).tap();
+  await page.getByTestId('invite-role-picker').getByRole('option', { name: /Модератор/ }).tap();
+  await expect(linkRoles.getByTestId('role-chip')).toHaveText('Модератор');
+  await linkRoles.scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-invite-roles', { snapshot: false });
 });
 
 type KeyboardStub = { __keyboard: (px: number | null) => void };

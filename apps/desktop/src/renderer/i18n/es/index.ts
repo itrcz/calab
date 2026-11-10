@@ -694,6 +694,8 @@ export const es: Dict = {
   'ws.role': 'Rol: {name}',
   'invite.new': 'Nueva invitación',
   'invite.createHint': 'El enlace se copia al portapapeles en cuanto se crea.',
+  'invite.roles': 'Roles',
+  'invite.rolesHint': 'Se asignan al unirse con la invitación',
   'invite.active': 'Invitaciones activas',
 
   // core (review fixes: links, mic loss, insecure server)

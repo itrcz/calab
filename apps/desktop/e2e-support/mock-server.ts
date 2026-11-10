@@ -3754,6 +3754,7 @@ class MockImpl {
         createdBy: me,
         maxUses: b.maxUses,
         uses: 0,
+        roleIds: b.roleIds,
         ...(b.expiresInSeconds ? { expiresAt: timestampFromMs(timestampMs(at) + b.expiresInSeconds * 1000) } : {}),
         createdAt: at,
       });
@@ -6310,6 +6311,7 @@ class MockImpl {
       createdAt: i.createdAt,
       expiresAt: i.expiresAt,
       lastSentAt: i.lastSentAt,
+      roleIds: i.roleIds ?? [],
     };
   }
 
@@ -7905,6 +7907,7 @@ class MockImpl {
         expiresAt: timestampFromMs(timestampMs(at) + 7 * 86400_000),
         lastSentAt: at,
         lastSentMs: Date.now(),
+        roleIds: b.roleIds,
       };
       s().emailInvites.set(id, rec);
       sendMsg(c.res, 201, CreateEmailInviteResponseSchema, { invite: this.emailInviteOut(rec) });

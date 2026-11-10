@@ -412,6 +412,15 @@ export function canAssignRole(a: RoleActor, role: Pick<Role, 'position' | 'built
   return self || a.owner || targetTop < a.top;
 }
 
+/**
+ * The roles I may put into an invitation (CBF-174, server workspaces.inviteRoles): custom roles
+ * I may give a newcomer (no roles yet), highest first. Built-in ones never (the email
+ * invitation's admin is its own select).
+ */
+export function inviteRoleChoices(a: RoleActor, all: readonly Role[]): Role[] {
+  return sortRoles(all.filter((r) => isCustomRole(r) && canAssignRole(a, r, -1, false)));
+}
+
 /** The member's complete role set with `roleId` added or removed (PUT …/members/{uid}/roles). */
 export function withRole(roleIds: readonly string[], roleId: string, on: boolean): string[] {
   const rest = roleIds.filter((id) => id !== roleId);

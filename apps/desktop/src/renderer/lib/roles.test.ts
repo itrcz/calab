@@ -12,6 +12,7 @@ import {
   customLook,
   editableBits,
   GUEST_BITS,
+  inviteRoleChoices,
   legacyRoles,
   parseRoleColor,
   reorderCustom,
@@ -123,6 +124,14 @@ describe('who may do what', () => {
     // … but not a role carrying a permission it lacks.
     expect(canAssignRole(moderator, custom('x', 2, 0, STREAM | MANAGE_WORKSPACE), memberTop, false)).toBe(false);
     expect(canAssignRole(member, plain, 0, false)).toBe(false);
+  });
+
+  it('invite roles (CBF-174): custom roles I may give a newcomer, highest first', () => {
+    const ids = (rs: Role[]): string[] => rs.map((r) => r.id);
+    expect(ids(inviteRoleChoices(owner, ALL))).toEqual(['design', 'mod', 'plain']);
+    expect(ids(inviteRoleChoices(admin, ALL))).toEqual(['design', 'mod', 'plain']);
+    expect(ids(inviteRoleChoices(moderator, ALL))).toEqual(['plain']);
+    expect(inviteRoleChoices(member, ALL)).toEqual([]);
   });
 
   it('the complete role set with one role toggled', () => {

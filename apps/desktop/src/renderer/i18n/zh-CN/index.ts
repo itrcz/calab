@@ -693,6 +693,8 @@ export const zhCN: Dict = {
   'ws.role': '角色：{name}',
   'invite.new': '新建邀请',
   'invite.createHint': '创建后链接会立即复制到剪贴板。',
+  'invite.roles': '角色',
+  'invite.rolesHint': '通过邀请加入时授予',
   'invite.active': '有效邀请',
 
   // core (review fixes: links, mic loss, insecure server)
