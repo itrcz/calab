@@ -16,6 +16,12 @@ export type MediaErrorCode =
   | 'os-permission'
   | 'not-found'
   | 'busy'
+  /**
+   * The device opened (the camera light is on) but no frame / sample reached the page before
+   * Chromium's start timeout (`AbortError: Timeout starting video source`, ~10 s). Not «busy»:
+   * nothing else holds the device (issue #322).
+   */
+  | 'stalled'
   | 'overconstrained'
   | 'unsupported'
   | 'insecure'
@@ -126,7 +132,8 @@ export function classifyMediaError(err: unknown, ctx: MediaContext, env: ErrorEn
     case 'TrackStartError':
       return 'busy';
     case 'AbortError':
-      return ctx === 'screen' && env.web ? 'cancelled' : 'busy';
+      if (ctx === 'screen' && env.web) return 'cancelled';
+      return /timeout/.test(msg) ? 'stalled' : 'busy';
     case 'OverconstrainedError':
     case 'ConstraintNotSatisfiedError':
       return 'overconstrained';
@@ -186,6 +193,7 @@ function text(code: MediaErrorCode, ctx: MediaContext, env: ErrorEnv): { key: Me
         case 'not-found':
           return { key: 'mediaErr.mic.notFound', action: 'voice-settings' };
         case 'busy':
+        case 'stalled':
           return { key: 'mediaErr.mic.busy', action: 'voice-settings' };
         case 'overconstrained':
           return { key: 'mediaErr.mic.overconstrained', action: 'voice-settings' };
@@ -241,6 +249,8 @@ function text(code: MediaErrorCode, ctx: MediaContext, env: ErrorEnv): { key: Me
           return { key: 'mediaErr.camera.notFound', action: 'voice-settings' };
         case 'busy':
           return { key: 'mediaErr.camera.busy', action: null };
+        case 'stalled':
+          return { key: 'mediaErr.camera.stalled', action: 'voice-settings' };
         case 'overconstrained':
           return { key: 'mediaErr.camera.notFound', action: 'voice-settings' };
         case 'insecure':
@@ -285,6 +295,17 @@ function text(code: MediaErrorCode, ctx: MediaContext, env: ErrorEnv): { key: Me
           return { key: 'mediaErr.voice.generic', action: 'connection' };
       }
   }
+}
+
+/**
+ * The fields of a getUserMedia failure worth a log line: the DOMException name and Chromium's
+ * message (it tells «Timeout starting video source» from «Could not start video source» /
+ * «Device in use»), plus the failed constraint of an OverconstrainedError.
+ */
+export function mediaErrorDetail(err: unknown): { name: string; message: string; constraint?: string } {
+  const p = parts(err);
+  const c = err && typeof err === 'object' ? (err as Record<string, unknown>)['constraint'] : undefined;
+  return { name: p.name, message: p.message, ...(typeof c === 'string' && c ? { constraint: c } : {}) };
 }
 
 /** Raw error → human text + action. `code` overrides the classification (e.g. 'no-loopback'). */

@@ -4,6 +4,8 @@ import { BACKGROUND_PROCESSOR } from './background/logic';
 import type { CodecPick, PublishCodec } from './codecSelect';
 import { layerSize, type H264Layout } from './h264';
 import { alignCaptureForH264, setH264Profile } from './h264Publish';
+import { mediaErrorDetail } from './errors';
+import { log } from '../log';
 
 /**
  * Webcam capture and publishing (docs/02 «Камера», ADR-0018). LiveKit-specific glue only; the
@@ -29,10 +31,22 @@ export function cameraSource(track: LocalVideoTrack): MediaStreamTrack {
 /** Opens the camera (preview sheet or straight publish). `motion`: faces and gestures, keep fps. */
 export async function captureCamera(deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY, facing: CameraFacing | null = null): Promise<LocalVideoTrack> {
   const c = cameraCapture(q);
-  const track = await createLocalVideoTrack({
-    ...cameraTarget(deviceId, facing),
-    resolution: { width: c.width, height: c.height, frameRate: c.fps },
-  });
+  const t0 = performance.now();
+  // One line per open (issue #322): the time tells Chromium's ~10 s start timeout (the device
+  // opened, no frame came) from an instant refusal; the request, from what the camera granted.
+  const ask = { device: deviceId ? 'chosen' : (facing ?? 'default'), width: c.width, height: c.height, fps: c.fps };
+  let track: LocalVideoTrack;
+  try {
+    track = await createLocalVideoTrack({
+      ...cameraTarget(deviceId, facing),
+      resolution: { width: c.width, height: c.height, frameRate: c.fps },
+    });
+  } catch (err) {
+    log.warn('[camera] getUserMedia failed', { ...mediaErrorDetail(err), ms: Math.round(performance.now() - t0), ...ask });
+    throw err;
+  }
+  const st = track.mediaStreamTrack.getSettings();
+  log.info('[camera] capture opened', { ms: Math.round(performance.now() - t0), ...ask, got: { width: st.width, height: st.height, fps: st.frameRate }, label: track.mediaStreamTrack.label });
   track.mediaStreamTrack.contentHint = 'motion';
   return track;
 }

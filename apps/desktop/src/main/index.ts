@@ -126,6 +126,10 @@ function forwardPower(ev: PowerEvent): void {
 
 void app.whenReady().then(() => {
   lockDownSession();
+  // Camera frames on Windows go through the GPU process (Media Foundation D3D11 capture): a
+  // blocklisted / software GPU is the first thing to rule out when a camera opens but shows
+  // nothing (issue #322).
+  log.info('gpu feature status', app.getGPUFeatureStatus());
   applyDevDockIcon();
   // A crash with the Caps Lock → F18 remap applied leaves the keyboard remapped: undo it
   // before the renderer re-applies it for a binding that still wants it.

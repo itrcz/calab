@@ -160,6 +160,7 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'mediaErr.camera.permissionWeb': 'Your browser blocked the camera — allow it with the icon in the address bar',
   'mediaErr.camera.notFound': 'No camera found — connect one or choose another',
   'mediaErr.camera.busy': 'The camera is in use by another app',
+  'mediaErr.camera.stalled': 'The camera turned on but sends no picture',
   'mediaErr.camera.unsupported': 'Camera isn’t supported on this device',
   'mediaErr.camera.generic': 'Couldn’t turn on the camera',
   'mediaErr.camera.publish': 'Couldn’t share your video — try again',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyMediaError, describeMediaError } from './errors';
+import { classifyMediaError, describeMediaError, mediaErrorDetail } from './errors';
 
 const desk = { web: false };
 const web = { web: true };
@@ -17,6 +17,23 @@ describe('classifyMediaError', () => {
     expect(classifyMediaError(dom('OverconstrainedError'), 'mic', desk)).toBe('overconstrained');
     expect(classifyMediaError(dom('NotSupportedError', 'Not supported'), 'mic', web)).toBe('unsupported');
     expect(classifyMediaError(dom('SecurityError'), 'mic', web)).toBe('insecure');
+  });
+
+  it('tells a capture that never started from a busy device (issue #322)', () => {
+    // Chromium: the device opened, no frame within the start timeout → AbortError, not «busy».
+    expect(classifyMediaError(dom('AbortError', 'Timeout starting video source'), 'camera', desk)).toBe('stalled');
+    expect(classifyMediaError(dom('AbortError', 'Timeout starting audio source'), 'mic', desk)).toBe('stalled');
+    expect(classifyMediaError(dom('AbortError', 'Timeout starting video source'), 'camera', web)).toBe('stalled');
+    expect(classifyMediaError(dom('NotReadableError', 'Could not start video source'), 'camera', desk)).toBe('busy');
+    expect(classifyMediaError(dom('NotReadableError', 'Device in use'), 'camera', desk)).toBe('busy');
+    expect(classifyMediaError(dom('AbortError', 'Starting videoinput failed'), 'camera', desk)).toBe('busy');
+    expect(describeMediaError(dom('AbortError', 'Timeout starting video source'), 'camera', desk)).toMatchObject({
+      code: 'stalled',
+      text: 'Камера включилась, но не передаёт изображение',
+      action: 'voice-settings',
+    });
+    expect(describeMediaError(dom('AbortError', 'Timeout starting audio source'), 'mic', desk).text).toBe('Микрофон занят другим приложением или не отвечает');
+    expect(describeMediaError(dom('NotReadableError'), 'camera', desk).text).toBe('Камера занята другим приложением');
   });
 
   it('tells a closed browser picker from an OS denial', () => {
@@ -95,5 +112,14 @@ describe('describeMediaError', () => {
   it('accepts an explicit code (system audio)', () => {
     expect(describeMediaError(null, 'streamAudio', desk, 'no-loopback').text).toBe('Система не отдала звук — стрим идёт без звука');
     expect(describeMediaError(dom('NotReadableError'), 'streamAudio', desk).text).toBe('Звук системы недоступен — стрим идёт без звука');
+  });
+});
+
+describe('mediaErrorDetail', () => {
+  it('keeps the name, the message and the failed constraint for the log', () => {
+    expect(mediaErrorDetail(dom('AbortError', 'Timeout starting video source'))).toEqual({ name: 'AbortError', message: 'Timeout starting video source' });
+    expect(mediaErrorDetail(Object.assign(dom('OverconstrainedError', ''), { constraint: 'deviceId' }))).toEqual({ name: 'OverconstrainedError', message: '', constraint: 'deviceId' });
+    expect(mediaErrorDetail('boom')).toEqual({ name: '', message: 'boom' });
+    expect(mediaErrorDetail(null)).toEqual({ name: '', message: 'null' });
   });
 });

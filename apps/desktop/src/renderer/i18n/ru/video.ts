@@ -157,6 +157,7 @@ export const ruVideo = {
   'mediaErr.camera.permissionWeb': 'Браузер запретил доступ к камере — разрешите его значком в адресной строке',
   'mediaErr.camera.notFound': 'Камера не найдена — подключите её или выберите другую',
   'mediaErr.camera.busy': 'Камера занята другим приложением',
+  'mediaErr.camera.stalled': 'Камера включилась, но не передаёт изображение',
   'mediaErr.camera.unsupported': 'Камера не поддерживается на этом устройстве',
   'mediaErr.camera.generic': 'Не удалось включить камеру',
   'mediaErr.camera.publish': 'Не удалось показать видео — попробуйте ещё раз',

@@ -2,6 +2,7 @@ import { micCaptureConstraints } from '@calaba/protocol';
 import workletUrl from './worklets/mic-processor.worklet.ts?worker&url';
 import { log } from '../log';
 import { DUCK_GAIN, ECHO } from './echo';
+import { mediaErrorDetail } from './errors';
 import type { MicReport } from './micReport';
 import type { DenoiseControl, DenoiseMode } from './denoiseSleep';
 import { rnnoiseSupported } from './rnnoiseSupport';
@@ -172,7 +173,15 @@ export class MicPipeline {
       ...micCaptureConstraints({ rnnoise: opts.rnnoise, musician }),
       ...(opts.deviceId ? { deviceId: { exact: opts.deviceId } } : {}),
     };
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
+    const t0 = performance.now();
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
+    } catch (err) {
+      // Issue #322: name + Chromium's message + how long it took (a ~10 s wait = start timeout).
+      log.warn('[mic] getUserMedia failed', { ...mediaErrorDetail(err), ms: Math.round(performance.now() - t0), device: opts.deviceId ? 'chosen' : 'default', rnnoise: opts.rnnoise, musician });
+      throw err;
+    }
     const raw = stream.getAudioTracks()[0];
     if (!raw) throw new Error('getUserMedia returned no audio track');
     const onEnded = opts.onEnded;

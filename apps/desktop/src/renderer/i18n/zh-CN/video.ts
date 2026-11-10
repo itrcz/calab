@@ -157,6 +157,7 @@ export const zhVideo: DictShape<typeof enVideo> = {
   'mediaErr.camera.permissionWeb': '浏览器已阻止摄像头访问——请点击地址栏图标允许',
   'mediaErr.camera.notFound': '未找到摄像头——请连接摄像头或选择其他设备',
   'mediaErr.camera.busy': '摄像头正被其他应用占用',
+  'mediaErr.camera.stalled': '摄像头已开启，但没有画面',
   'mediaErr.camera.unsupported': '此设备不支持摄像头功能',
   'mediaErr.camera.generic': '摄像头开启失败',
   'mediaErr.camera.publish': '视频共享失败——请重试',
