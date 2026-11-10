@@ -439,7 +439,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
         className={cx('group/board relative flex items-center rounded-[var(--radius-card)] mobile:static mobile:pr-1 mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
         data-testid="board-row"
       >
-        <button type="button" onClick={() => showBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list group-hover/board:pr-7 group-has-[:focus-visible]/board:pr-7 group-has-[[data-state=open]]/board:pr-7 mobile:gap-3 mobile:pl-3 mobile:text-list', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+        <button type="button" onClick={() => showBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list group-hover/board:pr-7 group-has-[:focus-visible]/board:pr-7 group-has-[[data-state=open]]/board:pr-7 mobile:gap-3 mobile:pl-3 mobile:text-list', mine > 0 ? null : 'pr-2 mobile:pr-0', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
           <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:text-[22px]" aria-hidden>
             {emoji || <SquareKanban className="size-[18px] mobile:size-5" />}
           </span>
@@ -467,7 +467,7 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
         </button>
         <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
           <Dropdown.Trigger asChild>
-            <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="absolute right-0.5 top-1/2 grid size-6 -translate-y-1/2 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 mobile:static mobile:translate-y-0 mobile:size-11 mobile:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
+            <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="absolute right-0.5 top-1/2 grid size-6 -translate-y-1/2 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 mobile:static mobile:translate-y-0 mobile:size-11 mobile:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 group-has-[:focus-visible]/board:opacity-100 data-[state=open]:opacity-100">
               <Ellipsis className="size-4" aria-hidden />
             </button>
           </Dropdown.Trigger>

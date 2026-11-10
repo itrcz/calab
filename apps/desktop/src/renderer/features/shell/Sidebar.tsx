@@ -58,7 +58,7 @@ import { RoomIcon } from '../../components/RoomIcon';
 import { SpeakerIdentity } from '../../components/SpeakerIdentity';
 import { confirmAction } from '../../components/Confirm';
 import { CreateButton, InlineAdd } from '../../components/CreateButton';
-import { Badge, Button, CountBadge, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
+import { Badge, Button, COUNT_SLOT, CountBadge, Empty, Field, IconButton, Input, Modal, Tip, cx } from '../../components/ui';
 import { plural, t, useLocale } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { can, isOwnerRoles, mayArrangeRooms, mayCreateTempRooms, mayInviteMembers, mayManageRoomWith, mayMoveMembersIn, mayMoveVoice, mayRoomInvite, roomPerms } from '../../lib/permissions';
@@ -1210,11 +1210,17 @@ const JoinButton = memo(function JoinButton({ name, onJoin, always }: { name: st
   );
 });
 
-export function MentionBadge({ n }: { n: number }): ReactNode {
+/**
+ * Unread mentions on a room row. `edge`: the badge is the last thing at the row's right edge at rest,
+ * so it takes the `COUNT_SLOT` flush with that edge (cancelling the trailing pr-2.5) and sits on the
+ * section «+» axis like every sidebar counter (docs/08 «Бейджи и счётчики», CBF-170); the row actions
+ * replace it on hover / keyboard focus. Without `edge` (a voice row with its call timer / N of M at
+ * the edge) it stays a plain badge before them.
+ */
+export function MentionBadge({ n, edge = false }: { n: number; edge?: boolean }): ReactNode {
   if (n <= 0) return null;
-  return (
-    <CountBadge count={n} className="group-hover/row:hidden" aria-label={plural('shell.unreadMentions', n)} />
-  );
+  const badge = <CountBadge count={n} className={edge ? undefined : 'group-hover/row:hidden'} aria-label={plural('shell.unreadMentions', n)} />;
+  return edge ? <span className={cx(COUNT_SLOT, '-mr-2.5 group-has-[:focus-visible]/row:hidden group-hover/row:hidden group-data-[state=open]/row:hidden')}>{badge}</span> : badge;
 }
 
 /** A row under a dragged message it would be forwarded to (the accent tint, as the shelves). */
@@ -1277,7 +1283,7 @@ const TextRoomRow = memo(function TextRoomRow({
           </button>
           <span className="flex shrink-0 items-center gap-1 pr-2.5">
             <KnockBadge roomId={room.id} />
-            <MentionBadge n={mentions} />
+            <MentionBadge n={mentions} edge />
             <RoomActions room={room} canInvite={admin} canSettings={can(perms, 'MANAGE_ROOM')} />
           </span>
         </div>
@@ -1356,6 +1362,9 @@ function VoiceRoomRow({
     else if (next === 'join') void voice.join(room.id, workspaceId); // voice.join opens the room's chat
   };
   const joinUi = joinButton({ inRoom, canConnect, owner, people: people.length, limit, touch: mobile });
+  // Nothing at the plain row's right edge at rest (no call timer, no N of M, no always-on «Войти»):
+  // the mention badge takes the counter slot on the «+» axis (CBF-170).
+  const edge = !card && people.length === 0 && limit <= 0 && !(joinUi.shown && joinUi.always);
 
   return (
     <div
@@ -1426,10 +1435,11 @@ function VoiceRoomRow({
               </button>
               <span className={cx('flex shrink-0 items-center gap-1', !card && 'pr-2.5')}>
                 <KnockBadge roomId={room.id} />
-                <MentionBadge n={mentions} />
+                <MentionBadge n={mentions} edge={edge} />
                 {/* Hover / focus swaps the timer and N/M for the actions (Discord; «чат» is always there,
-                    docs/09 #14), so the name keeps ≥ 120 px. On the card the timer stays green on the name line. */}
-                <span className={cx('flex items-center gap-2', 'group-has-[:focus-visible]/row:hidden group-hover/row:hidden group-data-[state=open]/row:hidden')}>
+                    docs/09 #14), so the name keeps ≥ 120 px. On the card the timer stays green on the name line.
+                    Not rendered when empty (`edge`): an empty flex item would still add the gap. */}
+                {edge ? null : <span className={cx('flex items-center gap-2', 'group-has-[:focus-visible]/row:hidden group-hover/row:hidden group-data-[state=open]/row:hidden')}>
                   {/* REC (docs/09 #30): on a plain row just the dot before the call timer (the name keeps
                       its width); the card shows «● REC 12:34» on its status line, right under the timer. */}
                   {card ? null : <RoomRecBadge roomId={room.id} compact />}
@@ -1437,7 +1447,7 @@ function VoiceRoomRow({
                     <CallTimer roomId={room.id} className={card ? cx('text-[13px]', inRoom ? 'text-[var(--color-green-text)]' : 'text-fg') : 'text-micro text-muted'} />
                   ) : null}
                   {limit > 0 || people.length > 0 ? <PeoplePill n={people.length} max={limit} quiet /> : null}
-                </span>
+                </span>}
                 {/* The «…» action whether the room is active (card) or not, on hover
                     (owner, Discord reference): no separate action set for either. */}
                 {joinUi.shown ? <JoinButton name={room.name} onJoin={join} always={joinUi.always} /> : null}

@@ -1823,6 +1823,13 @@ test('sidebar-temp-room', async ({ open, win, mock, shot }) => {
   await expect(group.getByRole('button', { name: 'Свернуть «Временные»' })).toBeVisible();
   await expect(group.locator('[data-testid="temp-icon"][data-expiring]')).toHaveCount(1);
   await expect(group.getByTestId('temp-archive-button')).toBeVisible();
+  // CBF-170: the room's mention badge and the archive total are centred on the column's «+» axis (within 1 px).
+  const centre = async (l: Locator): Promise<number> => {
+    const b = await l.boundingBox();
+    return b ? b.x + b.width / 2 : NaN;
+  };
+  const plus = await centre(win.getByTestId('sidebar-create'));
+  expect(Math.abs((await centre(win.locator('[data-room-slot] [data-count-badge]').first())) - plus)).toBeLessThan(1);
   await checkpoint(shot, 'sidebar-temp-room');
 });
 /** «+» → «Временная комната» as it opens (all members): name, lifetime presets, visibility, switches. */
@@ -5070,13 +5077,14 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   // «Архив задач» (owner 18.10): archive the two selected tasks, open the board's archive, then a task in it.
   await win.getByTestId('bulk-bar').getByRole('button', { name: 'Архивировать' }).click();
   await expect(rows.filter({ hasText: 'CAL-2' })).toHaveCount(0);
+  // The «в архиве» toasts (with «Отменить») stay and cover the header's «⋯» at 960: close them.
+  await expect(win.getByTestId('toast').first()).toBeVisible();
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
   await win.getByTestId('board-more').click();
   await win.getByTestId('board-archive-open').click();
   const archived = win.getByTestId('archive-row');
   await expect(archived).toHaveCount(2);
   await expect(win.getByTestId('archive-title')).toHaveText('Архив · 2');
-  // The «в архиве» toasts (with «Отменить») stay: close them.
-  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
   await archived.first().hover();
   await checkpoint(shot, 'boards-archive');
   await archived.filter({ hasText: 'CAL-2' }).click();
@@ -5092,6 +5100,9 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('archive-empty')).toBeVisible();
   await win.getByTestId('archive-back').click();
   await expect(rows.filter({ hasText: 'CAL-2' })).toHaveCount(1);
+  // The «вернулась на доску» toasts cover the toolbar at 960: close them.
+  await expect(win.getByTestId('toast').first()).toBeVisible();
+  while (await win.getByTestId('toast').count()) await win.getByTestId('toast').first().getByRole('button', { name: 'Закрыть' }).click();
   // Board task #101: grouped by release — the newest first, «Без релиза» last; then a task's «Релиз».
   await win.getByTestId('display-menu').click();
   await win.getByTestId('group-by').selectOption('release');
