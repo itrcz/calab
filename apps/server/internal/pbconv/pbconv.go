@@ -506,6 +506,7 @@ func Invite(i sqlc.WorkspaceInvite) *v1.Invite {
 		Uses:        uint32(max(i.Uses, 0)),
 		ExpiresAt:   tsp(i.ExpiresAt),
 		CreatedAt:   ts(i.CreatedAt),
+		RoleIds:     perm.IDStrings(i.RoleIds),
 	}
 }
 

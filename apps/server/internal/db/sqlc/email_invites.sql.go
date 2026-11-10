@@ -153,29 +153,37 @@ func (q *Queries) HasPendingEmailInvite(ctx context.Context, email string) (bool
 }
 
 const listEmailInvites = `-- name: ListEmailInvites :many
-SELECT id, workspace_id, email, role, invited_by, invite_id, expires_at, last_sent_at, accepted_at, created_at FROM email_invites WHERE workspace_id = $1 AND accepted_at IS NULL ORDER BY created_at DESC
+SELECT e.id, e.workspace_id, e.email, e.role, e.invited_by, e.invite_id, e.expires_at, e.last_sent_at, e.accepted_at, e.created_at, i.role_ids FROM email_invites e
+JOIN workspace_invites i ON i.id = e.invite_id
+WHERE e.workspace_id = $1 AND e.accepted_at IS NULL ORDER BY e.created_at DESC
 `
 
-func (q *Queries) ListEmailInvites(ctx context.Context, workspaceID uuid.UUID) ([]EmailInvite, error) {
+type ListEmailInvitesRow struct {
+	EmailInvite EmailInvite
+	RoleIds     []uuid.UUID
+}
+
+func (q *Queries) ListEmailInvites(ctx context.Context, workspaceID uuid.UUID) ([]ListEmailInvitesRow, error) {
 	rows, err := q.db.Query(ctx, listEmailInvites, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []EmailInvite{}
+	items := []ListEmailInvitesRow{}
 	for rows.Next() {
-		var i EmailInvite
+		var i ListEmailInvitesRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.Email,
-			&i.Role,
-			&i.InvitedBy,
-			&i.InviteID,
-			&i.ExpiresAt,
-			&i.LastSentAt,
-			&i.AcceptedAt,
-			&i.CreatedAt,
+			&i.EmailInvite.ID,
+			&i.EmailInvite.WorkspaceID,
+			&i.EmailInvite.Email,
+			&i.EmailInvite.Role,
+			&i.EmailInvite.InvitedBy,
+			&i.EmailInvite.InviteID,
+			&i.EmailInvite.ExpiresAt,
+			&i.EmailInvite.LastSentAt,
+			&i.EmailInvite.AcceptedAt,
+			&i.EmailInvite.CreatedAt,
+			&i.RoleIds,
 		); err != nil {
 			return nil, err
 		}

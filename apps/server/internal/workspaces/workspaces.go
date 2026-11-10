@@ -1014,7 +1014,7 @@ func (h *Handlers) joinInvite(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		added = true
-		return nil
+		return GiveInviteRoles(r.Context(), q, inv.ID, uid(r))
 	})
 	if err != nil {
 		return err
@@ -1055,6 +1055,10 @@ func (h *Handlers) createInvite(w http.ResponseWriter, r *http.Request) error {
 		t := time.Now().Add(d)
 		expires = &t
 	}
+	roles, err := inviteRoles(r, h.db.Q, wsID, req.GetRoleIds())
+	if err != nil {
+		return err
+	}
 	for range 3 {
 		code, err := newInviteCode()
 		if err != nil {
@@ -1063,7 +1067,7 @@ func (h *Handlers) createInvite(w http.ResponseWriter, r *http.Request) error {
 		inv, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.WorkspaceInvite, error) {
 			return guarded.CreateInvite(r.Context(), sqlc.CreateInviteParams{
 				WorkspaceID: wsID, Code: code, CreatedBy: uid(r),
-				MaxUses: int32(req.GetMaxUses()), ExpiresAt: expires, //nolint:gosec // validated
+				MaxUses: int32(req.GetMaxUses()), ExpiresAt: expires, RoleIds: roles, //nolint:gosec // validated
 			})
 		})
 		if db.UniqueViolation(err) != "" {

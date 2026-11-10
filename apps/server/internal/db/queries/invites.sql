@@ -1,7 +1,28 @@
 -- name: CreateInvite :one
-INSERT INTO workspace_invites (workspace_id, code, created_by, max_uses, expires_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO workspace_invites (workspace_id, code, created_by, max_uses, expires_at, role_ids)
+VALUES ($1, $2, $3, $4, $5, coalesce(sqlc.arg(role_ids)::uuid[], '{}'))
 RETURNING *;
+
+-- name: AddInviteRoles :exec
+-- The custom roles of invitation invite_id given to user_id who joined by it (ADR-0026 addendum
+-- 2026-11-10): those that still exist; one that has billing bits only when the workspace owner
+-- made the invitation (ADR-0087: money rights are the owner's to hand out).
+INSERT INTO member_roles (workspace_id, user_id, role_id)
+SELECT i.workspace_id, sqlc.arg(user_id)::uuid, wr.id
+FROM workspace_invites i
+JOIN workspaces w ON w.id = i.workspace_id
+JOIN workspace_roles wr ON wr.workspace_id = i.workspace_id AND wr.id = ANY (i.role_ids)
+WHERE i.id = sqlc.arg(invite_id)::uuid AND wr.builtin IS NULL
+  AND (wr.permissions & sqlc.arg(billing)::bigint = 0 OR i.created_by = w.owner_id)
+ON CONFLICT DO NOTHING;
+
+-- name: AddMemberRolesIfExist :exec
+-- Custom roles given to a member who has just been added (ADR-0026 addendum 2026-11-10), checked
+-- by the caller; one deleted in between is skipped.
+INSERT INTO member_roles (workspace_id, user_id, role_id)
+SELECT wr.workspace_id, sqlc.arg(user_id)::uuid, wr.id FROM workspace_roles wr
+WHERE wr.workspace_id = sqlc.arg(workspace_id)::uuid AND wr.id = ANY (sqlc.arg(role_ids)::uuid[]) AND wr.builtin IS NULL
+ON CONFLICT DO NOTHING;
 
 -- name: ListInvites :many
 -- Links only: invitations sent by email are listed by ListEmailInvites.

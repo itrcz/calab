@@ -483,6 +483,11 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 					return err
 				}
 			}
+			// The invitation's custom roles (ADR-0026 addendum 2026-11-10), as on every join by it
+			// (workspaces.GiveInviteRoles).
+			if err := q.AddInviteRoles(ctx, sqlc.AddInviteRolesParams{UserID: user.ID, InviteID: inv.ID, Billing: int64(perm.Billing)}); err != nil {
+				return err
+			}
 			joined = &m
 		}
 		if req.GetCheckSimilarAccount() {

@@ -847,15 +847,17 @@ func (x *WorkspaceBackground) GetFileId() string {
 }
 
 type Invite struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
-	Code          string                 `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"` // use as calaba://join/<code>
-	CreatedBy     string                 `protobuf:"bytes,4,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	MaxUses       uint32                 `protobuf:"varint,5,opt,name=max_uses,json=maxUses,proto3" json:"max_uses,omitempty"` // 0 = unlimited
-	Uses          uint32                 `protobuf:"varint,6,opt,name=uses,proto3" json:"uses,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Code        string                 `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"` // use as calaba://join/<code>
+	CreatedBy   string                 `protobuf:"bytes,4,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	MaxUses     uint32                 `protobuf:"varint,5,opt,name=max_uses,json=maxUses,proto3" json:"max_uses,omitempty"` // 0 = unlimited
+	Uses        uint32                 `protobuf:"varint,6,opt,name=uses,proto3" json:"uses,omitempty"`
+	ExpiresAt   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // unset = never
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Custom roles given on joining by it (ADR-0026 addendum 2026-11-10); deleted ones are skipped.
+	RoleIds       []string `protobuf:"bytes,9,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -942,6 +944,13 @@ func (x *Invite) GetExpiresAt() *timestamppb.Timestamp {
 func (x *Invite) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Invite) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
 	}
 	return nil
 }
@@ -1585,8 +1594,13 @@ type CreateInviteRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	MaxUses          uint32                 `protobuf:"varint,1,opt,name=max_uses,json=maxUses,proto3" json:"max_uses,omitempty"`                              // 0 = unlimited
 	ExpiresInSeconds uint32                 `protobuf:"varint,2,opt,name=expires_in_seconds,json=expiresInSeconds,proto3" json:"expires_in_seconds,omitempty"` // 0 = never
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Custom roles (not built-in) the joiner gets (ADR-0026 addendum 2026-11-10): checked like
+	// PUT …/members/{user_id}/roles — MANAGE_MEMBERS or MANAGE_ROLES, below the caller's highest
+	// role, no bits beyond the caller's (non-admin), billing roles by the owner only (403);
+	// unknown or built-in ids: 422 roleIds.
+	RoleIds       []string `protobuf:"bytes,3,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateInviteRequest) Reset() {
@@ -1631,6 +1645,13 @@ func (x *CreateInviteRequest) GetExpiresInSeconds() uint32 {
 		return x.ExpiresInSeconds
 	}
 	return 0
+}
+
+func (x *CreateInviteRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
 }
 
 type CreateInviteResponse struct {
@@ -2109,8 +2130,10 @@ func (x *InviteLookupResponse) GetMember() bool {
 // to the user) and mails them "you were added to …". 409 CONFLICT: already a member;
 // 404: no such (verified, non-guest) user.
 type AddMemberRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	UserId string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Custom roles given at once, checked like CreateInviteRequest.role_ids.
+	RoleIds       []string `protobuf:"bytes,2,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2150,6 +2173,13 @@ func (x *AddMemberRequest) GetUserId() string {
 		return x.UserId
 	}
 	return ""
+}
+
+func (x *AddMemberRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
 }
 
 type AddMemberResponse struct {
@@ -2207,6 +2237,7 @@ type EmailInvite struct {
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // 7 days after the last send
 	LastSentAt    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_sent_at,json=lastSentAt,proto3" json:"last_sent_at,omitempty"`
+	RoleIds       []string               `protobuf:"bytes,9,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"` // custom roles given on joining (Invite.role_ids)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2297,6 +2328,13 @@ func (x *EmailInvite) GetLastSentAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *EmailInvite) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
+}
+
 // POST /api/workspaces/{id}/invites/email → 201 CreateEmailInviteResponse. Mails a link
 // PUBLIC_APP_URL/join/<code> (single use, 7 days, bound to the address); the mail also shows
 // the code as text (it is a valid sign-up invite code for that address). Registering with
@@ -2304,9 +2342,12 @@ func (x *EmailInvite) GetLastSentAt() *timestamppb.Timestamp {
 // again to the same address renews the link, at most once per 24 h (429 with Retry-After).
 // role: MEMBER (default) or ADMIN (owner only). 409 CONFLICT: already a member.
 type CreateEmailInviteRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	Role          *WorkspaceRole         `protobuf:"varint,2,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole,oneof" json:"role,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Email string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Role  *WorkspaceRole         `protobuf:"varint,2,opt,name=role,proto3,enum=calaba.v1.WorkspaceRole,oneof" json:"role,omitempty"`
+	// Custom roles given on joining, checked like CreateInviteRequest.role_ids; sending again
+	// replaces them.
+	RoleIds       []string `protobuf:"bytes,3,rep,name=role_ids,json=roleIds,proto3" json:"role_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2353,6 +2394,13 @@ func (x *CreateEmailInviteRequest) GetRole() WorkspaceRole {
 		return *x.Role
 	}
 	return WorkspaceRole_WORKSPACE_ROLE_UNSPECIFIED
+}
+
+func (x *CreateEmailInviteRequest) GetRoleIds() []string {
+	if x != nil {
+		return x.RoleIds
+	}
+	return nil
 }
 
 type CreateEmailInviteResponse struct {
@@ -4511,7 +4559,7 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x17\n" +
-	"\afile_id\x18\x04 \x01(\tR\x06fileId\"\x93\x02\n" +
+	"\afile_id\x18\x04 \x01(\tR\x06fileId\"\xae\x02\n" +
 	"\x06Invite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
@@ -4523,7 +4571,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x80\x01\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x19\n" +
+	"\brole_ids\x18\t \x03(\tR\aroleIds\"\x80\x01\n" +
 	"\x16CreateWorkspaceRequest\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12>\n" +
@@ -4593,10 +4642,11 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x15JoinWorkspaceResponse\x122\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x14.calaba.v1.WorkspaceR\tworkspace\x122\n" +
 	"\x06member\x18\x02 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\x12K\n" +
-	"\x0fidentity_access\x18\x03 \x01(\v2\".calaba.v1.WorkspaceIdentityAccessR\x0eidentityAccess\"^\n" +
+	"\x0fidentity_access\x18\x03 \x01(\v2\".calaba.v1.WorkspaceIdentityAccessR\x0eidentityAccess\"y\n" +
 	"\x13CreateInviteRequest\x12\x19\n" +
 	"\bmax_uses\x18\x01 \x01(\rR\amaxUses\x12,\n" +
-	"\x12expires_in_seconds\x18\x02 \x01(\rR\x10expiresInSeconds\"A\n" +
+	"\x12expires_in_seconds\x18\x02 \x01(\rR\x10expiresInSeconds\x12\x19\n" +
+	"\brole_ids\x18\x03 \x03(\tR\aroleIds\"A\n" +
 	"\x14CreateInviteResponse\x12)\n" +
 	"\x06invite\x18\x01 \x01(\v2\x11.calaba.v1.InviteR\x06invite\"B\n" +
 	"\x13ListInvitesResponse\x12+\n" +
@@ -4624,11 +4674,12 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\x05email\x18\x01 \x01(\tR\x05email\"S\n" +
 	"\x14InviteLookupResponse\x12#\n" +
 	"\x04user\x18\x01 \x01(\v2\x0f.calaba.v1.UserR\x04user\x12\x16\n" +
-	"\x06member\x18\x02 \x01(\bR\x06member\"+\n" +
+	"\x06member\x18\x02 \x01(\bR\x06member\"F\n" +
 	"\x10AddMemberRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"G\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x19\n" +
+	"\brole_ids\x18\x02 \x03(\tR\aroleIds\"G\n" +
 	"\x11AddMemberResponse\x122\n" +
-	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"\xd7\x02\n" +
+	"\x06member\x18\x01 \x01(\v2\x1a.calaba.v1.WorkspaceMemberR\x06member\"\xf2\x02\n" +
 	"\vEmailInvite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x14\n" +
@@ -4641,10 +4692,12 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12<\n" +
 	"\flast_sent_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastSentAt\"l\n" +
+	"lastSentAt\x12\x19\n" +
+	"\brole_ids\x18\t \x03(\tR\aroleIds\"\x87\x01\n" +
 	"\x18CreateEmailInviteRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x121\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleH\x00R\x04role\x88\x01\x01B\a\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x18.calaba.v1.WorkspaceRoleH\x00R\x04role\x88\x01\x01\x12\x19\n" +
+	"\brole_ids\x18\x03 \x03(\tR\aroleIdsB\a\n" +
 	"\x05_role\"K\n" +
 	"\x19CreateEmailInviteResponse\x12.\n" +
 	"\x06invite\x18\x01 \x01(\v2\x16.calaba.v1.EmailInviteR\x06invite\"L\n" +

@@ -144,6 +144,10 @@ func (h *Handlers) addMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Validation("userId", "invalid user id")
 	}
+	roles, err := inviteRoles(r, h.db.Q, wsID, req.GetRoleIds())
+	if err != nil {
+		return err
+	}
 	if err := take(r.Context(), h.email.Send, uid(r).String()); err != nil {
 		return err
 	}
@@ -183,6 +187,10 @@ func (h *Handlers) addMember(w http.ResponseWriter, r *http.Request) error {
 		}
 		// The paid seat (ADR-0080): the inviter spends the balance the owner keeps (§13).
 		if err := h.limits.Plans.AdmitSeat(r.Context(), q, wsID, target, uid(r), m.Role); err != nil {
+			return err
+		}
+		// Checked above (inviteRoles); one deleted meanwhile is skipped.
+		if err := q.AddMemberRolesIfExist(r.Context(), sqlc.AddMemberRolesIfExistParams{UserID: target, WorkspaceID: wsID, RoleIds: roles}); err != nil {
 			return err
 		}
 		// A pending email invitation of the same address is moot now: revoke its link.
@@ -239,12 +247,18 @@ func mailSender(ctx context.Context, q *sqlc.Queries, actor sqlc.User, ws sqlc.W
 	return mail.OnBehalfOfBot(locale, ws.Name, actor.DisplayName), locale
 }
 
-func emailInvitePB(e sqlc.EmailInvite) *v1.EmailInvite {
+func emailInvitePB(e sqlc.EmailInvite, roles []uuid.UUID) *v1.EmailInvite {
 	return &v1.EmailInvite{
 		Id: e.ID.String(), WorkspaceId: e.WorkspaceID.String(), Email: e.Email, Role: perm.Role(e.Role).Proto(),
 		InvitedBy: e.InvitedBy.String(), CreatedAt: timestamppb.New(e.CreatedAt), ExpiresAt: timestamppb.New(e.ExpiresAt),
-		LastSentAt: timestamppb.New(e.LastSentAt),
+		LastSentAt: timestamppb.New(e.LastSentAt), RoleIds: perm.IDStrings(roles),
 	}
+}
+
+// GiveInviteRoles gives user, who has just joined by invitation inviteID, its custom roles
+// (ADR-0026 addendum 2026-11-10): those that still exist, deleted ones silently skipped.
+func GiveInviteRoles(ctx context.Context, q *sqlc.Queries, inviteID, user uuid.UUID) error {
+	return q.AddInviteRoles(ctx, sqlc.AddInviteRolesParams{UserID: user, InviteID: inviteID, Billing: int64(perm.Billing)})
 }
 
 // createEmailInvite: POST /api/workspaces/{id}/invites/email {email, role?}.
@@ -276,6 +290,10 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 		default:
 			return httpx.Validation("role", "role must be MEMBER or ADMIN")
 		}
+	}
+	roles, err := inviteRoles(r, h.db.Q, wsID, req.GetRoleIds())
+	if err != nil {
+		return err
 	}
 	var existing uuid.UUID // the address's account, if any
 	if u, err := h.db.Q.GetUserByEmail(r.Context(), &email); err == nil {
@@ -325,7 +343,7 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 			}
 		}
 		inv, err := q.CreateInvite(r.Context(), sqlc.CreateInviteParams{
-			WorkspaceID: wsID, Code: code, CreatedBy: uid(r), MaxUses: 1, ExpiresAt: &expires,
+			WorkspaceID: wsID, Code: code, CreatedBy: uid(r), MaxUses: 1, ExpiresAt: &expires, RoleIds: roles,
 		})
 		if err != nil {
 			return err
@@ -366,7 +384,7 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 	}
 	h.email.Mail.Wake()
 	slog.InfoContext(r.Context(), "email invite sent", "workspace_id", wsID, "actor", uid(r), "email_ref", emailRef(email))
-	httpx.Write(w, http.StatusCreated, &v1.CreateEmailInviteResponse{Invite: emailInvitePB(out)})
+	httpx.Write(w, http.StatusCreated, &v1.CreateEmailInviteResponse{Invite: emailInvitePB(out, roles)})
 	return nil
 }
 
@@ -381,7 +399,7 @@ func (h *Handlers) listEmailInvites(w http.ResponseWriter, r *http.Request) erro
 	}
 	out := &v1.ListEmailInvitesResponse{Invites: make([]*v1.EmailInvite, len(rows))}
 	for i, e := range rows {
-		out.Invites[i] = emailInvitePB(e)
+		out.Invites[i] = emailInvitePB(e.EmailInvite, e.RoleIds)
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
@@ -567,6 +585,9 @@ func acceptEmailInvite(ctx context.Context, tx pgx.Tx, q *sqlc.Queries, pl *plan
 		if plans.SeatRefused(err) {
 			return m, false, nil // the deferred rollback undoes this join only
 		}
+		return m, false, err
+	}
+	if err := GiveInviteRoles(ctx, sq, ei.InviteID, user); err != nil {
 		return m, false, err
 	}
 	return m, true, sp.Commit(ctx)

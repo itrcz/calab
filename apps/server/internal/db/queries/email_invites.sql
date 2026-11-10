@@ -20,7 +20,9 @@ WHERE id = $1
 RETURNING *;
 
 -- name: ListEmailInvites :many
-SELECT * FROM email_invites WHERE workspace_id = $1 AND accepted_at IS NULL ORDER BY created_at DESC;
+SELECT sqlc.embed(e), i.role_ids FROM email_invites e
+JOIN workspace_invites i ON i.id = e.invite_id
+WHERE e.workspace_id = $1 AND e.accepted_at IS NULL ORDER BY e.created_at DESC;
 
 -- name: GetEmailInvite :one
 SELECT * FROM email_invites WHERE id = $1 AND workspace_id = $2;

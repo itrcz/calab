@@ -460,6 +460,76 @@ func legacyRole(has func(perm.Role) bool, base perm.Role) perm.Role {
 	return base
 }
 
+// mayAssignRoles: the right to give and take roles — MANAGE_MEMBERS (ADR-0048) or MANAGE_ROLES
+// (ADR-0026: role managers kept assigning); never a guest.
+func mayAssignRoles(actor perm.Member) bool {
+	own := actor.Workspace()
+	return actor.Role != perm.RoleGuest && (own.Has(perm.ManageMembers) || own.Has(perm.ManageRoles))
+}
+
+// checkAssignable: may actor give or take role rr (ADR-0026 hierarchy)? Roles with billing bits
+// are the owner's (ADR-0087); the others only below the actor's highest role and, for a
+// non-admin, with no bits beyond the actor's own. The built-in rules are the caller's.
+func checkAssignable(actor perm.Member, rr sqlc.WorkspaceRole) error {
+	bits := perm.Bits(uint64(rr.Permissions)) //nolint:gosec // bit mask round-trip
+	own := actor.Workspace()
+	switch {
+	case bits&perm.Billing != 0 && actor.Role != perm.RoleOwner:
+		return httpx.Forbidden("only the owner can assign or remove roles with billing permissions")
+	case !above(actor, rr.Position):
+		return httpx.Forbidden("cannot assign roles at or above your highest role")
+	case !own.Has(perm.Administrator) && bits&^own != 0:
+		return httpx.Forbidden("cannot assign a role with permissions you do not have")
+	}
+	return nil
+}
+
+// inviteRoles validates the custom roles an invitation (a link, an email invitation) or an
+// added account carries (ADR-0026 addendum 2026-11-10, CBF-174): giving them to the newcomer
+// follows the rules of setMemberRoles. Built-in roles are not given this way (the email
+// invitation's admin is its own field). Returns them deduplicated, never nil.
+func inviteRoles(r *http.Request, q *sqlc.Queries, wsID uuid.UUID, ids []string) ([]uuid.UUID, error) {
+	out := []uuid.UUID{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	if len(ids) > MaxRoles {
+		return nil, httpx.Validation("roleIds", "too many roles")
+	}
+	actor, err := perm.FromContext(r.Context()).Member(r.Context(), wsID, uid(r))
+	if err != nil {
+		return nil, err
+	}
+	if !mayAssignRoles(actor) {
+		return nil, httpx.Forbidden("MANAGE_MEMBERS or MANAGE_ROLES required to give roles")
+	}
+	rows, err := q.ListWorkspaceRoles(r.Context(), wsID)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range ids {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return nil, httpx.Validation("roleIds", "invalid role id")
+		}
+		if slices.Contains(out, id) {
+			continue
+		}
+		i := slices.IndexFunc(rows, func(rr sqlc.WorkspaceRole) bool { return rr.ID == id })
+		if i < 0 {
+			return nil, httpx.Validation("roleIds", "unknown role")
+		}
+		if rows[i].Builtin != nil {
+			return nil, httpx.Validation("roleIds", "built-in roles are not given by an invitation")
+		}
+		if err := checkAssignable(actor, rows[i]); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
 // setMemberRoles: PUT …/members/{userId}/roles — MANAGE_MEMBERS (ADR-0048) or MANAGE_ROLES
 // (ADR-0026: role managers kept assigning), only roles below the caller's highest.
 func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error {
@@ -467,7 +537,7 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	if own := actor.Workspace(); actor.Role == perm.RoleGuest || (!own.Has(perm.ManageMembers) && !own.Has(perm.ManageRoles)) {
+	if !mayAssignRoles(actor) {
 		return httpx.Forbidden("MANAGE_MEMBERS or MANAGE_ROLES required")
 	}
 	target, err := targetUser(r)
@@ -550,7 +620,6 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 				}
 			}
 		}
-		own := actor.Workspace()
 		var add, remove []uuid.UUID
 		for id, rr := range byID {
 			if want[id] == cur[id] {
@@ -567,15 +636,12 @@ func (h *Handlers) setMemberRoles(w http.ResponseWriter, r *http.Request) error 
 				return httpx.Validation("roleIds", "promote the guest to a member first")
 			case b == perm.RoleAdmin && want[id] && tu.IsBot:
 				return errBotAdmin
-			case perm.Bits(uint64(rr.Permissions))&perm.Billing != 0 && actor.Role != perm.RoleOwner: //nolint:gosec // bit mask
-				// ADR-0087: money rights are the owner's to hand out and to take back.
-				return httpx.Forbidden("only the owner can assign or remove roles with billing permissions")
-			case perm.Bits(uint64(rr.Permissions))&perm.Billing != 0 && want[id] && tu.IsBot: //nolint:gosec // bit mask
+			}
+			if err := checkAssignable(actor, rr); err != nil {
+				return err
+			}
+			if perm.Bits(uint64(rr.Permissions))&perm.Billing != 0 && want[id] && tu.IsBot { //nolint:gosec // bit mask
 				return httpx.Validation("roleIds", "bots cannot hold billing permissions")
-			case !above(actor, rr.Position):
-				return httpx.Forbidden("cannot assign roles at or above your highest role")
-			case !own.Has(perm.Administrator) && perm.Bits(uint64(rr.Permissions))&^own != 0: //nolint:gosec // bit mask
-				return httpx.Forbidden("cannot assign a role with permissions you do not have")
 			}
 			if want[id] {
 				add = append(add, id)
