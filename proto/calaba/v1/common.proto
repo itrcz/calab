@@ -117,6 +117,9 @@ enum ErrorCode {
   // 403: a new DM, a DM message, forward, edit or reaction, or a one-to-one call between two
   // people when either blocked the other (ADR-0154); the same text for both sides.
   ERROR_CODE_USER_UNAVAILABLE = 80;
+  // 403: a public Disk link with a password that the visitor has not unlocked, or a wrong
+  // password at POST /api/public/disk/{code}/unlock — the same answer for both (ADR-0167).
+  ERROR_CODE_LINK_PASSWORD_REQUIRED = 81;
 }
 
 // Error body of every non-2xx REST response.

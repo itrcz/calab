@@ -491,7 +491,7 @@ func (q *Queries) GetDiskItemForUpdate(ctx context.Context, id uuid.UUID) (DiskI
 }
 
 const getDiskLinkByCode = `-- name: GetDiskLinkByCode :one
-SELECT l.id, l.item_id, l.code, l.created_by, l.created_at, l.expires_at, l.revoked_at, l.downloads, di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root
+SELECT l.id, l.item_id, l.code, l.created_by, l.created_at, l.expires_at, l.revoked_at, l.downloads, l.password_hash, l.password_version, l.view_only, di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root
 FROM disk_links l
 JOIN disk_items di ON di.id = l.item_id
 WHERE l.code = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expires_at > now())
@@ -516,6 +516,9 @@ func (q *Queries) GetDiskLinkByCode(ctx context.Context, code string) (GetDiskLi
 		&i.DiskLink.ExpiresAt,
 		&i.DiskLink.RevokedAt,
 		&i.DiskLink.Downloads,
+		&i.DiskLink.PasswordHash,
+		&i.DiskLink.PasswordVersion,
+		&i.DiskLink.ViewOnly,
 		&i.DiskItem.ID,
 		&i.DiskItem.WorkspaceID,
 		&i.DiskItem.ParentID,
@@ -534,7 +537,7 @@ func (q *Queries) GetDiskLinkByCode(ctx context.Context, code string) (GetDiskLi
 }
 
 const getDiskLinkByItem = `-- name: GetDiskLinkByItem :one
-SELECT id, item_id, code, created_by, created_at, expires_at, revoked_at, downloads FROM disk_links WHERE item_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
+SELECT id, item_id, code, created_by, created_at, expires_at, revoked_at, downloads, password_hash, password_version, view_only FROM disk_links WHERE item_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
 `
 
 // The live link of an item (not revoked, not expired).
@@ -550,6 +553,9 @@ func (q *Queries) GetDiskLinkByItem(ctx context.Context, itemID uuid.UUID) (Disk
 		&i.ExpiresAt,
 		&i.RevokedAt,
 		&i.Downloads,
+		&i.PasswordHash,
+		&i.PasswordVersion,
+		&i.ViewOnly,
 	)
 	return i, err
 }
@@ -1109,7 +1115,7 @@ func (q *Queries) ListDiskItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]Di
 }
 
 const listDiskLinksForItems = `-- name: ListDiskLinksForItems :many
-SELECT id, item_id, code, created_by, created_at, expires_at, revoked_at, downloads FROM disk_links
+SELECT id, item_id, code, created_by, created_at, expires_at, revoked_at, downloads, password_hash, password_version, view_only FROM disk_links
 WHERE item_id = ANY($1::uuid[]) AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
 `
 
@@ -1132,6 +1138,9 @@ func (q *Queries) ListDiskLinksForItems(ctx context.Context, ids []uuid.UUID) ([
 			&i.ExpiresAt,
 			&i.RevokedAt,
 			&i.Downloads,
+			&i.PasswordHash,
+			&i.PasswordVersion,
+			&i.ViewOnly,
 		); err != nil {
 			return nil, err
 		}
@@ -1630,7 +1639,7 @@ func (q *Queries) ListWorkspaceDiskActivity(ctx context.Context, arg ListWorkspa
 }
 
 const listWorkspaceDiskLinks = `-- name: ListWorkspaceDiskLinks :many
-SELECT l.id, l.item_id, l.code, l.created_by, l.created_at, l.expires_at, l.revoked_at, l.downloads, di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root
+SELECT l.id, l.item_id, l.code, l.created_by, l.created_at, l.expires_at, l.revoked_at, l.downloads, l.password_hash, l.password_version, l.view_only, di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root
 FROM disk_links l JOIN disk_items di ON di.id = l.item_id
 WHERE di.workspace_id = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expires_at > now())
 ORDER BY l.created_at DESC
@@ -1660,6 +1669,9 @@ func (q *Queries) ListWorkspaceDiskLinks(ctx context.Context, workspaceID uuid.U
 			&i.DiskLink.ExpiresAt,
 			&i.DiskLink.RevokedAt,
 			&i.DiskLink.Downloads,
+			&i.DiskLink.PasswordHash,
+			&i.DiskLink.PasswordVersion,
+			&i.DiskLink.ViewOnly,
 			&i.DiskItem.ID,
 			&i.DiskItem.WorkspaceID,
 			&i.DiskItem.ParentID,
@@ -1950,6 +1962,68 @@ func (q *Queries) SetDiskItemOwner(ctx context.Context, arg SetDiskItemOwnerPara
 	return i, err
 }
 
+const setDiskLinkPassword = `-- name: SetDiskLinkPassword :one
+UPDATE disk_links SET password_hash = $2, password_version = password_version + 1
+WHERE id = $1
+RETURNING id, item_id, code, created_by, created_at, expires_at, revoked_at, downloads, password_hash, password_version, view_only
+`
+
+type SetDiskLinkPasswordParams struct {
+	ID           uuid.UUID
+	PasswordHash *string
+}
+
+// Sets, changes (hash) or removes (NULL) the password of a live link; every call bumps
+// password_version, which ends every unlock made before (ADR-0167).
+func (q *Queries) SetDiskLinkPassword(ctx context.Context, arg SetDiskLinkPasswordParams) (DiskLink, error) {
+	row := q.db.QueryRow(ctx, setDiskLinkPassword, arg.ID, arg.PasswordHash)
+	var i DiskLink
+	err := row.Scan(
+		&i.ID,
+		&i.ItemID,
+		&i.Code,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.Downloads,
+		&i.PasswordHash,
+		&i.PasswordVersion,
+		&i.ViewOnly,
+	)
+	return i, err
+}
+
+const setDiskLinkViewOnly = `-- name: SetDiskLinkViewOnly :one
+UPDATE disk_links SET view_only = $2 WHERE id = $1
+RETURNING id, item_id, code, created_by, created_at, expires_at, revoked_at, downloads, password_hash, password_version, view_only
+`
+
+type SetDiskLinkViewOnlyParams struct {
+	ID       uuid.UUID
+	ViewOnly bool
+}
+
+// «Без скачивания» of a live link (ADR-0167).
+func (q *Queries) SetDiskLinkViewOnly(ctx context.Context, arg SetDiskLinkViewOnlyParams) (DiskLink, error) {
+	row := q.db.QueryRow(ctx, setDiskLinkViewOnly, arg.ID, arg.ViewOnly)
+	var i DiskLink
+	err := row.Scan(
+		&i.ID,
+		&i.ItemID,
+		&i.Code,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.Downloads,
+		&i.PasswordHash,
+		&i.PasswordVersion,
+		&i.ViewOnly,
+	)
+	return i, err
+}
+
 const setDiskTrashDays = `-- name: SetDiskTrashDays :exec
 UPDATE workspaces SET disk_trash_days = $1 WHERE id = $2
 `
@@ -2104,32 +2178,42 @@ func (q *Queries) UpdateDiskItem(ctx context.Context, arg UpdateDiskItemParams) 
 }
 
 const upsertDiskLink = `-- name: UpsertDiskLink :one
-INSERT INTO disk_links (item_id, code, created_by, expires_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO disk_links (item_id, code, created_by, expires_at, password_hash, view_only)
+VALUES ($1, $2, $3, $4,
+        $5, $6)
 ON CONFLICT (item_id) DO UPDATE SET
-    code       = EXCLUDED.code,
-    created_by = EXCLUDED.created_by,
-    created_at = now(),
-    expires_at = EXCLUDED.expires_at,
-    revoked_at = NULL,
-    downloads  = 0
-RETURNING id, item_id, code, created_by, created_at, expires_at, revoked_at, downloads
+    code             = EXCLUDED.code,
+    created_by       = EXCLUDED.created_by,
+    created_at       = now(),
+    expires_at       = EXCLUDED.expires_at,
+    revoked_at       = NULL,
+    downloads        = 0,
+    password_hash    = EXCLUDED.password_hash,
+    password_version = disk_links.password_version + 1,
+    view_only        = EXCLUDED.view_only
+RETURNING id, item_id, code, created_by, created_at, expires_at, revoked_at, downloads, password_hash, password_version, view_only
 `
 
 type UpsertDiskLinkParams struct {
-	ItemID    uuid.UUID
-	Code      string
-	CreatedBy *uuid.UUID
-	ExpiresAt *time.Time
+	ItemID       uuid.UUID
+	Code         string
+	CreatedBy    *uuid.UUID
+	ExpiresAt    *time.Time
+	PasswordHash *string
+	ViewOnly     bool
 }
 
-// Turns the public link of a file on: a new code each time it is (re-)enabled.
+// Turns the public link of an item on: a new code each time it is (re-)enabled, with the
+// password and «Без скачивания» of the request (ADR-0167); a re-enable bumps password_version,
+// so no unlock of the old link opens the new one.
 func (q *Queries) UpsertDiskLink(ctx context.Context, arg UpsertDiskLinkParams) (DiskLink, error) {
 	row := q.db.QueryRow(ctx, upsertDiskLink,
 		arg.ItemID,
 		arg.Code,
 		arg.CreatedBy,
 		arg.ExpiresAt,
+		arg.PasswordHash,
+		arg.ViewOnly,
 	)
 	var i DiskLink
 	err := row.Scan(
@@ -2141,6 +2225,9 @@ func (q *Queries) UpsertDiskLink(ctx context.Context, arg UpsertDiskLinkParams) 
 		&i.ExpiresAt,
 		&i.RevokedAt,
 		&i.Downloads,
+		&i.PasswordHash,
+		&i.PasswordVersion,
+		&i.ViewOnly,
 	)
 	return i, err
 }

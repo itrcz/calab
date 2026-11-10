@@ -885,14 +885,17 @@ type DiskItem struct {
 }
 
 type DiskLink struct {
-	ID        uuid.UUID
-	ItemID    uuid.UUID
-	Code      string
-	CreatedBy *uuid.UUID
-	CreatedAt time.Time
-	ExpiresAt *time.Time
-	RevokedAt *time.Time
-	Downloads int32
+	ID              uuid.UUID
+	ItemID          uuid.UUID
+	Code            string
+	CreatedBy       *uuid.UUID
+	CreatedAt       time.Time
+	ExpiresAt       *time.Time
+	RevokedAt       *time.Time
+	Downloads       int32
+	PasswordHash    *string
+	PasswordVersion int32
+	ViewOnly        bool
 }
 
 type DiskPermission struct {

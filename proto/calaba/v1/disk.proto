@@ -25,7 +25,8 @@ enum DiskItemKind {
 // A public link of a file (ADR-0094 §3) or a folder (ADR-0165). Anyone with the code reads the
 // file without signing in: GET /api/public/disk/{code} (PublicDiskFile) and
 // /api/public/disk/{code}/content; a folder link lists the folder's visible subtree
-// (/api/public/disk/{code}/items, PublicDiskFolder) read-only.
+// (/api/public/disk/{code}/items, PublicDiskFolder) read-only. A link may carry a password and
+// «Без скачивания» (ADR-0167).
 message DiskLink {
   string code = 1; // 43 characters, base64url of 32 random bytes
   google.protobuf.Timestamp expires_at = 2; // unset = never
@@ -33,6 +34,8 @@ message DiskLink {
   google.protobuf.Timestamp created_at = 4;
   uint32 downloads = 5;
   string item_id = 6;
+  bool has_password = 7; // a visitor unlocks it first (the password itself never leaves the server)
+  bool view_only = 8; // «Без скачивания»: viewing in the browser only, no download or archive
 }
 
 // A folder or a file of the Disk.
@@ -100,6 +103,10 @@ enum DiskActivityKind {
   DISK_ACTIVITY_KIND_RESTORE = 9;
   DISK_ACTIVITY_KIND_DELETE = 10; // deleted forever
   DISK_ACTIVITY_KIND_EDIT = 11; // a saved version (ADR-0143): before / after = file_id, size, sha256 of the files
+  DISK_ACTIVITY_KIND_LINK_PASSWORD_ON = 12; // the link's password set (after.changed: replaced one), ADR-0167
+  DISK_ACTIVITY_KIND_LINK_PASSWORD_OFF = 13; // the link's password removed
+  DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_ON = 14; // «Без скачивания» turned on
+  DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_OFF = 15; // «Без скачивания» turned off
 }
 
 // A journal entry (disk_activity). before / after carry name snapshots (the destination
@@ -180,9 +187,27 @@ message UpdateDiskPermissionsRequest {
 }
 
 // POST /api/disk/items/{id}/link (a file or a folder, ADR-0165; the item's owner or MANAGE on
-// it). A live link is returned as is; expires_at unset = never.
+// it). A live link is returned as is (password and view_only are then ignored: PATCH changes
+// them); expires_at unset = never.
 message CreateDiskLinkRequest {
   google.protobuf.Timestamp expires_at = 1;
+  string password = 2; // a new link's password (4..128 characters); empty = none (ADR-0167)
+  bool view_only = 3; // a new link's «Без скачивания»
+}
+
+// PATCH /api/disk/items/{id}/link — changes the live link (ADR-0167; the same rights as POST).
+// password: set or change it (4..128 characters), "" removes it; every change ends the visitors'
+// unlocks. Unset fields stay as they are. Answers DiskLinkResponse.
+message UpdateDiskLinkRequest {
+  optional string password = 1;
+  optional bool view_only = 2;
+}
+
+// POST /api/public/disk/{code}/unlock — anonymous: the password of a protected link. 204 with an
+// HttpOnly cookie scoped to the link's path (12 h); a wrong password is 403
+// ERROR_CODE_LINK_PASSWORD_REQUIRED, rate-limited per IP and per link (ADR-0167).
+message UnlockDiskLinkRequest {
+  string password = 1;
 }
 
 message DiskLinkResponse {
@@ -212,6 +237,11 @@ message PublicDiskFile {
   DiskItemKind kind = 8;
   bool office = 9; // the file opens read-only in the office viewer (GET …/office)
   string id = 10; // the linked item
+  // The link has a password and this visitor has not unlocked it (ADR-0167): every other field
+  // is unset; the page asks for the password (POST …/unlock). Every other route answers 403
+  // ERROR_CODE_LINK_PASSWORD_REQUIRED meanwhile.
+  bool locked = 11;
+  bool view_only = 12; // «Без скачивания»: no download buttons, no archive (ADR-0167)
 }
 
 // One item of a public folder listing (ADR-0165): what an anonymous visitor may know.
@@ -245,6 +275,7 @@ message PublicDiskFolder {
   repeated PublicDiskEntry items = 4;
   string next_cursor = 5;
   google.protobuf.Timestamp expires_at = 6;
+  bool view_only = 7; // «Без скачивания» (ADR-0167)
 }
 
 // GET / PUT /api/workspaces/{id}/disk/settings (PUT: DISK_MANAGE).

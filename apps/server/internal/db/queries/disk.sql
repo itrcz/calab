@@ -218,16 +218,34 @@ DELETE FROM disk_permissions WHERE item_id = $1;
 INSERT INTO disk_permissions (item_id, target_type, target_id, allow, deny) VALUES ($1, $2, $3, $4, $5);
 
 -- name: UpsertDiskLink :one
--- Turns the public link of a file on: a new code each time it is (re-)enabled.
-INSERT INTO disk_links (item_id, code, created_by, expires_at)
-VALUES (sqlc.arg('item_id'), sqlc.arg('code'), sqlc.narg('created_by'), sqlc.narg('expires_at'))
+-- Turns the public link of an item on: a new code each time it is (re-)enabled, with the
+-- password and «Без скачивания» of the request (ADR-0167); a re-enable bumps password_version,
+-- so no unlock of the old link opens the new one.
+INSERT INTO disk_links (item_id, code, created_by, expires_at, password_hash, view_only)
+VALUES (sqlc.arg('item_id'), sqlc.arg('code'), sqlc.narg('created_by'), sqlc.narg('expires_at'),
+        sqlc.narg('password_hash'), sqlc.arg('view_only'))
 ON CONFLICT (item_id) DO UPDATE SET
-    code       = EXCLUDED.code,
-    created_by = EXCLUDED.created_by,
-    created_at = now(),
-    expires_at = EXCLUDED.expires_at,
-    revoked_at = NULL,
-    downloads  = 0
+    code             = EXCLUDED.code,
+    created_by       = EXCLUDED.created_by,
+    created_at       = now(),
+    expires_at       = EXCLUDED.expires_at,
+    revoked_at       = NULL,
+    downloads        = 0,
+    password_hash    = EXCLUDED.password_hash,
+    password_version = disk_links.password_version + 1,
+    view_only        = EXCLUDED.view_only
+RETURNING *;
+
+-- name: SetDiskLinkPassword :one
+-- Sets, changes (hash) or removes (NULL) the password of a live link; every call bumps
+-- password_version, which ends every unlock made before (ADR-0167).
+UPDATE disk_links SET password_hash = sqlc.narg('password_hash'), password_version = password_version + 1
+WHERE id = $1
+RETURNING *;
+
+-- name: SetDiskLinkViewOnly :one
+-- «Без скачивания» of a live link (ADR-0167).
+UPDATE disk_links SET view_only = $2 WHERE id = $1
 RETURNING *;
 
 -- name: GetDiskLinkByItem :one

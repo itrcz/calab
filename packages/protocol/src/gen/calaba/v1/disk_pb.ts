@@ -16,13 +16,14 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/disk.proto.
  */
 export const file_calaba_v1_disk: GenFile = /*@__PURE__*/
-  fileDesc("ChRjYWxhYmEvdjEvZGlzay5wcm90bxIJY2FsYWJhLnYxIrABCghEaXNrTGluaxIMCgRjb2RlGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmNyZWF0ZWRfYnkYAyABKAkSLgoKY3JlYXRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJZG93bmxvYWRzGAUgASgNEg8KB2l0ZW1faWQYBiABKAki/QMKCERpc2tJdGVtEgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIRCglwYXJlbnRfaWQYAyABKAkSJQoEa2luZBgEIAEoDjIXLmNhbGFiYS52MS5EaXNrSXRlbUtpbmQSDAoEbmFtZRgFIAEoCRIhCgRmaWxlGAYgASgLMhMuY2FsYWJhLnYxLkZpbGVNZXRhEhAKCG93bmVyX2lkGAcgASgJEhIKCnJlc3RyaWN0ZWQYCCABKAgSDgoGc2hhcmVkGAkgASgIEiEKBGxpbmsYCiABKAsyEy5jYWxhYmEudjEuRGlza0xpbmsSLgoKdHJhc2hlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHbXlfYml0cxgOIAEoBBISCgp0cmFzaGVkX2J5GA8gASgJEhQKDHRyYXNoZWRfcm9vdBgQIAEoCBIUCgxmb2xkZXJfZmlsZXMYESABKA0SFgoOZm9sZGVyX2ZvbGRlcnMYEiABKA0SEgoKZWRpdG9yX2lkcxgTIAMoCSJ7ChNEaXNrUGVybWlzc2lvbkVudHJ5EjQKC3RhcmdldF90eXBlGAEgASgOMh8uY2FsYWJhLnYxLlBlcm1pc3Npb25UYXJnZXRUeXBlEhEKCXRhcmdldF9pZBgCIAEoCRINCgVhbGxvdxgDIAEoBBIMCgRkZW55GAQgASgEItkBCglEaXNrVXNhZ2USEwoLcXVvdGFfYnl0ZXMYASABKAQSEgoKcGxhbl9ieXRlcxgCIAEoBBITCgthZGRvbl9ieXRlcxgDIAEoBBISCgp1c2VkX2J5dGVzGAQgASgEEhIKCmRpc2tfYnl0ZXMYBSABKAQSEwoLdHJhc2hfYnl0ZXMYBiABKAQSEwoLb3RoZXJfYnl0ZXMYByABKAQSEgoKY2hhdF9ieXRlcxgIIAEoBBIUCgxib2FyZHNfYnl0ZXMYCSABKAQSEgoKd2lraV9ieXRlcxgKIAEoBCKSAgoMRGlza0FjdGl2aXR5EgoKAmlkGAEgASgJEhQKDHdvcmtzcGFjZV9pZBgCIAEoCRIPCgdpdGVtX2lkGAMgASgJEhAKCGFjdG9yX2lkGAQgASgJEikKBGtpbmQYBSABKA4yGy5jYWxhYmEudjEuRGlza0FjdGl2aXR5S2luZBInCgZiZWZvcmUYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiYKBWFmdGVyGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglpdGVtX25hbWUYCSABKAkiUAoVTGlzdERpc2tJdGVtc1Jlc3BvbnNlEiIKBWl0ZW1zGAEgAygLMhMuY2FsYWJhLnYxLkRpc2tJdGVtEhMKC25leHRfY3Vyc29yGAIgASgJIjoKF0NyZWF0ZURpc2tGb2xkZXJSZXF1ZXN0EhEKCXBhcmVudF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJIkkKFUltcG9ydERpc2tGaWxlUmVxdWVzdBIPCgdmaWxlX2lkGAEgASgJEhEKCXBhcmVudF9pZBgCIAEoCRIMCgRuYW1lGAMgASgJIjUKEERpc2tJdGVtUmVzcG9uc2USIQoEaXRlbRgBIAEoCzITLmNhbGFiYS52MS5EaXNrSXRlbSKBAQoVVXBkYXRlRGlza0l0ZW1SZXF1ZXN0EhEKBG5hbWUYASABKAlIAIgBARIWCglwYXJlbnRfaWQYAiABKAlIAYgBARIXCgpyZXN0cmljdGVkGAMgASgISAKIAQFCBwoFX25hbWVCDAoKX3BhcmVudF9pZEINCgtfcmVzdHJpY3RlZCI+ChZFbXB0eURpc2tUcmFzaFJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKA0SEwoLZnJlZWRfYnl0ZXMYAiABKAQiNgoQRGlza1BhdGhSZXNwb25zZRIiCgVpdGVtcxgBIAMoCzITLmNhbGFiYS52MS5EaXNrSXRlbSJeChdEaXNrUGVybWlzc2lvbnNSZXNwb25zZRIvCgdlbnRyaWVzGAEgAygLMh4uY2FsYWJhLnYxLkRpc2tQZXJtaXNzaW9uRW50cnkSEgoKcmVzdHJpY3RlZBgCIAEoCCJ3ChxVcGRhdGVEaXNrUGVybWlzc2lvbnNSZXF1ZXN0Ei8KB2VudHJpZXMYASADKAsyHi5jYWxhYmEudjEuRGlza1Blcm1pc3Npb25FbnRyeRIXCgpyZXN0cmljdGVkGAIgASgISACIAQFCDQoLX3Jlc3RyaWN0ZWQiRwoVQ3JlYXRlRGlza0xpbmtSZXF1ZXN0Ei4KCmV4cGlyZXNfYXQYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkIKEERpc2tMaW5rUmVzcG9uc2USIQoEbGluaxgBIAEoCzITLmNhbGFiYS52MS5EaXNrTGluaxILCgN1cmwYAiABKAkiVAoQRGlza0FjdGl2aXR5UGFnZRIrCgphY3Rpdml0aWVzGAEgAygLMhcuY2FsYWJhLnYxLkRpc2tBY3Rpdml0eRITCgtuZXh0X2N1cnNvchgCIAEoCSLjAQoOUHVibGljRGlza0ZpbGUSDAoEbmFtZRgBIAEoCRIMCgRzaXplGAIgASgEEgwKBG1pbWUYAyABKAkSDQoFd2lkdGgYBCABKA0SDgoGaGVpZ2h0GAUgASgNEhUKDWhhc190aHVtYm5haWwYBiABKAgSLgoKZXhwaXJlc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJQoEa2luZBgIIAEoDjIXLmNhbGFiYS52MS5EaXNrSXRlbUtpbmQSDgoGb2ZmaWNlGAkgASgIEgoKAmlkGAogASgJIuQBCg9QdWJsaWNEaXNrRW50cnkSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIlCgRraW5kGAMgASgOMhcuY2FsYWJhLnYxLkRpc2tJdGVtS2luZBIMCgRzaXplGAQgASgEEgwKBG1pbWUYBSABKAkSDQoFd2lkdGgYBiABKA0SDgoGaGVpZ2h0GAcgASgNEhUKDWhhc190aHVtYm5haWwYCCABKAgSLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGb2ZmaWNlGAogASgIIisKD1B1YmxpY0Rpc2tDcnVtYhIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJIsYBChBQdWJsaWNEaXNrRm9sZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSKAoEcGF0aBgDIAMoCzIaLmNhbGFiYS52MS5QdWJsaWNEaXNrQ3J1bWISKQoFaXRlbXMYBCADKAsyGi5jYWxhYmEudjEuUHVibGljRGlza0VudHJ5EhMKC25leHRfY3Vyc29yGAUgASgJEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIiIKDERpc2tTZXR0aW5ncxISCgp0cmFzaF9kYXlzGAEgASgNImoKD0Rpc2tBY2Nlc3NMZXZlbBISCgpyZXN0cmljdGVkGAEgASgIEhAKCG93bmVyX2lkGAIgASgJEjEKCW92ZXJyaWRlcxgDIAMoCzIeLmNhbGFiYS52MS5EaXNrUGVybWlzc2lvbkVudHJ5IqgBCg5EaXNrSXRlbVVwc2VydBIUCgx3b3Jrc3BhY2VfaWQYASABKAkSIQoEaXRlbRgCIAEoCzITLmNhbGFiYS52MS5EaXNrSXRlbRIqCgZhY2Nlc3MYAyADKAsyGi5jYWxhYmEudjEuRGlza0FjY2Vzc0xldmVsEjEKDWFjY2Vzc19iZWZvcmUYBCADKAsyGi5jYWxhYmEudjEuRGlza0FjY2Vzc0xldmVsInYKDkRpc2tJdGVtUmVtb3ZlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIPCgdpdGVtX2lkGAIgASgJEhEKCXBhcmVudF9pZBgDIAEoCRIqCgZhY2Nlc3MYBCADKAsyGi5jYWxhYmEudjEuRGlza0FjY2Vzc0xldmVsKmIKDERpc2tJdGVtS2luZBIeChpESVNLX0lURU1fS0lORF9VTlNQRUNJRklFRBAAEhkKFURJU0tfSVRFTV9LSU5EX0ZPTERFUhABEhcKE0RJU0tfSVRFTV9LSU5EX0ZJTEUQAiqJAwoQRGlza0FjdGl2aXR5S2luZBIiCh5ESVNLX0FDVElWSVRZX0tJTkRfVU5TUEVDSUZJRUQQABIdChlESVNLX0FDVElWSVRZX0tJTkRfQ1JFQVRFEAESHQoZRElTS19BQ1RJVklUWV9LSU5EX1VQTE9BRBACEh0KGURJU0tfQUNUSVZJVFlfS0lORF9SRU5BTUUQAxIbChdESVNLX0FDVElWSVRZX0tJTkRfTU9WRRAEEhwKGERJU0tfQUNUSVZJVFlfS0lORF9TSEFSRRAFEh4KGkRJU0tfQUNUSVZJVFlfS0lORF9MSU5LX09OEAYSHwobRElTS19BQ1RJVklUWV9LSU5EX0xJTktfT0ZGEAcSHAoYRElTS19BQ1RJVklUWV9LSU5EX1RSQVNIEAgSHgoaRElTS19BQ1RJVklUWV9LSU5EX1JFU1RPUkUQCRIdChlESVNLX0FDVElWSVRZX0tJTkRfREVMRVRFEAoSGwoXRElTS19BQ1RJVklUWV9LSU5EX0VESVQQC0KXAQoNY29tLmNhbGFiYS52MUIJRGlza1Byb3RvUAFaNmdpdGh1Yi5jb20vY2FsYWJhL2NhbGFiYS9zZXJ2ZXIvZ2VuL2NhbGFiYS92MTtjYWxhYmF2MaICA0NYWKoCCUNhbGFiYS5WMcoCCUNhbGFiYVxWMeICFUNhbGFiYVxWMVxHUEJNZXRhZGF0YeoCCkNhbGFiYTo6VjFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp, file_calaba_v1_file, file_calaba_v1_room]);
+  fileDesc("ChRjYWxhYmEvdjEvZGlzay5wcm90bxIJY2FsYWJhLnYxItkBCghEaXNrTGluaxIMCgRjb2RlGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmNyZWF0ZWRfYnkYAyABKAkSLgoKY3JlYXRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJZG93bmxvYWRzGAUgASgNEg8KB2l0ZW1faWQYBiABKAkSFAoMaGFzX3Bhc3N3b3JkGAcgASgIEhEKCXZpZXdfb25seRgIIAEoCCL9AwoIRGlza0l0ZW0SCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEhEKCXBhcmVudF9pZBgDIAEoCRIlCgRraW5kGAQgASgOMhcuY2FsYWJhLnYxLkRpc2tJdGVtS2luZBIMCgRuYW1lGAUgASgJEiEKBGZpbGUYBiABKAsyEy5jYWxhYmEudjEuRmlsZU1ldGESEAoIb3duZXJfaWQYByABKAkSEgoKcmVzdHJpY3RlZBgIIAEoCBIOCgZzaGFyZWQYCSABKAgSIQoEbGluaxgKIAEoCzITLmNhbGFiYS52MS5EaXNrTGluaxIuCgp0cmFzaGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdteV9iaXRzGA4gASgEEhIKCnRyYXNoZWRfYnkYDyABKAkSFAoMdHJhc2hlZF9yb290GBAgASgIEhQKDGZvbGRlcl9maWxlcxgRIAEoDRIWCg5mb2xkZXJfZm9sZGVycxgSIAEoDRISCgplZGl0b3JfaWRzGBMgAygJInsKE0Rpc2tQZXJtaXNzaW9uRW50cnkSNAoLdGFyZ2V0X3R5cGUYASABKA4yHy5jYWxhYmEudjEuUGVybWlzc2lvblRhcmdldFR5cGUSEQoJdGFyZ2V0X2lkGAIgASgJEg0KBWFsbG93GAMgASgEEgwKBGRlbnkYBCABKAQi2QEKCURpc2tVc2FnZRITCgtxdW90YV9ieXRlcxgBIAEoBBISCgpwbGFuX2J5dGVzGAIgASgEEhMKC2FkZG9uX2J5dGVzGAMgASgEEhIKCnVzZWRfYnl0ZXMYBCABKAQSEgoKZGlza19ieXRlcxgFIAEoBBITCgt0cmFzaF9ieXRlcxgGIAEoBBITCgtvdGhlcl9ieXRlcxgHIAEoBBISCgpjaGF0X2J5dGVzGAggASgEEhQKDGJvYXJkc19ieXRlcxgJIAEoBBISCgp3aWtpX2J5dGVzGAogASgEIpICCgxEaXNrQWN0aXZpdHkSCgoCaWQYASABKAkSFAoMd29ya3NwYWNlX2lkGAIgASgJEg8KB2l0ZW1faWQYAyABKAkSEAoIYWN0b3JfaWQYBCABKAkSKQoEa2luZBgFIAEoDjIbLmNhbGFiYS52MS5EaXNrQWN0aXZpdHlLaW5kEicKBmJlZm9yZRgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSJgoFYWZ0ZXIYByABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0Ei4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCWl0ZW1fbmFtZRgJIAEoCSJQChVMaXN0RGlza0l0ZW1zUmVzcG9uc2USIgoFaXRlbXMYASADKAsyEy5jYWxhYmEudjEuRGlza0l0ZW0SEwoLbmV4dF9jdXJzb3IYAiABKAkiOgoXQ3JlYXRlRGlza0ZvbGRlclJlcXVlc3QSEQoJcGFyZW50X2lkGAEgASgJEgwKBG5hbWUYAiABKAkiSQoVSW1wb3J0RGlza0ZpbGVSZXF1ZXN0Eg8KB2ZpbGVfaWQYASABKAkSEQoJcGFyZW50X2lkGAIgASgJEgwKBG5hbWUYAyABKAkiNQoQRGlza0l0ZW1SZXNwb25zZRIhCgRpdGVtGAEgASgLMhMuY2FsYWJhLnYxLkRpc2tJdGVtIoEBChVVcGRhdGVEaXNrSXRlbVJlcXVlc3QSEQoEbmFtZRgBIAEoCUgAiAEBEhYKCXBhcmVudF9pZBgCIAEoCUgBiAEBEhcKCnJlc3RyaWN0ZWQYAyABKAhIAogBAUIHCgVfbmFtZUIMCgpfcGFyZW50X2lkQg0KC19yZXN0cmljdGVkIj4KFkVtcHR5RGlza1RyYXNoUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoDRITCgtmcmVlZF9ieXRlcxgCIAEoBCI2ChBEaXNrUGF0aFJlc3BvbnNlEiIKBWl0ZW1zGAEgAygLMhMuY2FsYWJhLnYxLkRpc2tJdGVtIl4KF0Rpc2tQZXJtaXNzaW9uc1Jlc3BvbnNlEi8KB2VudHJpZXMYASADKAsyHi5jYWxhYmEudjEuRGlza1Blcm1pc3Npb25FbnRyeRISCgpyZXN0cmljdGVkGAIgASgIIncKHFVwZGF0ZURpc2tQZXJtaXNzaW9uc1JlcXVlc3QSLwoHZW50cmllcxgBIAMoCzIeLmNhbGFiYS52MS5EaXNrUGVybWlzc2lvbkVudHJ5EhcKCnJlc3RyaWN0ZWQYAiABKAhIAIgBAUINCgtfcmVzdHJpY3RlZCJsChVDcmVhdGVEaXNrTGlua1JlcXVlc3QSLgoKZXhwaXJlc19hdBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIcGFzc3dvcmQYAiABKAkSEQoJdmlld19vbmx5GAMgASgIImEKFVVwZGF0ZURpc2tMaW5rUmVxdWVzdBIVCghwYXNzd29yZBgBIAEoCUgAiAEBEhYKCXZpZXdfb25seRgCIAEoCEgBiAEBQgsKCV9wYXNzd29yZEIMCgpfdmlld19vbmx5IikKFVVubG9ja0Rpc2tMaW5rUmVxdWVzdBIQCghwYXNzd29yZBgBIAEoCSJCChBEaXNrTGlua1Jlc3BvbnNlEiEKBGxpbmsYASABKAsyEy5jYWxhYmEudjEuRGlza0xpbmsSCwoDdXJsGAIgASgJIlQKEERpc2tBY3Rpdml0eVBhZ2USKwoKYWN0aXZpdGllcxgBIAMoCzIXLmNhbGFiYS52MS5EaXNrQWN0aXZpdHkSEwoLbmV4dF9jdXJzb3IYAiABKAkihgIKDlB1YmxpY0Rpc2tGaWxlEgwKBG5hbWUYASABKAkSDAoEc2l6ZRgCIAEoBBIMCgRtaW1lGAMgASgJEg0KBXdpZHRoGAQgASgNEg4KBmhlaWdodBgFIAEoDRIVCg1oYXNfdGh1bWJuYWlsGAYgASgIEi4KCmV4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiUKBGtpbmQYCCABKA4yFy5jYWxhYmEudjEuRGlza0l0ZW1LaW5kEg4KBm9mZmljZRgJIAEoCBIKCgJpZBgKIAEoCRIOCgZsb2NrZWQYCyABKAgSEQoJdmlld19vbmx5GAwgASgIIuQBCg9QdWJsaWNEaXNrRW50cnkSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIlCgRraW5kGAMgASgOMhcuY2FsYWJhLnYxLkRpc2tJdGVtS2luZBIMCgRzaXplGAQgASgEEgwKBG1pbWUYBSABKAkSDQoFd2lkdGgYBiABKA0SDgoGaGVpZ2h0GAcgASgNEhUKDWhhc190aHVtYm5haWwYCCABKAgSLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGb2ZmaWNlGAogASgIIisKD1B1YmxpY0Rpc2tDcnVtYhIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJItkBChBQdWJsaWNEaXNrRm9sZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSKAoEcGF0aBgDIAMoCzIaLmNhbGFiYS52MS5QdWJsaWNEaXNrQ3J1bWISKQoFaXRlbXMYBCADKAsyGi5jYWxhYmEudjEuUHVibGljRGlza0VudHJ5EhMKC25leHRfY3Vyc29yGAUgASgJEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCXZpZXdfb25seRgHIAEoCCIiCgxEaXNrU2V0dGluZ3MSEgoKdHJhc2hfZGF5cxgBIAEoDSJqCg9EaXNrQWNjZXNzTGV2ZWwSEgoKcmVzdHJpY3RlZBgBIAEoCBIQCghvd25lcl9pZBgCIAEoCRIxCglvdmVycmlkZXMYAyADKAsyHi5jYWxhYmEudjEuRGlza1Blcm1pc3Npb25FbnRyeSKoAQoORGlza0l0ZW1VcHNlcnQSFAoMd29ya3NwYWNlX2lkGAEgASgJEiEKBGl0ZW0YAiABKAsyEy5jYWxhYmEudjEuRGlza0l0ZW0SKgoGYWNjZXNzGAMgAygLMhouY2FsYWJhLnYxLkRpc2tBY2Nlc3NMZXZlbBIxCg1hY2Nlc3NfYmVmb3JlGAQgAygLMhouY2FsYWJhLnYxLkRpc2tBY2Nlc3NMZXZlbCJ2Cg5EaXNrSXRlbVJlbW92ZRIUCgx3b3Jrc3BhY2VfaWQYASABKAkSDwoHaXRlbV9pZBgCIAEoCRIRCglwYXJlbnRfaWQYAyABKAkSKgoGYWNjZXNzGAQgAygLMhouY2FsYWJhLnYxLkRpc2tBY2Nlc3NMZXZlbCpiCgxEaXNrSXRlbUtpbmQSHgoaRElTS19JVEVNX0tJTkRfVU5TUEVDSUZJRUQQABIZChVESVNLX0lURU1fS0lORF9GT0xERVIQARIXChNESVNLX0lURU1fS0lORF9GSUxFEAIqsQQKEERpc2tBY3Rpdml0eUtpbmQSIgoeRElTS19BQ1RJVklUWV9LSU5EX1VOU1BFQ0lGSUVEEAASHQoZRElTS19BQ1RJVklUWV9LSU5EX0NSRUFURRABEh0KGURJU0tfQUNUSVZJVFlfS0lORF9VUExPQUQQAhIdChlESVNLX0FDVElWSVRZX0tJTkRfUkVOQU1FEAMSGwoXRElTS19BQ1RJVklUWV9LSU5EX01PVkUQBBIcChhESVNLX0FDVElWSVRZX0tJTkRfU0hBUkUQBRIeChpESVNLX0FDVElWSVRZX0tJTkRfTElOS19PThAGEh8KG0RJU0tfQUNUSVZJVFlfS0lORF9MSU5LX09GRhAHEhwKGERJU0tfQUNUSVZJVFlfS0lORF9UUkFTSBAIEh4KGkRJU0tfQUNUSVZJVFlfS0lORF9SRVNUT1JFEAkSHQoZRElTS19BQ1RJVklUWV9LSU5EX0RFTEVURRAKEhsKF0RJU0tfQUNUSVZJVFlfS0lORF9FRElUEAsSJwojRElTS19BQ1RJVklUWV9LSU5EX0xJTktfUEFTU1dPUkRfT04QDBIoCiRESVNLX0FDVElWSVRZX0tJTkRfTElOS19QQVNTV09SRF9PRkYQDRIoCiRESVNLX0FDVElWSVRZX0tJTkRfTElOS19WSUVXX09OTFlfT04QDhIpCiVESVNLX0FDVElWSVRZX0tJTkRfTElOS19WSUVXX09OTFlfT0ZGEA9ClwEKDWNvbS5jYWxhYmEudjFCCURpc2tQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_struct, file_google_protobuf_timestamp, file_calaba_v1_file, file_calaba_v1_room]);
 
 /**
  * A public link of a file (ADR-0094 §3) or a folder (ADR-0165). Anyone with the code reads the
  * file without signing in: GET /api/public/disk/{code} (PublicDiskFile) and
  * /api/public/disk/{code}/content; a folder link lists the folder's visible subtree
- * (/api/public/disk/{code}/items, PublicDiskFolder) read-only.
+ * (/api/public/disk/{code}/items, PublicDiskFolder) read-only. A link may carry a password and
+ * «Без скачивания» (ADR-0167).
  *
  * @generated from message calaba.v1.DiskLink
  */
@@ -60,6 +61,20 @@ export type DiskLink = Message<"calaba.v1.DiskLink"> & {
    * @generated from field: string item_id = 6;
    */
   itemId: string;
+
+  /**
+   * a visitor unlocks it first (the password itself never leaves the server)
+   *
+   * @generated from field: bool has_password = 7;
+   */
+  hasPassword: boolean;
+
+  /**
+   * «Без скачивания»: viewing in the browser only, no download or archive
+   *
+   * @generated from field: bool view_only = 8;
+   */
+  viewOnly: boolean;
 };
 
 /**
@@ -621,7 +636,8 @@ export const UpdateDiskPermissionsRequestSchema: GenMessage<UpdateDiskPermission
 
 /**
  * POST /api/disk/items/{id}/link (a file or a folder, ADR-0165; the item's owner or MANAGE on
- * it). A live link is returned as is; expires_at unset = never.
+ * it). A live link is returned as is (password and view_only are then ignored: PATCH changes
+ * them); expires_at unset = never.
  *
  * @generated from message calaba.v1.CreateDiskLinkRequest
  */
@@ -630,6 +646,20 @@ export type CreateDiskLinkRequest = Message<"calaba.v1.CreateDiskLinkRequest"> &
    * @generated from field: google.protobuf.Timestamp expires_at = 1;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * a new link's password (4..128 characters); empty = none (ADR-0167)
+   *
+   * @generated from field: string password = 2;
+   */
+  password: string;
+
+  /**
+   * a new link's «Без скачивания»
+   *
+   * @generated from field: bool view_only = 3;
+   */
+  viewOnly: boolean;
 };
 
 /**
@@ -638,6 +668,53 @@ export type CreateDiskLinkRequest = Message<"calaba.v1.CreateDiskLinkRequest"> &
  */
 export const CreateDiskLinkRequestSchema: GenMessage<CreateDiskLinkRequest> = /*@__PURE__*/
   messageDesc(file_calaba_v1_disk, 14);
+
+/**
+ * PATCH /api/disk/items/{id}/link — changes the live link (ADR-0167; the same rights as POST).
+ * password: set or change it (4..128 characters), "" removes it; every change ends the visitors'
+ * unlocks. Unset fields stay as they are. Answers DiskLinkResponse.
+ *
+ * @generated from message calaba.v1.UpdateDiskLinkRequest
+ */
+export type UpdateDiskLinkRequest = Message<"calaba.v1.UpdateDiskLinkRequest"> & {
+  /**
+   * @generated from field: optional string password = 1;
+   */
+  password?: string | undefined;
+
+  /**
+   * @generated from field: optional bool view_only = 2;
+   */
+  viewOnly?: boolean | undefined;
+};
+
+/**
+ * Describes the message calaba.v1.UpdateDiskLinkRequest.
+ * Use `create(UpdateDiskLinkRequestSchema)` to create a new message.
+ */
+export const UpdateDiskLinkRequestSchema: GenMessage<UpdateDiskLinkRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_disk, 15);
+
+/**
+ * POST /api/public/disk/{code}/unlock — anonymous: the password of a protected link. 204 with an
+ * HttpOnly cookie scoped to the link's path (12 h); a wrong password is 403
+ * ERROR_CODE_LINK_PASSWORD_REQUIRED, rate-limited per IP and per link (ADR-0167).
+ *
+ * @generated from message calaba.v1.UnlockDiskLinkRequest
+ */
+export type UnlockDiskLinkRequest = Message<"calaba.v1.UnlockDiskLinkRequest"> & {
+  /**
+   * @generated from field: string password = 1;
+   */
+  password: string;
+};
+
+/**
+ * Describes the message calaba.v1.UnlockDiskLinkRequest.
+ * Use `create(UnlockDiskLinkRequestSchema)` to create a new message.
+ */
+export const UnlockDiskLinkRequestSchema: GenMessage<UnlockDiskLinkRequest> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_disk, 16);
 
 /**
  * @generated from message calaba.v1.DiskLinkResponse
@@ -661,7 +738,7 @@ export type DiskLinkResponse = Message<"calaba.v1.DiskLinkResponse"> & {
  * Use `create(DiskLinkResponseSchema)` to create a new message.
  */
 export const DiskLinkResponseSchema: GenMessage<DiskLinkResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 15);
+  messageDesc(file_calaba_v1_disk, 17);
 
 /**
  * GET /api/disk/items/{id}/activity?cursor= (DISK_VIEW on the item) and
@@ -686,7 +763,7 @@ export type DiskActivityPage = Message<"calaba.v1.DiskActivityPage"> & {
  * Use `create(DiskActivityPageSchema)` to create a new message.
  */
 export const DiskActivityPageSchema: GenMessage<DiskActivityPage> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 16);
+  messageDesc(file_calaba_v1_disk, 18);
 
 /**
  * GET /api/public/disk/{code} — anonymous, X-Robots-Tag: noindex. 404 once the link is revoked,
@@ -754,6 +831,22 @@ export type PublicDiskFile = Message<"calaba.v1.PublicDiskFile"> & {
    * @generated from field: string id = 10;
    */
   id: string;
+
+  /**
+   * The link has a password and this visitor has not unlocked it (ADR-0167): every other field
+   * is unset; the page asks for the password (POST …/unlock). Every other route answers 403
+   * ERROR_CODE_LINK_PASSWORD_REQUIRED meanwhile.
+   *
+   * @generated from field: bool locked = 11;
+   */
+  locked: boolean;
+
+  /**
+   * «Без скачивания»: no download buttons, no archive (ADR-0167)
+   *
+   * @generated from field: bool view_only = 12;
+   */
+  viewOnly: boolean;
 };
 
 /**
@@ -761,7 +854,7 @@ export type PublicDiskFile = Message<"calaba.v1.PublicDiskFile"> & {
  * Use `create(PublicDiskFileSchema)` to create a new message.
  */
 export const PublicDiskFileSchema: GenMessage<PublicDiskFile> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 17);
+  messageDesc(file_calaba_v1_disk, 19);
 
 /**
  * One item of a public folder listing (ADR-0165): what an anonymous visitor may know.
@@ -835,7 +928,7 @@ export type PublicDiskEntry = Message<"calaba.v1.PublicDiskEntry"> & {
  * Use `create(PublicDiskEntrySchema)` to create a new message.
  */
 export const PublicDiskEntrySchema: GenMessage<PublicDiskEntry> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 18);
+  messageDesc(file_calaba_v1_disk, 20);
 
 /**
  * A folder on the way from the linked folder (first) to the listed one (last).
@@ -859,7 +952,7 @@ export type PublicDiskCrumb = Message<"calaba.v1.PublicDiskCrumb"> & {
  * Use `create(PublicDiskCrumbSchema)` to create a new message.
  */
 export const PublicDiskCrumbSchema: GenMessage<PublicDiskCrumb> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 19);
+  messageDesc(file_calaba_v1_disk, 21);
 
 /**
  * GET /api/public/disk/{code}/items?parent=&cursor= — anonymous, a folder link only: the live
@@ -903,6 +996,13 @@ export type PublicDiskFolder = Message<"calaba.v1.PublicDiskFolder"> & {
    * @generated from field: google.protobuf.Timestamp expires_at = 6;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * «Без скачивания» (ADR-0167)
+   *
+   * @generated from field: bool view_only = 7;
+   */
+  viewOnly: boolean;
 };
 
 /**
@@ -910,7 +1010,7 @@ export type PublicDiskFolder = Message<"calaba.v1.PublicDiskFolder"> & {
  * Use `create(PublicDiskFolderSchema)` to create a new message.
  */
 export const PublicDiskFolderSchema: GenMessage<PublicDiskFolder> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 20);
+  messageDesc(file_calaba_v1_disk, 22);
 
 /**
  * GET / PUT /api/workspaces/{id}/disk/settings (PUT: DISK_MANAGE).
@@ -931,7 +1031,7 @@ export type DiskSettings = Message<"calaba.v1.DiskSettings"> & {
  * Use `create(DiskSettingsSchema)` to create a new message.
  */
 export const DiskSettingsSchema: GenMessage<DiskSettings> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 21);
+  messageDesc(file_calaba_v1_disk, 23);
 
 /**
  * One level of an item's access chain (the topmost ancestor first, the item last): what
@@ -962,7 +1062,7 @@ export type DiskAccessLevel = Message<"calaba.v1.DiskAccessLevel"> & {
  * Use `create(DiskAccessLevelSchema)` to create a new message.
  */
 export const DiskAccessLevelSchema: GenMessage<DiskAccessLevel> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 22);
+  messageDesc(file_calaba_v1_disk, 24);
 
 /**
  * DISK_ITEM_UPSERT: an item was created or changed (renamed, moved, shared, trashed,
@@ -1002,7 +1102,7 @@ export type DiskItemUpsert = Message<"calaba.v1.DiskItemUpsert"> & {
  * Use `create(DiskItemUpsertSchema)` to create a new message.
  */
 export const DiskItemUpsertSchema: GenMessage<DiskItemUpsert> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 23);
+  messageDesc(file_calaba_v1_disk, 25);
 
 /**
  * DISK_ITEM_REMOVE: an item was deleted forever or the recipient lost access to it.
@@ -1039,7 +1139,7 @@ export type DiskItemRemove = Message<"calaba.v1.DiskItemRemove"> & {
  * Use `create(DiskItemRemoveSchema)` to create a new message.
  */
 export const DiskItemRemoveSchema: GenMessage<DiskItemRemove> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_disk, 24);
+  messageDesc(file_calaba_v1_disk, 26);
 
 /**
  * @generated from enum calaba.v1.DiskItemKind
@@ -1138,6 +1238,34 @@ export enum DiskActivityKind {
    * @generated from enum value: DISK_ACTIVITY_KIND_EDIT = 11;
    */
   EDIT = 11,
+
+  /**
+   * the link's password set (after.changed: replaced one), ADR-0167
+   *
+   * @generated from enum value: DISK_ACTIVITY_KIND_LINK_PASSWORD_ON = 12;
+   */
+  LINK_PASSWORD_ON = 12,
+
+  /**
+   * the link's password removed
+   *
+   * @generated from enum value: DISK_ACTIVITY_KIND_LINK_PASSWORD_OFF = 13;
+   */
+  LINK_PASSWORD_OFF = 13,
+
+  /**
+   * «Без скачивания» turned on
+   *
+   * @generated from enum value: DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_ON = 14;
+   */
+  LINK_VIEW_ONLY_ON = 14,
+
+  /**
+   * «Без скачивания» turned off
+   *
+   * @generated from enum value: DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_OFF = 15;
+   */
+  LINK_VIEW_ONLY_OFF = 15,
 }
 
 /**
