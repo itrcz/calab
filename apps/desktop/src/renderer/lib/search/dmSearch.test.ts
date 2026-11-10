@@ -40,6 +40,7 @@ describe('DM column search', () => {
     const n = (id: string): string => names[id] ?? '';
     expect(matchPeers(dms, n, 'скреп')).toEqual([{ peerId: 'b' }]);
     expect(matchPeers(dms, n, 'екатерина hr')).toEqual([{ peerId: 'a' }]);
+    expect(matchPeers(dms, n, 'пётров')).toEqual([{ peerId: 'c' }]); // «е» = «ё» (CBF-169)
     expect(matchPeers(dms, n, 'р')).toHaveLength(3);
     expect(matchPeers(dms, n, '  ')).toEqual([]);
     expect(matchPeers(dms, n, 'р', 2)).toHaveLength(2);

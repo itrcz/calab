@@ -13,6 +13,7 @@ import {
   type Task,
   type TaskFilter,
 } from '@calaba/protocol';
+import { foldSearch } from '../markdown/highlight';
 import { fieldDef, opNeedsValue } from './filterFields';
 
 /**
@@ -357,9 +358,10 @@ export function matchCond(t: Task, c: Cond, ctx: MatchCtx): boolean {
         ctx,
       );
     case TaskField.TEXT: {
-      const q = (c.values[0] ?? '').trim().toLowerCase();
+      // «е» = «ё» (CBF-169), as the server's TextCondition.
+      const q = foldSearch((c.values[0] ?? '').trim());
       if (!q) return true;
-      const hay = `${t.key} ${t.title} ${t.description}`.toLowerCase();
+      const hay = foldSearch(`${t.key} ${t.title} ${t.description}`);
       return q.split(/\s+/).every((w) => hay.includes(w));
     }
     default:

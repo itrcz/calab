@@ -24,7 +24,7 @@ import { customLook } from '../../lib/roles';
 import { RoleMark, roleTextClass, roleTextStyle } from '../people/MemberBits';
 import { useChatView } from '../chat/chatView';
 import { previewText } from '../chat/mentionText';
-import { searchWords, splitHits } from '../../lib/markdown/highlight';
+import { foldSearch, searchWords, splitHits } from '../../lib/markdown/highlight';
 import { roomLabel } from '../chat/roomLabel';
 import { systemPreview } from '../../lib/recording';
 import { startDm } from '../../services/dms';
@@ -119,7 +119,8 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const scope = scopeParam(scopeMode, activeWs);
   // Messages of one author (the member filter): the workspace message search, tagged with its request.
   const [found, setFound] = useState<{ key: string; list: Message[] } | null>(null);
-  const needle = q.trim().toLowerCase();
+  // Lower case, «ё» = «е» (CBF-169): names are compared through foldSearch too.
+  const needle = foldSearch(q.trim());
   const text = q.trim();
 
   const home = useUi((s) => s.activeWorkspaceId === HOME);
@@ -128,7 +129,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     if (author || (!needle && !home)) return [];
     return sortedDms(dms)
       .map((e) => ({ ...e, name: memberName(null, e.peerId) }))
-      .filter((e) => !needle || e.name.toLowerCase().includes(needle))
+      .filter((e) => !needle || foldSearch(e.name).includes(needle))
       .slice(0, MAX_DMS);
     // users: a peer's renamed profile re-filters
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,7 +139,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
   const shelfItems = useMemo(() => {
     if (author || (!needle && !home)) return [];
     return sortedShelves(shelves)
-      .filter((e) => !needle || e.name.toLowerCase().includes(needle))
+      .filter((e) => !needle || foldSearch(e.name).includes(needle))
       .slice(0, MAX_SHELVES_SHOWN);
   }, [needle, shelves, author, home]);
 
@@ -146,7 +147,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     if (author) return [];
     const list = Object.values(rooms)
       .filter((r) => workspaces[r.workspaceId])
-      .filter((r) => !needle || r.name.toLowerCase().includes(needle))
+      .filter((r) => !needle || foldSearch(r.name).includes(needle))
       // The active workspace first, then by name.
       .sort((a, b) => Number(b.workspaceId === activeWs) - Number(a.workspaceId === activeWs) || a.name.localeCompare(b.name, getLocale()));
     return list.slice(0, needle ? MAX_ROOMS_QUERY : 50);
@@ -164,7 +165,7 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     if (!needle || author || !activeWs) return [];
     const ms = Object.values(workspaces[activeWs]?.members ?? {});
     return ms
-      .filter((m) => [m.nickname, m.user?.displayName ?? ''].some((n) => n.toLowerCase().includes(needle)) || translitIncludes([m.nickname, m.user?.displayName ?? ''], needle))
+      .filter((m) => [m.nickname, m.user?.displayName ?? ''].some((n) => foldSearch(n).includes(needle)) || translitIncludes([m.nickname, m.user?.displayName ?? ''], needle))
       .slice(0, MAX_MEMBERS);
   }, [needle, author, activeWs, workspaces]);
 
@@ -788,7 +789,7 @@ function RowBody({ it, q, workspaceName, activeWs, rooms }: { it: Item; q: strin
 
 /** ~140 characters of context around the first match. */
 export function snippetAround(text: string, q: string, span = 140): string {
-  const i = q ? text.toLowerCase().indexOf(q.toLowerCase().split(/\s+/)[0] ?? '') : -1;
+  const i = q ? foldSearch(text).indexOf(foldSearch(q).split(/\s+/)[0] ?? '') : -1;
   if (i < 0 || text.length <= span) return text.slice(0, span);
   const start = Math.max(0, Math.min(i - 40, text.length - span));
   return `${start > 0 ? '…' : ''}${text.slice(start, start + span)}${start + span < text.length ? '…' : ''}`;

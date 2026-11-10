@@ -1,4 +1,5 @@
 import type { SearchHit, SearchResponse } from '@calaba/protocol';
+import { foldSearch } from '../markdown/highlight';
 import { hitId, type SectionName } from './sections';
 import type { SearchParams } from './query';
 
@@ -62,13 +63,13 @@ export function appendPage(feed: DmFeed, key: string, r: SearchResponse, at: (h:
   return { ...next, rows: [...feed.rows, ...next.rows.filter((x) => !seen.has(x.id))] };
 }
 
-/** DMs whose peer's name contains every word of the query (case-insensitive), in the given order. */
+/** DMs whose peer's name contains every word of the query (case-insensitive, «е» = «ё»), in the given order. */
 export function matchPeers<T extends { peerId: string }>(dms: readonly T[], name: (peerId: string) => string, q: string, max = 5): T[] {
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const words = foldSearch(q).split(/\s+/).filter(Boolean);
   if (words.length === 0) return [];
   const out: T[] = [];
   for (const d of dms) {
-    const n = name(d.peerId).toLowerCase();
+    const n = foldSearch(name(d.peerId));
     if (words.every((w) => n.includes(w))) out.push(d);
     if (out.length >= max) break;
   }
