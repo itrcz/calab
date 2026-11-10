@@ -121,6 +121,8 @@ import {
   PublicCanvasSchema,
   CreateDiskFolderRequestSchema,
   CreateDiskLinkRequestSchema,
+  UnlockDiskLinkRequestSchema,
+  UpdateDiskLinkRequestSchema,
   DISK_BITS,
   OfficeConfigResponseSchema,
   OfficeCapabilitiesResponseSchema,
@@ -9192,8 +9194,11 @@ class MockImpl {
       });
     });
     // Public Disk links (ADR-0094 §3, ADR-0165): anonymous, the server's contract (internal/disk/public*.go).
-    const pubDisk = (h: (c: Ctx) => void): ((c: Ctx) => void) => (c) => {
+    // A protected link (ADR-0167) answers 403 LINK_PASSWORD_REQUIRED on every route but the meta
+    // (`open` = false) and the unlock until the cookie of POST …/unlock comes along.
+    const pubDisk = (h: (c: Ctx) => void, open = true): ((c: Ctx) => void) => (c) => {
       try {
+        if (open && !d().linkUnlocked(p0(c), cookies(c.req)['calab_dl'])) throw new HttpError(403, ErrorCode.LINK_PASSWORD_REQUIRED, 'the link needs its password');
         h(c);
       } catch (e) {
         if (e instanceof DiskError) throw new HttpError(e.status, e.code, e.message, e.field);
@@ -9208,25 +9213,39 @@ class MockImpl {
       const f = this.state.files.get(it.file?.id ?? '');
       const bytes = thumb ? f?.thumbnail?.bytes : f?.bytes;
       if (!f || !bytes) throw notFound();
-      send(c.res, 200, bytes, thumb ? (f.thumbnail?.mime ?? 'image/png') : f.meta.mime, { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
+      const viewOnly = d().publicLink(p0(c)).link.viewOnly;
+      // «Без скачивания»: only what the page views in the browser, inline (internal/disk viewable).
+      if (!thumb && viewOnly && !/^(image|video|audio|text)\/|^application\/(pdf|json|xml)$/.test(f.meta.mime) && !/\.(md|markdown|csv|tsv|txt|log|json|ya?ml)$/i.test(it.name))
+        throw new HttpError(403, ErrorCode.FORBIDDEN, 'the link is view-only');
+      send(c.res, 200, bytes, thumb ? (f.thumbnail?.mime ?? 'image/png') : f.meta.mime, {
+        'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', ...(viewOnly && !thumb ? { 'Content-Disposition': 'inline' } : {}),
+      });
     };
+    this.route('POST', '/api/public/disk/:code/unlock', pubDisk((c) => {
+      const b = parseBody(c, UnlockDiskLinkRequestSchema);
+      const v = d().unlockLink(p0(c), b.password);
+      if (v) c.res.setHeader('Set-Cookie', `calab_dl=${v}; Path=/api/public/disk/${p0(c)}; HttpOnly; SameSite=Lax; Max-Age=43200`);
+      noContent(c.res);
+    }, false));
     this.route('GET', '/api/public/disk/:code', pubDisk((c) => {
+      if (!d().linkUnlocked(p0(c), cookies(c.req)['calab_dl'])) return sendMsg(c.res, 200, PublicDiskFileSchema, { locked: true });
       const { link, item } = d().publicLink(p0(c));
-      const base = { name: item.name, id: item.id, kind: item.kind, ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) };
+      const base = { name: item.name, id: item.id, kind: item.kind, viewOnly: link.viewOnly, ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) };
       const f = pubFile(item);
       sendMsg(c.res, 200, PublicDiskFileSchema, item.kind === DiskItemKind.FOLDER ? base : { ...base, size: f.size, mime: f.mime, width: f.width, height: f.height, hasThumbnail: f.hasThumbnail, office: f.office });
-    }));
+    }, false));
     this.route('GET', '/api/public/disk/:code/content', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), ''), false)));
     this.route('GET', '/api/public/disk/:code/thumbnail', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), ''), true)));
     this.route('GET', '/api/public/disk/:code/items', pubDisk((c) => {
       const f = d().publicFolder(p0(c), q(c, 'parent'));
       const { link } = d().publicLink(p0(c));
-      sendMsg(c.res, 200, PublicDiskFolderSchema, { id: f.id, name: f.name, path: f.path, items: f.items.map(pubFile), ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) });
+      sendMsg(c.res, 200, PublicDiskFolderSchema, { id: f.id, name: f.name, path: f.path, items: f.items.map(pubFile), viewOnly: link.viewOnly, ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) });
     }));
     this.route('GET', '/api/public/disk/:code/items/:id/content', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), c.params[1] ?? ''), false)));
     this.route('GET', '/api/public/disk/:code/items/:id/thumbnail', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), c.params[1] ?? ''), true)));
     this.route('GET', '/api/public/disk/:code/archive', pubDisk((c) => {
       d().publicFolder(p0(c), q(c, 'parent'));
+      if (d().publicLink(p0(c)).link.viewOnly) throw new HttpError(403, ErrorCode.FORBIDDEN, 'the link is view-only');
       if (q(c, 'check') === '1') {
         c.res.writeHead(204);
         c.res.end();
@@ -9350,7 +9369,11 @@ class MockImpl {
     });
     this.diskRoute('POST', '/api/disk/items/:id/link', (c, me) => {
       const b = parseBody(c, CreateDiskLinkRequestSchema);
-      sendMsg(c.res, 200, DiskLinkResponseSchema, d().createLink(p0(c), me, b.expiresAt));
+      sendMsg(c.res, 200, DiskLinkResponseSchema, d().createLink(p0(c), me, b.expiresAt, { password: b.password, viewOnly: b.viewOnly }));
+    });
+    this.diskRoute('PATCH', '/api/disk/items/:id/link', (c, me) => {
+      const b = parseBody(c, UpdateDiskLinkRequestSchema);
+      sendMsg(c.res, 200, DiskLinkResponseSchema, d().updateLink(p0(c), me, { password: b.password, viewOnly: b.viewOnly }));
     });
     this.diskRoute('DELETE', '/api/disk/items/:id/link', (c, me) => {
       d().deleteLink(p0(c), me);

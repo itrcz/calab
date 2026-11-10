@@ -73,6 +73,9 @@ export class DiskMock {
   readonly activity: DiskActivity[] = [];
   readonly trashDays = new Map<string, number>();
   private linkSeq = 0;
+  /** Link passwords by item id (ADR-0167; the server keeps an argon2id hash) and their versions. */
+  private readonly linkPasswords = new Map<string, string>();
+  private readonly linkVersions = new Map<string, number>();
 
   constructor(private readonly d: DiskDeps) {}
 
@@ -384,17 +387,61 @@ export class DiskMock {
     this.emit(next);
   }
 
-  createLink(id: string, uid: string, expiresAt?: Timestamp): { link: DiskLink; url: string } {
+  createLink(id: string, uid: string, expiresAt?: Timestamp, opts: { password?: string; viewOnly?: boolean } = {}): { link: DiskLink; url: string } {
     const it = this.sharer(id, uid);
     let link = this.links.get(id);
     if (!link) {
       const code = `mockLink${String(++this.linkSeq).padStart(4, '0')}`.padEnd(43, 'x');
-      link = create(DiskLinkSchema, { code, itemId: id, createdBy: uid, createdAt: this.d.tick(), ...(expiresAt ? { expiresAt } : {}) });
+      link = create(DiskLinkSchema, {
+        code, itemId: id, createdBy: uid, createdAt: this.d.tick(), hasPassword: !!opts.password, viewOnly: !!opts.viewOnly, ...(expiresAt ? { expiresAt } : {}),
+      });
+      if (opts.password) this.linkPasswords.set(id, opts.password);
+      else this.linkPasswords.delete(id);
+      this.linkVersions.set(id, (this.linkVersions.get(id) ?? 0) + 1);
       this.links.set(id, link);
       this.log(it, uid, DiskActivityKind.LINK_ON);
       this.emit(it);
     }
     return { link, url: `https://calab.test/d/${link.code}` };
+  }
+
+  /** PATCH …/link (ADR-0167): the password (`''` removes it) and «Без скачивания» of the live link. */
+  updateLink(id: string, uid: string, init: { password?: string | undefined; viewOnly?: boolean | undefined }): { link: DiskLink; url: string } {
+    const it = this.sharer(id, uid);
+    let link = this.links.get(id);
+    if (!link) throw notFound();
+    if (init.password !== undefined && (init.password || link.hasPassword)) {
+      if (init.password && [...init.password].length < 4) throw new DiskError(422, ErrorCode.VALIDATION, '4 to 128 characters', 'password');
+      const had = link.hasPassword;
+      if (init.password) this.linkPasswords.set(id, init.password);
+      else this.linkPasswords.delete(id);
+      this.linkVersions.set(id, (this.linkVersions.get(id) ?? 0) + 1);
+      link = create(DiskLinkSchema, { ...link, hasPassword: !!init.password });
+      if (init.password) this.log(it, uid, DiskActivityKind.LINK_PASSWORD_ON, undefined, had ? { changed: true } : undefined);
+      else this.log(it, uid, DiskActivityKind.LINK_PASSWORD_OFF);
+    }
+    if (init.viewOnly !== undefined && init.viewOnly !== link.viewOnly) {
+      link = create(DiskLinkSchema, { ...link, viewOnly: init.viewOnly });
+      this.log(it, uid, init.viewOnly ? DiskActivityKind.LINK_VIEW_ONLY_ON : DiskActivityKind.LINK_VIEW_ONLY_OFF);
+    }
+    this.links.set(id, link);
+    this.emit(it);
+    return { link, url: `https://calab.test/d/${link.code}` };
+  }
+
+  /** POST /api/public/disk/{code}/unlock: the cookie value of a right password ('' = no password on the link). */
+  unlockLink(code: string, password: string): string {
+    const { link } = this.publicLink(code);
+    const want = this.linkPasswords.get(link.itemId);
+    if (!want) return '';
+    if (password !== want) throw new DiskError(403, ErrorCode.LINK_PASSWORD_REQUIRED, 'the link needs its password');
+    return `${link.code}.${this.linkVersions.get(link.itemId) ?? 0}`;
+  }
+
+  /** Whether `cookie` unlocks the link of `code` (a link without a password is open). */
+  linkUnlocked(code: string, cookie: string | undefined): boolean {
+    const { link } = this.publicLink(code);
+    return !link.hasPassword || cookie === `${link.code}.${this.linkVersions.get(link.itemId) ?? 0}`;
   }
 
   // ---------------------------------------------------------------- public links (ADR-0094 §3, ADR-0165)

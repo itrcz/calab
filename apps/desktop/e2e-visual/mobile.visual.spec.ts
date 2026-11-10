@@ -3274,6 +3274,21 @@ test('m-disk-public', async ({ page }) => {
   await expect(page.getByTestId('disk-public-row')).toHaveCount(4);
   await expect(page.getByTestId('disk-public-download-all')).toBeVisible();
   await checkpoint(page, 'm-disk-public');
+  // CBF-168 (ADR-0167): with a password and «Без скачивания» — the gate, then the folder view-only.
+  mock.disk.updateLink(it?.id ?? '', IDS.users.anna, { password: 'сезам-2026', viewOnly: true });
+  try {
+    await open(page, `/d/${code}`);
+    await expect(page.getByTestId('disk-public-locked')).toBeVisible();
+    await checkpoint(page, 'm-disk-public-locked');
+    await page.getByTestId('disk-public-password').fill('сезам-2026');
+    await page.getByTestId('disk-public-unlock').tap();
+    await page.getByTestId('disk-public-row-open').filter({ hasText: 'Q4' }).tap();
+    await expect(page.getByTestId('disk-public-row')).toHaveCount(4);
+    await expect(page.getByTestId('disk-public-download-all')).toHaveCount(0);
+    await checkpoint(page, 'm-disk-public-view-only');
+  } finally {
+    mock.disk.updateLink(it?.id ?? '', IDS.users.anna, { password: '', viewOnly: false });
+  }
 });
 
 // Toasts on the phone stay under the top bar (safe area), over the feed, never over the tab bar (owner, 29.10).

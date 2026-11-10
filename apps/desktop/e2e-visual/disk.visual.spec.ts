@@ -198,6 +198,14 @@ test('disk-share', async ({ open, win, shot }) => {
   await link.getByRole('switch').click();
   await expect(link.getByTestId('disk-link-url')).toHaveValue(/\/d\//);
   await checkpoint(shot, 'disk-folder-link');
+  // CBF-168 (ADR-0167): a password (only «set / not set» is shown) and «Без скачивания».
+  await link.getByTestId('disk-link-password-edit').click();
+  await link.getByTestId('disk-link-password-input').fill('сезам-2026');
+  await link.getByTestId('disk-link-password-save').click();
+  await expect(link.getByTestId('disk-link-password-state')).toHaveText('Задан — посетитель вводит его перед открытием');
+  await link.getByRole('switch', { name: 'Без скачивания' }).click();
+  await expect(link.getByRole('switch', { name: 'Без скачивания' })).toBeChecked();
+  await checkpoint(shot, 'disk-link-protection');
   await win.keyboard.press('Escape');
   await expect(win.getByTestId('disk-tile').filter({ hasText: 'Проекты' }).getByTestId('disk-badges')).toBeVisible();
 });

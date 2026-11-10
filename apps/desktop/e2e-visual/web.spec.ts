@@ -482,6 +482,29 @@ test('disk-public', async ({ page }) => {
     await checkpoint({ page, theme: 'dark', viewport }, 'disk-public-file');
     await page.goto(`${mock.url}/d/${'x'.repeat(43)}?visual-test`);
     await expect(page.getByTestId('disk-public-gone')).toBeVisible();
+    // CBF-168 (ADR-0167): the same folder link with a password and «Без скачивания» — the gate
+    // (dark and light, nothing about the folder), a wrong password, then the folder view-only.
+    const projects = [...mock.disk.items.values()].find((x) => x.name === 'Проекты' && !x.parentId)?.id ?? '';
+    mock.disk.updateLink(projects, IDS.users.anna, { password: 'сезам-2026', viewOnly: true });
+    for (const theme of ['dark', 'light'] as const) {
+      await page.evaluate((th) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: th, onboarded: true, locale: 'ru' }, version: 1 })), theme);
+      await page.goto(`${mock.url}/d/${code}?visual-test`);
+      await expect(page.getByTestId('disk-public-locked')).toBeVisible();
+      await expect(page.getByTestId('disk-public-locked')).not.toContainText('Проекты');
+      await checkpoint({ page, theme, viewport }, 'disk-public-locked');
+    }
+    await page.getByTestId('disk-public-password').fill('не тот');
+    await page.getByTestId('disk-public-unlock').click();
+    await expect(page.getByTestId('disk-public-password-error')).toHaveText('Неверный пароль');
+    await page.getByTestId('disk-public-password').fill('сезам-2026');
+    await page.getByTestId('disk-public-unlock').click();
+    await expect(page.getByTestId('disk-public-name')).toHaveText('Проекты');
+    await page.getByTestId('disk-public-row-open').filter({ hasText: 'Q4' }).click();
+    await expect(page.getByTestId('disk-public-row')).toHaveCount(4);
+    await expect(page.getByTestId('disk-public-view-only')).toBeVisible();
+    await expect(page.getByTestId('disk-public-download-all')).toHaveCount(0);
+    await expect(page.getByTestId('disk-public-row-download')).toHaveCount(0);
+    await checkpoint({ page, theme: 'light', viewport }, 'disk-public-view-only');
   } finally {
     await mock?.close();
   }
