@@ -30,6 +30,14 @@ function queryDigits(s: string): string {
   return d.startsWith('8') ? `7${d.slice(1)}` : d;
 }
 
+/**
+ * Whether stored phone digits contain the typed ones. A leading 8 is tried both as +7 and as itself:
+ * a fragment from the middle of a number («812 55…», an «8xx» extension) is not a trunk prefix.
+ */
+function digitsHit(stored: string, canon: string, raw: string): boolean {
+  return stored.includes(canon) || (raw !== canon && stored.includes(raw));
+}
+
 /** Fewest digits that count as a phone query (an extension is 3–4; fewer would match everything). */
 const MIN_PHONE_DIGITS = 3;
 const PHONE_LIKE = /^[+\d\s()\-.]*\d[+\d\s()\-.]*$/;
@@ -55,14 +63,16 @@ export function buildHaystack(names: readonly string[], hidden: readonly string[
   };
 }
 
-const cache = new WeakMap<object, Haystack>();
-/** The haystack of an item, built once per `key` object (the item's `search` array). */
+const cache = new WeakMap<object, { hidden: readonly string[] | undefined; h: Haystack }>();
+/**
+ * The haystack of an item, built once per `key` object (the item's `search` array); rebuilt when the
+ * same `search` array comes with another `hidden` array, so a reused name list never keeps old contacts.
+ */
 export function haystackOf(key: readonly string[], hidden: readonly string[] | undefined): Haystack {
-  let h = cache.get(key);
-  if (!h) {
-    h = buildHaystack(key, hidden);
-    cache.set(key, h);
-  }
+  const hit = cache.get(key);
+  if (hit && hit.hidden === hidden) return hit.h;
+  const h = buildHaystack(key, hidden);
+  cache.set(key, { hidden, h });
   return h;
 }
 
@@ -72,13 +82,17 @@ export interface ParsedQuery {
   whole: string;
   /** Canonical digits when the query reads as a phone number, else ''. */
   phone: string;
+  /** The typed digits as they are (no 8 → 7), tried as well; '' when not a phone query. */
+  phoneRaw: string;
 }
 
 export function parseQuery(q: string): ParsedQuery {
   const whole = foldQuery(q).replace(/\s+/g, ' ');
   const words = whole ? whole.split(' ') : [];
-  const d = PHONE_LIKE.test(whole) ? queryDigits(whole) : '';
-  return { words, whole, phone: d.length >= MIN_PHONE_DIGITS ? d : '' };
+  const phoneLike = PHONE_LIKE.test(whole);
+  const d = phoneLike ? queryDigits(whole) : '';
+  const ok = d.length >= MIN_PHONE_DIGITS;
+  return { words, whole, phone: ok ? d : '', phoneRaw: ok ? whole.replace(/\D/g, '') : '' };
 }
 
 export interface Match {
@@ -104,7 +118,8 @@ function nameRank(names: readonly string[], w: string): number {
 
 function hiddenHit(hidden: readonly HiddenField[], w: string): HiddenField | undefined {
   const digits = PHONE_WORD.test(w) ? queryDigits(w) : '';
-  return hidden.find((f) => f.folded.includes(w) || (digits.length >= MIN_PHONE_DIGITS && f.digits.includes(digits)));
+  const raw = digits ? w.replace(/\D/g, '') : '';
+  return hidden.find((f) => f.folded.includes(w) || (digits.length >= MIN_PHONE_DIGITS && digitsHit(f.digits, digits, raw)));
 }
 
 /** Match of a haystack against a parsed query; null = no match; an empty query matches (rank 0). */
@@ -112,7 +127,7 @@ export function matchHaystack(h: Haystack, q: ParsedQuery): Match | null {
   if (!q.words.length) return { rank: 0, hint: '' };
   // A whole-query phone («+7 (999) 123-45-67»): spaces and brackets would split it into junk words.
   if (q.phone) {
-    const f = h.hidden.find((x) => x.digits.includes(q.phone));
+    const f = h.hidden.find((x) => digitsHit(x.digits, q.phone, q.phoneRaw));
     if (f) return { rank: 4, hint: f.raw };
   }
   // The whole query as the start of a name beats word-by-word matching («иван пет» → «Иван Петров»).

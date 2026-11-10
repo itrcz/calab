@@ -38,6 +38,9 @@ describe('member matcher', () => {
     }
     expect(m('8 999 123')?.hint).toBe('+7 (999) 123-45-67');
     expect(m('+7 999 555')).toBeNull();
+    // A leading 8 inside the number (a St Petersburg code) is not the trunk prefix.
+    expect(matchStrings(['Олег'], ['+7 (812) 555-10-20'], '8125551')?.hint).toBe('+7 (812) 555-10-20');
+    expect(matchStrings(['Олег'], ['+7 (812) 555-10-20'], 'олег 812-555')).not.toBeNull();
   });
 
   it('matches the internal extension and mixes a name with a number', () => {

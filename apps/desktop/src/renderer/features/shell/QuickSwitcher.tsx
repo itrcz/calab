@@ -168,9 +168,16 @@ export function QuickSwitcher({ onClose, initialQuery = '' }: { onClose: () => v
     const ms = Object.values(workspaces[activeWs]?.members ?? {});
     const pq = parseQuery(text);
     // The shared people matcher (names, username, email, phone, extension; CBF-175) + transliteration.
-    return ms
-      .filter((m) => matchMember(m, pq) !== null || translitIncludes([m.nickname, m.user?.displayName ?? ''], needle))
-      .slice(0, MAX_MEMBERS);
+    // Best rank first before the cut: a contact hit («calab» in every email) must not push out a name hit.
+    const ranked: Array<{ m: (typeof ms)[number]; rank: number; i: number }> = [];
+    ms.forEach((m, i) => {
+      const rank = matchMember(m, pq)?.rank ?? (translitIncludes([m.nickname, m.user?.displayName ?? ''], needle) ? 5 : -1);
+      if (rank >= 0) ranked.push({ m, rank, i });
+    });
+    return ranked
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .slice(0, MAX_MEMBERS)
+      .map((r) => r.m);
   }, [needle, text, author, activeWs, workspaces]);
 
   // Unified search (ADR-0062): one debounced request, the previous one aborted, answers cached.
