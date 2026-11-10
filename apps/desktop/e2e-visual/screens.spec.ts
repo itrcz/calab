@@ -192,6 +192,7 @@ const KEY = new Set([
   'boards-task-comments-rich',
   'boards-task-history',
   'boards-list',
+  'boards-sidebar',
   'boards-labels-overflow',
   'boards-filter',
   'boards-settings',
@@ -1810,11 +1811,18 @@ async function seedTempRooms(win: Page, mock: MockServer): Promise<number> {
 /** The «Временные» group under the categories: Timer rows, the remaining time, orange under 10 minutes. */
 test('sidebar-temp-room', async ({ open, win, mock, shot }) => {
   await open();
+  // One closed room before the sidebar mounts: «Архив» ends the group with a grey total (CBF-170), not a badge.
+  const archivedAt = Date.now();
+  mock.setClock(archivedAt - 2 * 3_600_000);
+  mock.addTempRoom({ workspaceId: IDS.workspaces.main, name: 'Созвон с подрядчиком', expiresAtMs: archivedAt - 3_600_000, createdBy: IDS.users.vera });
+  mock.setClock(archivedAt - 3_600_000);
+  mock.expireTempRooms();
   await mainWindow(win, mock);
   await seedTempRooms(win, mock);
   const group = win.getByTestId('temp-group');
   await expect(group.getByRole('button', { name: 'Свернуть «Временные»' })).toBeVisible();
   await expect(group.locator('[data-testid="temp-icon"][data-expiring]')).toHaveCount(1);
+  await expect(group.getByTestId('temp-archive-button')).toBeVisible();
   await checkpoint(shot, 'sidebar-temp-room');
 });
 /** «+» → «Временная комната» as it opens (all members): name, lifetime presets, visibility, switches. */
@@ -5041,6 +5049,18 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   seedReleases(mock); // board task #101: not on the rows — the grouping and the task panel at the end
   await mainWindow(win, mock);
   await boardsMode(win, mock);
+  // CBF-170: the sidebar's totals are grey text on the «+» axis, «Мои задачи» / unseen counters stay badges; hover swaps the count for «⋯».
+  await checkpoint(shot, 'boards-sidebar');
+  // Counters and the hovered row's «⋯» sit on the «+» axis (centres within 1 px).
+  const axis = async (l: Locator): Promise<number> => {
+    const b = await l.boundingBox();
+    return b ? b.x + b.width / 2 : NaN;
+  };
+  const plus = await axis(win.getByTestId('section-create-board'));
+  expect(Math.abs((await axis(win.getByTestId('my-tasks').locator('[data-count-badge]'))) - plus)).toBeLessThan(1);
+  const firstBoard = win.getByTestId('boards-list').getByTestId('board-row').first();
+  await firstBoard.hover();
+  expect(Math.abs((await axis(firstBoard.locator('[data-row-menu]'))) - plus)).toBeLessThan(1);
   await win.getByTestId('view-list').click();
   const rows = win.getByTestId('list-row');
   await rows.filter({ hasText: 'CAL-2' }).getByTestId('row-select').click();

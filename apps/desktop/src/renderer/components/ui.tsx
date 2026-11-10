@@ -41,8 +41,6 @@ export function cx(...c: Array<string | false | null | undefined>): string {
 const BADGE_TONE = {
   danger: 'bg-danger-fill text-white',
   accent: 'bg-accent-strong text-accent-fg',
-  /** A count that is information, not a call to look (the archive, my open tasks with nothing new). */
-  neutral: 'bg-hover text-muted',
 } as const;
 
 export function CountBadge({
@@ -78,6 +76,25 @@ export function CountBadge({
       )}
     >
       {text}
+    </span>
+  );
+}
+
+/**
+ * The trailing slot of a sidebar row's counter (docs/08 «Бейджи и счётчики»): as wide as the section's «+»
+ * (--control-h-bar) and flush with the row's right edge, so every counter is centred on the «+» axis.
+ */
+export const COUNT_SLOT = 'inline-flex w-(--control-h-bar) shrink-0 items-center justify-center mobile:w-auto';
+
+/**
+ * A "how many in total" counter (the archive, my open tasks with nothing new): plain secondary text,
+ * never a filled badge — a badge means unread / new (CountBadge), so people do not read a total as
+ * unread messages (CBF-170). Sits in `COUNT_SLOT`.
+ */
+export function CountText({ count, className, ...rest }: { count: number; className?: string } & Omit<HTMLAttributes<HTMLSpanElement>, 'children' | 'className'> & Record<`data-${string}`, unknown>): ReactNode {
+  return (
+    <span {...rest} className={cx(COUNT_SLOT, 'text-caption font-medium tabular-nums text-muted mobile:min-w-5 mobile:justify-end', className)}>
+      {count > 99 ? '99+' : count}
     </span>
   );
 }

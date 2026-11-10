@@ -5,7 +5,7 @@ import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight,
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../components/Confirm';
-import { Button, CountBadge, Field, Input, Modal, Tip, cx } from '../../components/ui';
+import { Button, COUNT_SLOT, CountBadge, CountText, Field, Input, Modal, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { useLongPress } from '../../lib/longPress';
 import { useMobile } from '../../lib/mobile';
@@ -396,7 +396,11 @@ function MyTasksRow({ workspaceId }: { workspaceId: string }): ReactNode {
         <Inbox className="size-[18px] shrink-0 mobile:size-5" aria-hidden />
       </span>
       <span className="min-w-0 flex-1 truncate">{t('boards.myTasks')}</span>
-      {unread > 0 ? <CountBadge count={unread} tone="accent" /> : null}
+      {unread > 0 ? (
+        <span className={cx(COUNT_SLOT, '-mr-2 mobile:mr-0')}>
+          <CountBadge count={unread} tone="accent" />
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -432,10 +436,10 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           if (!(e.target as HTMLElement).closest('[data-row-menu]')) longPress.onPointerDown?.(e);
           onPointerDown(e, id);
         }}
-        className={cx('group/board relative flex items-center rounded-[var(--radius-card)] pr-1 mobile:static mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
+        className={cx('group/board relative flex items-center rounded-[var(--radius-card)] mobile:static mobile:pr-1 mobile:rounded-none', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'bg-active' : ROW_HOVER, dragging && 'opacity-40')}
         data-testid="board-row"
       >
-        <button type="button" onClick={() => showBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list mobile:gap-3 mobile:pl-3 mobile:text-list', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
+        <button type="button" onClick={() => showBoard(workspaceId, id)} aria-current={active ? 'page' : undefined} className={cx('flex min-w-0 flex-1 items-center gap-2 pl-2 text-left text-list group-hover/board:pr-7 group-has-[:focus-visible]/board:pr-7 group-has-[[data-state=open]]/board:pr-7 mobile:gap-3 mobile:pl-3 mobile:text-list', scoped ? 'min-h-8 py-0.5 mobile:min-h-14' : 'h-9 mobile:h-14', active ? 'font-medium text-fg' : 'text-muted group-hover/board:text-fg')}>
           <span className="grid w-[18px] shrink-0 place-items-center text-[15px] leading-none mobile:size-10 mobile:rounded-full mobile:bg-[var(--color-fill)] mobile:text-[22px]" aria-hidden>
             {emoji || <SquareKanban className="size-[18px] mobile:size-5" />}
           </span>
@@ -450,11 +454,20 @@ const BoardRow = memo(function BoardRow({ id, workspaceId, dragging, onPointerDo
           ) : (
             <span className="min-w-0 flex-1 truncate">{name}</span>
           )}
-          {mine > 0 ? <CountBadge count={mine} tone={fresh ? 'accent' : 'neutral'} title={t('boards.myOpen')} /> : null}
+          {/* Unseen: a badge; otherwise just the total, grey text (docs/08); gone on hover — the ⋯ takes the slot. */}
+          {mine > 0 ? (
+            fresh ? (
+              <span className={cx(COUNT_SLOT, 'group-hover/board:hidden group-has-[:focus-visible]/board:hidden group-has-[[data-state=open]]/board:hidden')}>
+                <CountBadge count={mine} tone="accent" title={t('boards.myOpen')} />
+              </span>
+            ) : (
+              <CountText count={mine} title={t('boards.myOpen')} className="group-hover/board:hidden group-has-[:focus-visible]/board:hidden group-has-[[data-state=open]]/board:hidden" />
+            )
+          ) : null}
         </button>
         <Dropdown.Root modal={false} open={menu} onOpenChange={setMenu}>
           <Dropdown.Trigger asChild>
-            <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 mobile:size-11 mobile:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
+            <button type="button" data-row-menu aria-label={t('boards.boardMenu', { name })} className="absolute right-0.5 top-1/2 grid size-6 -translate-y-1/2 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 mobile:static mobile:translate-y-0 mobile:size-11 mobile:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 group-hover/board:opacity-100 data-[state=open]:opacity-100">
               <Ellipsis className="size-4" aria-hidden />
             </button>
           </Dropdown.Trigger>

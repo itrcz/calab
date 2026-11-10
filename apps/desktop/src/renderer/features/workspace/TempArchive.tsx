@@ -3,7 +3,7 @@ import type { Room } from '@calaba/protocol';
 import { Archive, Timer } from 'lucide-react';
 import { memo, useEffect, type ReactNode } from 'react';
 import { PhoneHeader } from '../../components/PhoneHeader';
-import { Button, CountBadge, Empty, Modal, Spinner, cx } from '../../components/ui';
+import { Button, CountText, Empty, Modal, Spinner, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { mayArrangeRooms, mayManageRoom } from '../../lib/permissions';
@@ -55,7 +55,7 @@ export const TempArchiveButton = memo(function TempArchiveButton({ workspaceId, 
           <Archive className="size-5" aria-hidden />
         </span>
         <span className="min-w-0 flex-1 truncate text-list text-fg">{t('temp.archiveName')}</span>
-        <CountBadge count={n} tone="neutral" phone aria-hidden />
+        <CountText count={n} aria-hidden />
       </button>
     );
   }
@@ -67,9 +67,7 @@ export const TempArchiveButton = memo(function TempArchiveButton({ workspaceId, 
         </span>
         <span className="min-w-0 flex-1 truncate">{t('temp.archiveName')}</span>
       </button>
-      <span className="flex shrink-0 items-center pr-2.5">
-        <CountBadge count={n} tone="neutral" aria-hidden />
-      </span>
+      <CountText count={n} aria-hidden />
     </div>
   );
 });
