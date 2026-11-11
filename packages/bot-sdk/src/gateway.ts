@@ -348,6 +348,8 @@ export class Gateway {
     this.established = false;
     this.log(`closed ${code}${reason ? ` ${reason}` : ''}`);
     if (this.stopped) return;
+    // numeric WebSocket close code narrowed to the protocol enum
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment
     const closeCode: GatewayCloseCode = code;
     switch (closeCode) {
       case GatewayCloseCode.AUTHENTICATION_FAILED:

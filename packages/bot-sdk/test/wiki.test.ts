@@ -12,7 +12,7 @@ import { docToMarkdown, setDocMarkdown } from '@calaba/wiki-doc/ydoc';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import * as Y from 'yjs';
-import { Bot, WikiSyncError } from '../src/index.js';
+import { Bot, PermissionTargetType, WikiSyncError } from '../src/index.js';
 import { FakeServer, TOKEN, WS_ID } from './fake-server.js';
 
 const PAGE = '0190c3f6-0000-7000-8000-0000000000aa';
@@ -182,7 +182,7 @@ describe('disk over REST', () => {
     expect(file.parentId).toBe('f1');
     const up = srv.requests.find((r) => r.path.endsWith('/disk/upload'));
     expect((up?.form?.get('file') as File).name).toBe('a.txt');
-    const shared = await b.disk.share('f1', [{ targetType: 2, targetId: 'u-bob', allow: 1n << 35n }], true);
+    const shared = await b.disk.share('f1', [{ targetType: PermissionTargetType.USER, targetId: 'u-bob', allow: 1n << 35n }], true);
     expect(shared.restricted).toBe(true);
     expect(srv.requests.find((r) => r.method === 'PUT')?.json).toEqual({ entries: [{ targetType: 'PERMISSION_TARGET_TYPE_USER', targetId: 'u-bob', allow: String(1n << 35n) }], restricted: true });
     expect((await b.disk.link.on('i1')).url).toBe('https://x/d/ccc');
