@@ -12,8 +12,8 @@ fi
 case "$version" in 18|17) ;; *) echo 'Use PostgreSQL 18 or 17' >&2; exit 2 ;; esac
 [[ $(node --version) == v22.* ]] || { echo 'Node 22 required' >&2; exit 2; }
 [[ $(pnpm --version) == 10.* ]] || { echo 'pnpm 10 required' >&2; exit 2; }
-export GOTOOLCHAIN=go1.26.10
-[[ $(go version) == *'go1.26.10 '* ]] || { echo 'Go 1.26.10 required' >&2; exit 2; }
+export GOTOOLCHAIN=go1.26.11
+[[ $(go version) == *'go1.26.11 '* ]] || { echo 'Go 1.26.11 required' >&2; exit 2; }
 endpoint=${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}
 case "$endpoint" in unix://*|npipe://*) ;; *) echo 'Local Docker required' >&2; exit 2 ;; esac
 ports=$("$IDENTITY_TEST_HARNESS" ports)
