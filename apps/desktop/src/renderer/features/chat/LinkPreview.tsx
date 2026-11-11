@@ -15,6 +15,42 @@ import { hostOf, siteColor, siteKey } from './siteColor';
 /** Server-proxied images only: never load third-party hosts from the client (proto/unfurl.proto). */
 const isProxied = (p: string): boolean => p.startsWith('/api/unfurl/image');
 
+/** Retries of a preview picture that failed to load (CBF-176) and the pause before each, ms. */
+const IMAGE_RETRY_MS = [3000, 8000];
+
+/**
+ * The picture of a preview. The server proxies the page's og:image, which a site may still be
+ * generating when a bot's message has just landed (GitHub renders commit cards on first request):
+ * the first load fails, and an <img> never retries by itself — the card stayed broken until the row
+ * was remounted by scrolling. Retry a couple of times, with the attempt in the URL so it is not
+ * the failed response again.
+ */
+function PreviewImage({ path }: { path: string }): ReactNode {
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!failed) return;
+    const delay = IMAGE_RETRY_MS[attempt];
+    if (delay === undefined) return;
+    const id = window.setTimeout(() => {
+      setFailed(false);
+      setAttempt((n) => n + 1);
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [failed, attempt]);
+  return (
+    <MediaImg
+      key={attempt}
+      path={attempt ? `${path}${path.includes('?') ? '&' : '?'}r=${attempt}` : path}
+      onFail={() => setFailed(true)}
+      alt=""
+      loading="lazy"
+      draggable={false}
+      className="block aspect-[1.91/1] w-full rounded-[var(--radius-row)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] object-cover"
+    />
+  );
+}
+
 /**
  * Telegram-like link preview inside a bubble (docs/09 #51): a left bar in the site's colour,
  * site name, the title as a link, description, image. Whoever may hide it (the author or
@@ -80,13 +116,7 @@ export function LinkPreview({ url, onHide }: { url: string; onHide?: (() => void
       {image ? (
         // The picture opens the page too (mouse convenience; the title is the keyboard stop).
         <a href={href} onClick={open} tabIndex={-1} aria-hidden className="mt-1.5 block">
-          <MediaImg
-            path={image}
-            alt=""
-            loading="lazy"
-            draggable={false}
-            className="block aspect-[1.91/1] w-full rounded-[var(--radius-row)] bg-[color-mix(in_srgb,var(--bubble-accent)_12%,transparent)] object-cover"
-          />
+          <PreviewImage path={image} />
         </a>
       ) : null}
       {onHide ? (

@@ -357,18 +357,43 @@ const unfurlCache = new Map<string, Promise<UnfurlResponse | null>>();
 const unfurlDone = new Map<string, UnfurlResponse | null>();
 const UNFURL_CACHE_MAX = 300;
 
+/** Pauses before the retries of a transient unfurl failure (429 / 5xx / network); a test shrinks them. */
+export const unfurlRetryMs = { delays: [2000, 6000] };
+
+// 404 is the server's «no preview» (cached there too); any other 4xx but 408 / 429 is no card either.
+const isNoPreview = (e: unknown): boolean => e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 429 && e.status !== 408;
+
+/** The card, null for «no preview», undefined when the request kept failing for a transient reason. */
+async function fetchUnfurl(url: string): Promise<UnfurlResponse | null | undefined> {
+  for (let i = 0; ; i++) {
+    try {
+      const r = await api.unfurl.get(url);
+      return r.title || r.description || r.imageUrl || r.task || r.board ? r : null;
+    } catch (e) {
+      if (isNoPreview(e)) return null;
+      const delay = unfurlRetryMs.delays[i];
+      if (delay === undefined) return undefined;
+      await new Promise((res) => setTimeout(res, delay));
+    }
+  }
+}
+
 export function unfurl(url: string): Promise<UnfurlResponse | null> {
   const hit = unfurlCache.get(url);
   if (hit) return hit;
-  const p = api.unfurl.get(url).then(
-    (r) => (r.title || r.description || r.imageUrl || r.task || r.board ? r : null),
-    () => null,
-  );
-  unfurlCache.set(url, p);
-  void p.then((r) => {
+  // A bot's fresh link is asked for the moment its message lands, and the answer can be a 429 /
+  // 503 / dropped request that is gone seconds later. It used to be remembered as «no preview» for
+  // the whole session (CBF-176): retry, and when it still fails forget it, so the next mount of
+  // the row asks again instead of reading a stale «none».
+  const p: Promise<UnfurlResponse | null> = fetchUnfurl(url).then((r) => {
     // Not if the cache was cleared (sign-out, revoked rooms) or the entry evicted meanwhile.
-    if (unfurlCache.get(url) === p) unfurlDone.set(url, r);
+    if (unfurlCache.get(url) === p) {
+      if (r === undefined) unfurlCache.delete(url);
+      else unfurlDone.set(url, r);
+    }
+    return r ?? null;
   });
+  unfurlCache.set(url, p);
   if (unfurlCache.size > UNFURL_CACHE_MAX) {
     const oldest = unfurlCache.keys().next().value;
     if (oldest !== undefined) {

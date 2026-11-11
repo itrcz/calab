@@ -16,7 +16,7 @@ vi.mock('./gateway', () => ({ sendTyping: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { fail: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
 
-const { sendMessage, retrySend, loadPins, resyncPins, unfurl, peekUnfurl, resetChatCaches } = await import('./chat');
+const { sendMessage, retrySend, loadPins, resyncPins, unfurl, unfurlRetryMs, peekUnfurl, resetChatCaches } = await import('./chat');
 const { ApiError } = await import('../lib/api/client');
 const { useMessages } = await import('../stores/messages');
 
@@ -161,5 +161,34 @@ describe('chat.unfurl', () => {
     resetChatCaches();
     expect(peekUnfurl(slow)).toBeUndefined();
     expect(peekUnfurl(missing)).toBeUndefined();
+  });
+
+  // CBF-176: a bot's fresh link gets a 429 / 503 for a moment; that used to stay «no preview» for the session.
+  it('a transient failure (429 / 5xx / network) is retried, then forgotten: never a session-long «no preview»', async () => {
+    const saved = unfurlRetryMs.delays;
+    unfurlRetryMs.delays = [1, 1];
+    try {
+      unfurlGet.mockReset();
+      const url = 'https://example.test/flaky';
+      unfurlGet
+        .mockRejectedValueOnce(new ApiError('ERROR_CODE_RATE_LIMITED', 'slow down', 429))
+        .mockRejectedValueOnce(new TypeError('network'))
+        .mockResolvedValueOnce(create(UnfurlResponseSchema, { url, title: 'Late card' }));
+      await expect(unfurl(url)).resolves.toMatchObject({ title: 'Late card' });
+      expect(unfurlGet).toHaveBeenCalledTimes(3);
+      expect(peekUnfurl(url)).toMatchObject({ title: 'Late card' });
+
+      const down = 'https://example.test/down';
+      unfurlGet.mockReset();
+      unfurlGet.mockRejectedValue(new ApiError('ERROR_CODE_INTERNAL', 'boom', 503));
+      await expect(unfurl(down)).resolves.toBeNull();
+      expect(unfurlGet).toHaveBeenCalledTimes(3);
+      expect(peekUnfurl(down)).toBeUndefined(); // not an answer: the next mount asks again
+      unfurlGet.mockReset();
+      unfurlGet.mockResolvedValue(create(UnfurlResponseSchema, { url: down, title: 'Back' }));
+      await expect(unfurl(down)).resolves.toMatchObject({ title: 'Back' });
+    } finally {
+      unfurlRetryMs.delays = saved;
+    }
   });
 });
