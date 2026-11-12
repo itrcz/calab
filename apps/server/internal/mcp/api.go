@@ -22,9 +22,12 @@ import (
 // tool that calls another route adds it here; the OAuth integration test runs every tool.
 var innerRoutes = []string{
 	"GET /api/boards/{id}",
+	"GET /api/files/{id}",
+	"GET /api/files/{id}/thumbnail",
 	"GET /api/me/tasks",
 	"GET /api/rooms/{id}",
 	"GET /api/rooms/{id}/messages",
+	"GET /api/rooms/{id}/messages/{messageId}",
 	"GET /api/search",
 	"GET /api/t/{key}",
 	"GET /api/tasks/{id}",
@@ -34,6 +37,7 @@ var innerRoutes = []string{
 	"GET /api/workspaces/{id}/members/{userId}",
 	"GET /api/workspaces/{id}/rooms",
 	"GET /api/workspaces/{id}/tasks/search",
+	"PATCH /api/messages/{id}",
 	"PATCH /api/tasks/{id}",
 	"POST /api/boards/{id}/tasks",
 	"POST /api/rooms/{id}/messages",
@@ -84,11 +88,8 @@ var (
 )
 
 // call performs method path?query with body (nil = none) and decodes the answer into out
-// (nil = ignore). A status ≥ 400 is an *apiError.
+// (nil = ignore). A status >= 400 is an *apiError.
 func (a *api) call(ctx context.Context, method, path string, query url.Values, body, out proto.Message) error {
-	if a.h == nil {
-		return errors.New("MCP endpoint is not wired")
-	}
 	var rd io.Reader = http.NoBody
 	if body != nil {
 		b, err := marshal.Marshal(body)
@@ -96,6 +97,34 @@ func (a *api) call(ctx context.Context, method, path string, query url.Values, b
 			return err
 		}
 		rd = bytes.NewReader(b)
+	}
+	rec, err := a.do(ctx, method, path, query, rd, nil, maxAnswer)
+	if err != nil {
+		return err
+	}
+	if out != nil && rec.buf.Len() > 0 {
+		if err := unmarshal.Unmarshal(rec.buf.Bytes(), out); err != nil {
+			return fmt.Errorf("decode %s %s: %w", method, path, err)
+		}
+	}
+	return nil
+}
+
+// fetch GETs a raw answer (a file's bytes) of at most limit bytes; header adds request headers
+// (Range). It returns the body and the answer's Content-Type.
+func (a *api) fetch(ctx context.Context, path string, query url.Values, header http.Header, limit int) ([]byte, string, error) {
+	rec, err := a.do(ctx, http.MethodGet, path, query, http.NoBody, header, limit)
+	if err != nil {
+		return nil, "", err
+	}
+	return rec.buf.Bytes(), rec.header.Get("Content-Type"), nil
+}
+
+// do performs one in-process call; the answer is capped at limit bytes. A status >= 400 is an
+// *apiError.
+func (a *api) do(ctx context.Context, method, path string, query url.Values, rd io.Reader, header http.Header, limit int) (*recorder, error) {
+	if a.h == nil {
+		return nil, errors.New("MCP endpoint is not wired")
 	}
 	u := path
 	if len(query) > 0 {
@@ -111,7 +140,7 @@ func (a *api) call(ctx context.Context, method, path string, query url.Values, b
 	defer stop()
 	req, err := http.NewRequestWithContext(inner, method, u, rd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Only what identifies the caller: the token, Calab-On-Behalf (ADR-0156: the inner call is
 	// checked on behalf again, route by route) and the client address headers (the chain
@@ -121,36 +150,37 @@ func (a *api) call(ctx context.Context, method, path string, query url.Values, b
 			req.Header[k] = v
 		}
 	}
+	for k, v := range header {
+		req.Header[k] = v
+	}
 	req.RemoteAddr, req.Host = a.outer.RemoteAddr, a.outer.Host
-	if body != nil {
+	if rd != http.NoBody {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	rec := &recorder{header: http.Header{}}
+	rec := &recorder{header: http.Header{}, limit: limit}
 	a.h.ServeHTTP(rec, req)
-	if rec.overflow {
-		return errors.New("answer too large")
-	}
-	st := rec.code()
-	if st >= 400 {
+	if st := rec.code(); st >= 400 {
 		var e v1.ApiError
 		if err := unmarshal.Unmarshal(rec.buf.Bytes(), &e); err != nil || e.GetMessage() == "" {
 			e.Message = http.StatusText(st)
 		}
-		return &apiError{status: st, e: &e}
+		return nil, &apiError{status: st, e: &e}
 	}
-	if out != nil && rec.buf.Len() > 0 {
-		if err := unmarshal.Unmarshal(rec.buf.Bytes(), out); err != nil {
-			return fmt.Errorf("decode %s %s: %w", method, path, err)
-		}
+	if rec.overflow {
+		return nil, errAnswerTooLarge
 	}
-	return nil
+	return rec, nil
 }
+
+// errAnswerTooLarge: the answer did not fit the call's limit.
+var errAnswerTooLarge = errors.New("answer too large")
 
 // recorder is the in-process response of a tool's REST call.
 type recorder struct {
 	header   http.Header
 	status   int
 	buf      bytes.Buffer
+	limit    int
 	overflow bool
 }
 
@@ -166,7 +196,7 @@ func (r *recorder) Write(b []byte) (int, error) {
 	if r.status == 0 {
 		r.status = http.StatusOK
 	}
-	if r.buf.Len()+len(b) > maxAnswer {
+	if r.buf.Len()+len(b) > r.limit {
 		r.overflow = true
 		return 0, errors.New("mcp: answer too large")
 	}

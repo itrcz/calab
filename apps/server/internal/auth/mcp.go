@@ -21,8 +21,15 @@ import (
 // everything else about the session — rights, the identity policy, revocation, refresh rotation
 // and replay detection — is the app session's.
 
-// MCPPath is the MCP endpoint (mcp.Path): the one route an MCP token is presented to directly.
+// MCPPath is the MCP endpoint (mcp.Path): the route an MCP token is presented to directly.
 const MCPPath = "/api/mcp"
+
+// MCPShortPath is the same endpoint at the short address https://<app>/mcp (CBF-183, ADR-0158
+// addendum): its own protected resource for OAuth discovery, the same server and tokens.
+const MCPShortPath = "/mcp"
+
+// IsMCPPath reports whether path is one of the MCP endpoint's addresses (exactly; /mcp/connect is the SPA's).
+func IsMCPPath(path string) bool { return path == MCPPath || path == MCPShortPath }
 
 // ReasonMCPToken marks a route refused to an MCP token (403).
 const ReasonMCPToken = "MCP_TOKEN"
@@ -46,7 +53,7 @@ func mcpSessionOf(sess sqlc.Session, client string) bool {
 	return sess.Scope != nil && *sess.Scope == ScopeMCP && sess.McpClientID != nil && *sess.McpClientID == client
 }
 
-// mcpRequest admits an MCP identity on the MCP endpoint (POST only, the transport) and in the
+// mcpRequest admits an MCP identity on the MCP endpoint (either address; POST only, the transport) and in the
 // tools' in-process calls (the channel is a server-only context value: no header or token sets
 // it), and applies the per-session request limit (BOT_RATE_PER_SEC, like a bot).
 //
@@ -56,7 +63,7 @@ func mcpSessionOf(sess sqlc.Session, client string) bool {
 func (s *Service) mcpRequest(r *http.Request, id Identity) error {
 	inner := Channel(r.Context())
 	switch {
-	case r.Pattern == MCPPath && r.URL.Path == MCPPath && inner == nil:
+	case IsMCPPath(r.Pattern) && r.URL.Path == r.Pattern && inner == nil:
 	case inner != nil && *inner == ChannelMCP && s.MCPInnerRoutes[r.Pattern]:
 	default:
 		return errMCPToken

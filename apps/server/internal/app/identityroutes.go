@@ -707,11 +707,14 @@ var identityRoutes = map[string]identityScope{
 	// MCP for bots (CBF-48): the endpoint itself reads and writes nothing; every tool's REST
 	// call goes through this gate again with its own route and scope.
 	"/api/mcp": scopePublic,
+	"/mcp":     scopePublic, // the same endpoint at the short address (CBF-183)
 	// MCP without a bot (ADR-0158): the OAuth server of the endpoint. Metadata, registration and
 	// token are public (no ambient credential); the consent routes authenticate the person's app
 	// session themselves (local authority, the browser that started the request).
 	"GET /.well-known/oauth-protected-resource":             scopePublic,
 	"GET /.well-known/oauth-protected-resource/api/mcp":     scopePublic,
+	"GET /.well-known/oauth-protected-resource/mcp":         scopePublic,
+	"OPTIONS /.well-known/oauth-protected-resource/mcp":     scopePublic,
 	"GET /.well-known/oauth-authorization-server":           scopePublic,
 	"OPTIONS /.well-known/oauth-protected-resource":         scopePublic,
 	"OPTIONS /.well-known/oauth-protected-resource/api/mcp": scopePublic,

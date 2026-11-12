@@ -538,6 +538,7 @@ var botRouteGroups = []botRouteGroup{
 	// tool's REST call is then checked on behalf like any other (onBehalfRoutes).
 	{access: botAllow, why: "MCP for bots (CBF-48, ADR-0156): bot tokens only (the handler refuses people's sessions); every tool calls a REST route of this table in process with the same token and Calab-On-Behalf, so it has exactly the rights of the bot, or of the person it acts for", routes: []string{
 		"/api/mcp",
+		"/mcp", // the same endpoint at the short address (CBF-183)
 	}},
 
 	// ---------------------------------------------------------------- deny: people only
@@ -603,9 +604,11 @@ var botRouteGroups = []botRouteGroup{
 	{access: botPublic, why: "MCP without a bot (ADR-0158): the OAuth server's metadata, client registration, authorize, token and revocation read no user or bot token — a bot is anonymous there", routes: []string{
 		"GET /.well-known/oauth-protected-resource",
 		"GET /.well-known/oauth-protected-resource/api/mcp",
+		"GET /.well-known/oauth-protected-resource/mcp",
 		"GET /.well-known/oauth-authorization-server",
 		"OPTIONS /.well-known/oauth-protected-resource",
 		"OPTIONS /.well-known/oauth-protected-resource/api/mcp",
+		"OPTIONS /.well-known/oauth-protected-resource/mcp",
 		"OPTIONS /.well-known/oauth-authorization-server",
 		"POST /api/mcp/oauth/register",
 		"OPTIONS /api/mcp/oauth/register",

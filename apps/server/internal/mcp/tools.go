@@ -53,6 +53,11 @@ type args struct {
 	Sort         string   `json:"sort"`
 	Cursor       string   `json:"cursor"`
 	Mine         bool     `json:"mine"`
+	// get_task_attachment, edit_message, read comments (CBF-182)
+	File     string `json:"file"`
+	Comment  string `json:"comment"`
+	Message  string `json:"message"`
+	Comments int    `json:"comments"`
 }
 
 type tool struct {
@@ -84,16 +89,17 @@ var taskArg = str("task id or key (ABC-12)")
 var wsArg = str("workspace id, when a task key is in several workspaces")
 
 var toolDefs = []tool{
-	{def("find", "Find tasks, messages, rooms or boards the bot can see. Returns ids for the other tools.", schema(nil, map[string]any{
-		"q":         str("words; for rooms/boards a name part, empty = all"),
-		"kind":      map[string]any{"type": "string", "enum": []string{"tasks", "messages", "rooms", "boards"}, "description": "default: all kinds"},
+	{def("find", "Find tasks, messages, rooms, boards or people the bot can see. Returns ids for the other tools.", schema(nil, map[string]any{
+		"q":         str("words; for rooms/boards/people a name part, empty = all"),
+		"kind":      map[string]any{"type": "string", "enum": []string{"tasks", "messages", "rooms", "boards", "people"}, "description": "default: all (people with q)"},
 		"workspace": str("workspace id; default all"),
 		"limit":     map[string]any{"type": "integer", "description": "per kind, 1-20, default 10"},
 	})), find},
-	{def("read", "Read a task (with its board's statuses, labels, Git links and releases) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
+	{def("read", "Read a task (with its board's statuses, labels, checklists, files, Git links, releases) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
 		"task":      taskArg,
 		"workspace": wsArg,
 		"room":      str("room id (a task's comments: its room)"),
+		"comments":  map[string]any{"type": "integer", "description": "task: latest comments, 1-50"},
 		"limit":     map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
 		"before":    str("message id: older history"),
 		"full":      map[string]any{"type": "boolean", "description": "the full API object"},
@@ -154,6 +160,17 @@ var toolDefs = []tool{
 		"mode":      map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "default add"},
 		"lead":      str("the lead among the assignees (me, id, name); default: kept, else the first"),
 	})), assign},
+	// CBF-182: a task's files for the agent; fixing its own comment instead of posting another.
+	{def("get_task_attachment", "A file of a task or its comment: text (256 KiB, longer cut) or image (over 3 MiB: preview); others only described.", schema([]string{"task", "file"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"file":      str("file id (from read) or name"),
+		"comment":   str("comment message id; default: the task, its last 100 comments"),
+	})), getTaskAttachment},
+	{def("edit_message", "Edit your own message or comment.", schema([]string{"message", "text"}, map[string]any{
+		"message": str("message id"),
+		"text":    str("markdown"),
+	})), editMessage},
 }
 
 var (
@@ -195,15 +212,18 @@ func need(name, v string) error {
 // ---- find ----
 
 func find(ctx context.Context, c *api, a args) (any, error) {
-	kinds := []string{"tasks", "messages", "rooms", "boards"}
+	kinds := []string{"tasks", "messages", "rooms", "boards", "people"}
 	if a.Kind != "" {
 		if !slices.Contains(kinds, a.Kind) {
-			return nil, errors.New("kind must be tasks, messages, rooms or boards")
+			return nil, errors.New("kind must be tasks, messages, rooms, boards or people")
 		}
 		kinds = []string{a.Kind}
 	}
 	limit := clamp(a.Limit, 10, 20)
 	q := strings.TrimSpace(a.Q)
+	if a.Kind == "" && q == "" {
+		kinds = slices.DeleteFunc(kinds, func(k string) bool { return k == "people" }) // every member of every workspace: ask for it
+	}
 	out := map[string]any{}
 	searchTasks, searchMsgs := slices.Contains(kinds, "tasks"), slices.Contains(kinds, "messages")
 	if (searchTasks || searchMsgs) && q == "" {
@@ -300,6 +320,19 @@ func find(ctx context.Context, c *api, a args) (any, error) {
 			out["boards"] = boards
 		}
 	}
+	if slices.Contains(kinds, "people") {
+		wss, err := workspaceIDs(ctx, c, a.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		ps, err := people(ctx, c, wss, q, limit)
+		if err != nil {
+			return nil, err
+		}
+		if ps != nil {
+			out["people"] = ps
+		}
+	}
 	if len(out) == 0 {
 		return map[string]any{"found": 0}, nil
 	}
@@ -359,9 +392,22 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 			"workspace": t.GetWorkspaceId(), "room": t.GetRoomId(), "comments": t.GetCommentCount(), "subtasks": subs,
 			"created_by": t.GetCreatedBy(), "updated": ts(t.GetUpdatedAt()),
 			"git": gitLinks(t), "releases": releases(t), // ADR-0156
+			"files": fileList(t.GetAttachments()), "checklists": checklists(t), // CBF-182
 		}
 		if p := tr.GetParent(); p != nil {
 			out["parent"] = compact(map[string]any{"id": p.GetId(), "key": p.GetKey(), "title": p.GetTitle()})
+		}
+		if a.Comments > 0 && t.GetRoomId() != "" {
+			var ms v1.ListMessagesResponse
+			qs := url.Values{"limit": {strconv.Itoa(clamp(a.Comments, 20, 50))}}
+			if err := c.call(ctx, http.MethodGet, "/api/rooms/"+seg(t.GetRoomId())+"/messages", qs, nil, &ms); err != nil {
+				return nil, err
+			}
+			list := make([]map[string]any, 0, len(ms.GetMessages()))
+			for _, m := range slices.Backward(ms.GetMessages()) {
+				list = append(list, message(m))
+			}
+			out["recent_comments"], out["more_comments"] = list, ms.GetHasMore()
 		}
 		return compact(out), nil
 	case strings.TrimSpace(a.Room) != "":
@@ -402,10 +448,7 @@ func message(m *v1.Message) map[string]any {
 	case m.GetSticker() != nil:
 		text = "[sticker " + m.GetSticker().GetEmoji() + "]"
 	}
-	var files []string
-	for _, f := range m.GetAttachments() {
-		files = append(files, f.GetName())
-	}
+	files := fileList(m.GetAttachments()) // ids for get_task_attachment (CBF-182)
 	// ADR-0140: who saw the bot's own message on screen (set by the API for the author only).
 	var readBy []map[string]any
 	for _, rd := range m.GetReadBy() {
@@ -610,6 +653,12 @@ func send(ctx context.Context, c *api, room, text, replyTo string) (any, error) 
 
 // ---- compact answers ----
 
+// jsonText is v as compact JSON (a content block's text).
+func jsonText(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
 // raw is the API object as protojson without default values (read full=true).
 func raw(m proto.Message) (any, error) {
 	b, err := marshal.Marshal(m)
@@ -632,6 +681,10 @@ func compact(m map[string]any) map[string]any {
 				delete(m, k)
 			}
 		case uint32:
+			if x == 0 {
+				delete(m, k)
+			}
+		case uint64:
 			if x == 0 {
 				delete(m, k)
 			}

@@ -1,6 +1,50 @@
 package mcpauth
 
-import "testing"
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+// TestShortAddress (CBF-183): /mcp is a second resource of the same server, at the same origin.
+func TestShortAddress(t *testing.T) {
+	s := New(Config{Origins: []string{"https://app.example.com", "https://alt.example.com"}})
+	req := func(path string) *http.Request {
+		return httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://alt.example.com"+path, nil)
+	}
+	for res, want := range map[string]bool{
+		"https://alt.example.com/api/mcp": true,
+		"https://alt.example.com/mcp":     true,
+		"https://app.example.com/mcp":     false, // another origin's
+		"https://alt.example.com/mcp/x":   false,
+		"https://alt.example.com/":        false,
+	} {
+		if got := s.validResource(req("/api/mcp/oauth/token"), res); got != want {
+			t.Errorf("validResource(%q) = %v", res, got)
+		}
+	}
+	for path, want := range map[string]string{
+		"/mcp":     "https://alt.example.com/.well-known/oauth-protected-resource/mcp",
+		"/api/mcp": "https://alt.example.com/.well-known/oauth-protected-resource/api/mcp",
+	} {
+		if got := s.ResourceMetadataURL(req(path)); got != want {
+			t.Errorf("ResourceMetadataURL(%s) = %s", path, got)
+		}
+	}
+	for path, want := range map[string]string{
+		"/.well-known/oauth-protected-resource/mcp":     "https://alt.example.com/mcp",
+		"/.well-known/oauth-protected-resource/api/mcp": "https://alt.example.com/api/mcp",
+		"/.well-known/oauth-protected-resource":         "https://alt.example.com/api/mcp",
+	} {
+		w := httptest.NewRecorder()
+		s.resourceMetadata(w, req(path))
+		var m map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil || m["resource"] != want {
+			t.Errorf("metadata %s: %v", path, m)
+		}
+	}
+}
 
 func TestRedirects(t *testing.T) {
 	s := New(Config{RedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"}})

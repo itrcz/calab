@@ -144,9 +144,12 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 		fail("invalid_request", "state is too long")
 		return
 	}
-	if res := f.Get("resource"); res != "" && strings.TrimSuffix(res, "/") != s.resource(r) {
-		fail("invalid_target", "resource must be "+s.resource(r))
-		return
+	resource := s.resource(r)
+	if res := f.Get("resource"); res != "" {
+		if resource = strings.TrimSuffix(res, "/"); !s.validResource(r, resource) {
+			fail("invalid_target", "resource must be "+s.resource(r)+" or "+s.origin(r)+auth.MCPShortPath)
+			return
+		}
 	}
 	for _, sc := range strings.Fields(f.Get("scope")) {
 		if sc != auth.ScopeMCP && sc != "offline_access" {
@@ -166,9 +169,10 @@ func (s *Service) authorize(w http.ResponseWriter, r *http.Request) {
 	if _, err := db.GuardValue(ctx, s.c.DB, func(q *sqlc.Queries) (sqlc.McpOauthRequest, error) {
 		return q.CreateMCPRequest(ctx, sqlc.CreateMCPRequestParams{
 			HandleHash: hash(handle), BrowserHash: hash(browser), ClientID: c.ID, RedirectUri: redirect,
-			// The resource is always this endpoint of this origin: the token exchange checks it is the
-			// same (a code issued at one app origin is not exchanged at another).
-			CodeChallenge: f.Get("code_challenge"), State: state, Resource: s.resource(r), CreatedIp: clip(ip, 64),
+			// The resource is an address of this endpoint at this origin: the token exchange checks it
+			// is the same (a code issued at one app origin, or for one address, is not exchanged for
+			// another).
+			CodeChallenge: f.Get("code_challenge"), State: state, Resource: resource, CreatedIp: clip(ip, 64),
 			ExpiresAt: s.now().Add(requestTTL),
 		})
 	}); err != nil {

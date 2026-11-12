@@ -164,14 +164,16 @@
 
 	# MCP without a bot (ADR-0158): RFC 9728 / RFC 8414 metadata of the MCP endpoint's OAuth server,
 	# published at the root of the app host. Exact paths only (other /.well-known/* stay as they are).
-	@mcp_oauth_metadata path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/api/mcp /.well-known/oauth-authorization-server
+	# CBF-183: the short endpoint /mcp has its own resource metadata.
+	@mcp_oauth_metadata path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/api/mcp /.well-known/oauth-protected-resource/mcp /.well-known/oauth-authorization-server
 	handle @mcp_oauth_metadata {
 		header >Referrer-Policy "no-referrer"
 		reverse_proxy {$API_UPSTREAM:127.0.0.1:3000}
 	}
 
-	# Go API (host network): REST, gateway WS, liveness.
-	@api path /api/* /gateway /healthz
+	# Go API (host network): REST, gateway WS, liveness; the MCP endpoint's short address /mcp
+	# (CBF-183) — the exact path only: /mcp/connect (the consent page) and /mcp/* stay the SPA's.
+	@api path /api/* /gateway /healthz /mcp
 	handle @api {
 		# The API sets Cache-Control (no-store on JSON, its own on files/unfurl) and nosniff itself;
 		# identity/OAuth routes also set no-referrer: never weaken it at the proxy.

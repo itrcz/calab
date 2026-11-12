@@ -1,4 +1,5 @@
-// Package mcpauth is the OAuth 2.1 authorization server of the MCP endpoint (ADR-0158): a person
+// Package mcpauth is the OAuth 2.1 authorization server of the MCP endpoint (ADR-0158; the
+// endpoint answers at /api/mcp and at the short /mcp, two resources of one server): a person
 // connects an MCP client (Claude Code, Codex, Cursor, claude.ai…) to Calab without a bot.
 //
 // It follows the MCP authorization spec (2025-06-18): protected resource metadata (RFC 9728) and
@@ -83,10 +84,12 @@ const (
 // session themselves (auth.Authenticate: people only, never a bot or an MCP token).
 func (s *Service) Routes(mux httpx.Router) {
 	mux.HandleFunc("GET "+resourceMetadataPath, s.resourceMetadata)
-	mux.HandleFunc("GET "+resourceMetadataPath+auth.MCPPath, s.resourceMetadata)
 	mux.HandleFunc("GET "+serverMetadataPath, s.serverMetadata)
 	mux.HandleFunc("OPTIONS "+resourceMetadataPath, preflight)
-	mux.HandleFunc("OPTIONS "+resourceMetadataPath+auth.MCPPath, preflight)
+	for _, p := range []string{auth.MCPPath, auth.MCPShortPath} { // RFC 9728 §3.1: one per resource
+		mux.HandleFunc("GET "+resourceMetadataPath+p, s.resourceMetadata)
+		mux.HandleFunc("OPTIONS "+resourceMetadataPath+p, preflight)
+	}
 	mux.HandleFunc("OPTIONS "+serverMetadataPath, preflight)
 	mux.HandleFunc("POST "+base+"/register", s.register)
 	mux.HandleFunc("OPTIONS "+base+"/register", preflight)
@@ -112,17 +115,37 @@ func (s *Service) origin(r *http.Request) string {
 	return ""
 }
 
+// resource is the default protected resource of this origin: the endpoint at /api/mcp (an
+// authorization request without resource gets it).
 func (s *Service) resource(r *http.Request) string { return s.origin(r) + auth.MCPPath }
 
-// ResourceMetadataURL is what a 401 of the MCP endpoint points to (WWW-Authenticate).
+// validResource: res is one of the endpoint's addresses at this request's origin — /api/mcp or
+// the short /mcp (CBF-183). Both are the same server and take the same tokens (scp=mcp); the
+// authorization request remembers which one it was for, and its code is exchanged only for it.
+func (s *Service) validResource(r *http.Request, res string) bool {
+	o := s.origin(r)
+	return res == o+auth.MCPPath || res == o+auth.MCPShortPath
+}
+
+// endpointPath is the MCP address a request is about: the short /mcp for the endpoint itself and
+// for its own metadata path, /api/mcp otherwise (the bare metadata path included).
+func endpointPath(r *http.Request) string {
+	if r.URL.Path == auth.MCPShortPath || r.URL.Path == resourceMetadataPath+auth.MCPShortPath {
+		return auth.MCPShortPath
+	}
+	return auth.MCPPath
+}
+
+// ResourceMetadataURL is what a 401 of the MCP endpoint points to (WWW-Authenticate): the
+// metadata of the address the client used (RFC 9728 §3.1, path-suffixed).
 func (s *Service) ResourceMetadataURL(r *http.Request) string {
-	return s.origin(r) + resourceMetadataPath + auth.MCPPath
+	return s.origin(r) + resourceMetadataPath + endpointPath(r)
 }
 
 func (s *Service) resourceMetadata(w http.ResponseWriter, r *http.Request) {
 	cors(w)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"resource":                 s.resource(r),
+		"resource":                 s.origin(r) + endpointPath(r),
 		"authorization_servers":    []string{s.origin(r)},
 		"scopes_supported":         []string{auth.ScopeMCP},
 		"bearer_methods_supported": []string{"header"},

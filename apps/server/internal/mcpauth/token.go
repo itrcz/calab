@@ -115,7 +115,7 @@ func (s *Service) exchange(r *http.Request, c auth.Client) (*v1.AuthTokens, erro
 		if ru := f.Get("redirect_uri"); ru != "" && ru != req.RedirectUri {
 			return errGrant
 		}
-		if res := strings.TrimSuffix(f.Get("resource"), "/"); req.Resource != s.resource(r) || (res != "" && res != req.Resource) {
+		if res := strings.TrimSuffix(f.Get("resource"), "/"); !s.validResource(r, req.Resource) || (res != "" && res != req.Resource) {
 			return errGrant
 		}
 		// The consent's session must still be live: «выйти везде» during the code's minute wins.

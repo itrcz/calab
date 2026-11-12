@@ -71,7 +71,7 @@ func mcpRegister(t *testing.T, redirects ...string) string {
 
 // mcpFlow is one OAuth round of an MCP client: authorize in a browser, consent as u, the code.
 type mcpFlow struct {
-	client, verifier, handle, cookie, csrf string
+	client, verifier, handle, cookie, csrf, resource string
 }
 
 func oaPKCE() (verifier, challenge string) {
@@ -82,9 +82,15 @@ func oaPKCE() (verifier, challenge string) {
 
 func mcpAuthorize(t *testing.T, client string) *mcpFlow {
 	t.Helper()
+	return mcpAuthorizeFor(t, client, "https://app.example.com/api/mcp")
+}
+
+// mcpAuthorizeFor starts the flow for a resource: /api/mcp or the short /mcp (CBF-183).
+func mcpAuthorizeFor(t *testing.T, client, resource string) *mcpFlow {
+	t.Helper()
 	verifier, challenge := oaPKCE()
 	q := url.Values{"response_type": {"code"}, "client_id": {client}, "redirect_uri": {mcpTestRedirect}, "code_challenge": {challenge},
-		"code_challenge_method": {"S256"}, "state": {"st-1"}, "scope": {"mcp"}, "resource": {"https://app.example.com/api/mcp"}}
+		"code_challenge_method": {"S256"}, "state": {"st-1"}, "scope": {"mcp"}, "resource": {resource}}
 	r := oaDo(t, "GET", "/api/mcp/oauth/authorize?"+q.Encode(), nil, nil)
 	if r.status != http.StatusFound {
 		t.Fatalf("authorize: %d %s", r.status, r.body)
@@ -106,7 +112,7 @@ func mcpAuthorize(t *testing.T, client string) *mcpFlow {
 	if cookie == "" {
 		t.Fatal("no binding cookie")
 	}
-	return &mcpFlow{client: client, verifier: verifier, handle: strings.TrimPrefix(loc, prefix), cookie: cookie}
+	return &mcpFlow{client: client, verifier: verifier, handle: strings.TrimPrefix(loc, prefix), cookie: cookie, resource: resource}
 }
 
 func (f *mcpFlow) consent(t *testing.T, token, cookie string, allow bool, wantBind int) string {
@@ -152,7 +158,7 @@ func mcpTokenCall(t *testing.T, form url.Values) (int, map[string]any) {
 
 func mcpExchange(t *testing.T, f *mcpFlow, code string) (access, refresh string) {
 	t.Helper()
-	st, out := mcpTokenCall(t, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "client_id": {f.client}, "redirect_uri": {mcpTestRedirect}, "code_verifier": {f.verifier}, "resource": {"https://app.example.com/api/mcp"}})
+	st, out := mcpTokenCall(t, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "client_id": {f.client}, "redirect_uri": {mcpTestRedirect}, "code_verifier": {f.verifier}, "resource": {f.resource}})
 	if st != 200 || out["token_type"] != "Bearer" || out["scope"] != "mcp" {
 		t.Fatalf("token: %d %v", st, out)
 	}
@@ -161,6 +167,12 @@ func mcpExchange(t *testing.T, f *mcpFlow, code string) (access, refresh string)
 
 // mcpCall is a tools/call (or any method) with the MCP session's access token.
 func mcpCall(t *testing.T, access, method string, params any) (int, map[string]any, http.Header) {
+	t.Helper()
+	return mcpCallAt(t, "/api/mcp", access, method, params)
+}
+
+// mcpCallAt is mcpCall at an address of the endpoint (/api/mcp or the short /mcp, CBF-183).
+func mcpCallAt(t *testing.T, path, access, method string, params any) (int, map[string]any, http.Header) {
 	t.Helper()
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
 	h := http.Header{"Content-Type": {"application/json"}}
@@ -176,7 +188,7 @@ func mcpCall(t *testing.T, access, method string, params any) (int, map[string]a
 			_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:bot:req:mcp:"+c.Sid)).Build()).Error()
 		}
 	}
-	r := oaDo(t, "POST", "/api/mcp", bytes.NewReader(b), h)
+	r := oaDo(t, "POST", path, bytes.NewReader(b), h)
 	var m map[string]any
 	_ = json.Unmarshal(r.body, &m)
 	return r.status, m, r.header
@@ -249,7 +261,7 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 	access, refresh := mcpExchange(t, f, code)
 
 	// The tools as bob, marked «via MCP», no bot.
-	if st, out, _ := mcpCall(t, access, "tools/list", map[string]any{}); st != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 9 {
+	if st, out, _ := mcpCall(t, access, "tools/list", map[string]any{}); st != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 11 {
 		t.Fatalf("tools/list: %d %v", st, out)
 	}
 	text := mcpToolText(t, access, "create_task", map[string]any{"board": "MOA", "title": "через OAuth"})
