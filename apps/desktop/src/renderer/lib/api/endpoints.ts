@@ -151,6 +151,7 @@ import {
   UpdateMemberBirthdayRequestSchema,
   UpdateMemberBirthdayResponseSchema,
   UpdateMeResponseSchema,
+  VoiceMuteSchema,
   UsernameAvailabilityResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
@@ -314,6 +315,9 @@ export const api = {
     /** Custom status (text + emoji, optional expiry); empty text and emoji clear it. */
     setStatus: (init: MessageInitShape<typeof UpdateStatusRequestSchema>) =>
       call('PATCH', '/api/me/status', UpdateMeResponseSchema, body(UpdateStatusRequestSchema, init)),
+    /** ADR-0168: my own mic / sound choice for the next voice session on any device (last writer wins). */
+    setVoiceMute: (init: { muted: boolean; deafened: boolean }) =>
+      call('PUT', '/api/me/voice-mute', VoiceMuteSchema, body(VoiceMuteSchema, init)),
     /** Messages mentioning me in rooms I can view, newest first (cursor `before`, limit ≤ 100). */
     mentions: (p: { limit?: number; before?: string; workspace_id?: string }, signal?: AbortSignal) =>
       call('GET', `/api/me/mentions${qs(p)}`, ListMessagesResponseSchema, undefined, signal),

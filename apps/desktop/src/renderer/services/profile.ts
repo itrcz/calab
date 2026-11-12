@@ -6,6 +6,7 @@ import { log } from '../lib/log';
 import { prefs, usePrefs } from '../stores/prefs';
 import { platform } from '../platform';
 import { useSession } from '../stores/session';
+import { applyServerVoiceMute } from './voiceMute';
 
 /**
  * UserSettings (synced across the user's devices, USER_UPDATE on change) ↔ local prefs.
@@ -53,11 +54,24 @@ export function applyUserSettings(s: UserSettings): void {
   usePrefs.getState().setPrefs({
     rnnoise: s.noiseSuppression,
     red: s.unstableNetworkRed,
-    micMode: s.micMode === MicMode.PUSH_TO_TALK ? 'ptt' : 'voice',
+    ...micModeFromServer(prefs(), s.micMode),
     pttBinding: binding,
     personalBitrateKbps: s.audioBitrateKbps ?? null,
   });
   applying = false;
+  // ADR-0168: the stored mic / sound choice (only outside voice on this device; services/voiceMute).
+  applyServerVoiceMute(s.voiceMute);
+}
+
+/**
+ * Push-to-talk vs voice activation is per device (owner, CBF-180: one device in PTT, another not).
+ * The server's mic_mode — the mode last chosen on any device — seeds only a device without its
+ * own (a new install; an older client's copy, which was synced, on its first READY after the
+ * update); after that the device keeps its mode and the server's never overrides it.
+ */
+export function micModeFromServer(p: { micMode: 'voice' | 'ptt'; micModeLocal: boolean }, server: MicMode): { micMode?: 'voice' | 'ptt'; micModeLocal?: true } {
+  if (p.micModeLocal) return {};
+  return { micMode: server === MicMode.PUSH_TO_TALK ? 'ptt' : 'voice', micModeLocal: true };
 }
 
 function snapshot(): UserSettings {

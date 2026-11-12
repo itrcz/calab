@@ -106,6 +106,7 @@ import { humanMediaError, reportMediaError } from './mediaErrors';
 import { reportPlanError } from './plan';
 import { capAudioKbps, capFps } from '../lib/plan';
 import { sameBinding } from './profile';
+import { rememberVoiceMute, voiceMuteAtJoin } from './voiceMute';
 
 /** A room's voice tier lowered to the workspace plan's cap (`audio_tier_max_kbps`; the server caps /join the same way). */
 function planAudio(workspaceId: string, kbps: number): number {
@@ -730,6 +731,11 @@ class VoiceEngine {
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
       const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await this.requestJoin(roomId, seq);
       if (seq !== this.joinSeq || !res) return;
+      // A fresh room join starts with my stored mic / sound choice (ADR-0168), applied before the
+      // mic is published and before the pending flags below: never a moment of an open mic the
+      // user had closed. A reconnect / move keeps this device's state; a call and an answered
+      // phone line follow their own rule (answering = talking, lib/voiceLogic answerCallSelf).
+      if (!quiet && !moved && !this.callMode && !isPhoneRoom(roomId)) voiceMuteAtJoin('selfMute' in res ? res.selfMute : undefined);
       // The server recorded this device as pending with default flags: tell it my mute /
       // deafen now, so the others' pending row is right before LiveKit connects.
       if ('pending' in res && res.pending) {
@@ -2705,7 +2711,7 @@ class VoiceEngine {
   private onAutoMute(sec: Exclude<AutoMuteSec, 0>): void {
     if (this.selfSpeaking || !this.autoMuteArmed()) return;
     log.info(`voice: auto-mute after ${sec} s of silence`);
-    this.toggleMute();
+    this.toggleMute(false);
     const room = this.room;
     useToasts.getState().push('info', t(AUTO_MUTE_TOAST[sec]), {
       label: t('autoMute.unmute'),
@@ -3814,7 +3820,11 @@ class VoiceEngine {
     return true;
   }
 
-  toggleMute(): void {
+  /**
+   * `user`: the user's own click (button, hotkey, tray, system call controls) — remembered as their
+   * choice for the next session on any device (ADR-0168). The auto-mute is not their choice.
+   */
+  toggleMute(user = true): void {
     if (this.seatElsewhere()) return;
     const v = useVoice.getState();
     // A moderator mute (VoiceState.server_muted) can't be lifted by the user: the server removed
@@ -3828,6 +3838,7 @@ class VoiceEngine {
     setVoice(toggleMute(v));
     playSound(useVoice.getState().muted ? 'mute' : v.deafened ? 'undeafen' : 'unmute');
     this.afterSelfChange();
+    if (user) rememberVoiceMute();
   }
 
   toggleDeafen(): void {
@@ -3835,6 +3846,7 @@ class VoiceEngine {
     setVoice(toggleDeafen(useVoice.getState()));
     playSound(useVoice.getState().deafened ? 'deafen' : 'undeafen');
     this.afterSelfChange();
+    rememberVoiceMute();
   }
 
   private afterSelfChange(): void {

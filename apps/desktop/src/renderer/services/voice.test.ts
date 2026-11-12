@@ -232,6 +232,8 @@ vi.mock('livekit-client', () => ({
 const joinVoice = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
 const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean; musician?: boolean; ptt?: boolean }) => Promise.resolve());
 const leaveVoice = vi.fn((_roomId: string) => Promise.resolve());
+/** PUT /api/me/voice-mute (ADR-0168): answers with the server's time. */
+const setVoiceMute = vi.fn((b: { muted: boolean; deafened: boolean }) => Promise.resolve({ ...b, updatedAt: { seconds: BigInt(Math.floor(Date.now() / 1000) + 1), nanos: 0 } }));
 const requestStream = vi.fn((_roomId: string, preset: number) => Promise.resolve({ preset, fps: 0 }));
 /** POST /rooms/{id}/voice/companion (ADR-0149 §3). */
 const companionToken = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `companion-${roomId}`, identity: 'u:s:web' }));
@@ -244,7 +246,7 @@ vi.mock('../lib/api/endpoints', () => ({
       requestStream: (id: string, preset: number) => requestStream(id, preset),
       companion: (id: string) => companionToken(id),
     },
-    me: { update: () => Promise.resolve({}) },
+    me: { update: () => Promise.resolve({}), setVoiceMute: (b: { muted: boolean; deafened: boolean }) => setVoiceMute(b) },
   },
 }));
 
@@ -414,6 +416,8 @@ beforeEach(async () => {
   micStarts.failNext = null;
   gone.clear();
   joinVoice.mockClear();
+  setVoiceMute.mockClear();
+  mem.delete('calab-voice-mute'); // ADR-0168: no stored choice leaks between tests
   companionToken.mockClear();
   leaveVoice.mockReset();
   leaveVoice.mockImplementation(() => Promise.resolve());
@@ -3102,6 +3106,138 @@ describe('tabs of one browser share the voice seat (#40)', () => {
     expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
     expect(leaveVoice).not.toHaveBeenCalled();
     expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mic / sound choice across sessions and devices (ADR-0168, CBF-180)', () => {
+  const ts = (sec: number): { seconds: bigint; nanos: number } => ({ seconds: BigInt(sec), nanos: 0 });
+  const joinAnswer = (selfMute?: { muted: boolean; deafened: boolean; updatedAt: { seconds: bigint; nanos: number } }) =>
+    joinVoice.mockImplementationOnce((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, pending: true, media: { audioBitrateKbps: 32 }, ...(selfMute ? { selfMute } : {}) }));
+  /** The mic as LiveKit got it at publishTrack: the first thing the others could hear. */
+  const atPublish: { isMuted: boolean; enabled: boolean }[] = [];
+  const watchPublish = (): void => {
+    atPublish.length = 0;
+    FakeRoom.onConnect = () => {
+      const r = FakeRoom.all.at(-1);
+      r?.localParticipant.publishTrack.mockImplementation((t: FakeLocalAudioTrack) => {
+        atPublish.push({ isMuted: t.isMuted, enabled: t.mediaStreamTrack.enabled });
+        r.published.push(t);
+        return Promise.resolve();
+      });
+      return Promise.resolve();
+    };
+  };
+  /** A muted publish waits for LiveKit's mute lock (a timer): drive the clock through the join. */
+  const joinA = async (): Promise<void> => {
+    const p = voice.join('A', 'ws');
+    await vi.advanceTimersByTimeAsync(50);
+    await p;
+  };
+  beforeEach(async () => {
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ me: { user: { id: 'u1' } }, status: 'authed' } as never);
+  });
+
+  it('joins with the stored mic off: published muted, never a moment of an open mic', async () => {
+    watchPublish();
+    joinAnswer({ muted: true, deafened: false, updatedAt: ts(1000) });
+    expect(useVoice.getState().muted).toBe(false); // this device's last state: open
+    await joinA();
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false, phase: 'connected' });
+    expect(atPublish).toEqual([{ isMuted: true, enabled: false }]);
+    // The pending row is right before LiveKit connects, and the server's value is not sent back.
+    expect(updateSelf.mock.calls[0]?.[0]).toMatchObject({ muted: true, deafened: false });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(setVoiceMute).not.toHaveBeenCalled();
+  });
+
+  it('joins deafened from another device; undeafen returns to the stored mic (open)', async () => {
+    joinAnswer({ muted: false, deafened: true, updatedAt: ts(1000) });
+    await joinA();
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: true, mutedBeforeDeafen: false });
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
+    voice.toggleDeafen();
+    expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
+  });
+
+  it('a stored open mic opens a muted device at join (the choice follows the user)', async () => {
+    useVoice.setState({ muted: true });
+    joinAnswer({ muted: false, deafened: false, updatedAt: ts(1000) });
+    await joinA();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoice.getState().muted).toBe(false);
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+  });
+
+  it('no server value (an older server): the local copy of the last session stands in', async () => {
+    mem.set('calab-voice-mute', JSON.stringify({ userId: 'u1', muted: true, deafened: false, dirty: false, at: 5 }));
+    watchPublish();
+    await joinA();
+    expect(useVoice.getState().muted).toBe(true);
+    expect(atPublish).toEqual([{ isMuted: true, enabled: false }]);
+  });
+
+  it('a click not yet stored on the server wins over its older value and is sent', async () => {
+    mem.set('calab-voice-mute', JSON.stringify({ userId: 'u1', muted: false, deafened: true, dirty: true, at: 5 }));
+    joinAnswer({ muted: false, deafened: false, updatedAt: ts(1) });
+    await joinA();
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: true });
+    await settle();
+    expect(setVoiceMute.mock.calls).toEqual([[{ muted: false, deafened: true }]]);
+  });
+
+  it('my clicks are stored once per burst; the auto-mute and a moderator mute are not my choice', async () => {
+    usePrefs.getState().setPrefs({ autoMuteSec: 30 });
+    await joinA();
+    voice.toggleMute();
+    voice.toggleMute();
+    voice.toggleMute();
+    expect(setVoiceMute).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(setVoiceMute.mock.calls).toEqual([[{ muted: true, deafened: false }]]);
+    voice.toggleMute(); // open again (auto-mute armed)
+    await vi.advanceTimersByTimeAsync(600);
+    expect(setVoiceMute.mock.calls.at(-1)).toEqual([{ muted: false, deafened: false }]);
+    setVoiceMute.mockClear();
+    await vi.advanceTimersByTimeAsync(30_000); // the auto-mute
+    expect(useVoice.getState().muted).toBe(true);
+    voice.toggleMute(); // «Включить»: back to the stored choice, nothing to send
+    // A moderator mute: still not my choice; deafen on top is, with the mic as I had chosen it.
+    voice.reconcileSelfState({ roomId: 'A', muted: true, deafened: false, serverMuted: true });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(setVoiceMute).not.toHaveBeenCalled();
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(setVoiceMute.mock.calls).toEqual([[{ muted: false, deafened: true }]]);
+    usePrefs.getState().setPrefs({ autoMuteSec: 0 });
+  });
+
+  it('push-to-talk stays per device: the stored choice never touches the mode, a reconnect keeps my state', async () => {
+    usePrefs.getState().setPrefs({ micMode: 'ptt', micModeLocal: true });
+    joinAnswer({ muted: false, deafened: false, updatedAt: ts(1000) });
+    await joinA();
+    expect(usePrefs.getState().micMode).toBe('ptt');
+    expect(FakeRoom.all[0]?.published[0]?.mediaStreamTrack.enabled).toBe(false); // PTT gate closed, not muted
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+    const { micModeFromServer } = await import('./profile');
+    const { MicMode } = await import('@calaba/protocol');
+    expect(micModeFromServer({ micMode: 'ptt', micModeLocal: true }, MicMode.VAD)).toEqual({});
+    expect(micModeFromServer({ micMode: 'voice', micModeLocal: false }, MicMode.PUSH_TO_TALK)).toEqual({ micMode: 'ptt', micModeLocal: true });
+    usePrefs.getState().setPrefs({ micMode: 'voice', micModeLocal: false });
+  });
+
+  it('READY / USER_UPDATE apply the stored choice only outside voice; a late echo of an older write is ignored', async () => {
+    const { applyServerVoiceMute } = await import('./voiceMute');
+    const { create } = await import('@bufbuild/protobuf');
+    const { VoiceMuteSchema } = await import('@calaba/protocol');
+    const vm = (muted: boolean, deafened: boolean, sec: number) => create(VoiceMuteSchema, { muted, deafened, updatedAt: ts(sec) });
+    applyServerVoiceMute(vm(true, false, 100));
+    expect(useVoice.getState().muted).toBe(true);
+    applyServerVoiceMute(vm(false, false, 50)); // older than what this device has seen
+    expect(useVoice.getState().muted).toBe(true);
+    await joinA();
+    applyServerVoiceMute(vm(false, true, 200)); // another device, while this one is in voice
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false });
   });
 });
 

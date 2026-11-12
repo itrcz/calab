@@ -27,7 +27,7 @@ import type { CallView } from '../features/voice/tileLayout';
 
 /**
  * Device-local preferences (localStorage — nothing secret here). Settings that
- * the server syncs across devices (UserSettings: noise suppression, RED, PTT)
+ * the server syncs across devices (UserSettings: noise suppression, RED; PTT only seeds a new device)
  * are mirrored here and pushed with PATCH /api/me (services/profile.ts).
  */
 export type Theme = 'dark' | 'light' | 'system';
@@ -62,7 +62,13 @@ export interface Prefs {
   hideNoVideo: boolean;
   /** Volume of everyone in voice, 0..1 (headphones ▾); multiplies the per-user volume, element.volume only. */
   outputVolume: number;
+  /** Push-to-talk or voice activation: per device (owner, CBF-180), see services/profile.ts. */
   micMode: MicMode;
+  /**
+   * This device has its own mic mode: the server's UserSettings.mic_mode (the last mode chosen on
+   * any device) only seeds a device that has none yet — once, on its first READY.
+   */
+  micModeLocal: boolean;
   thresholdDb: number;
   pttBinding: PttBinding | null;
   /** PTT «Задержка отпускания» (lib/pttRelease.ts): the mic stays on this long after a hold key-up. */
@@ -171,6 +177,7 @@ const DEFAULTS: Prefs = {
   hideNoVideo: false,
   outputVolume: 1,
   micMode: 'voice',
+  micModeLocal: false,
   thresholdDb: -50,
   pttBinding: null,
   pttReleaseMs: PTT_RELEASE_DEFAULT_MS,
