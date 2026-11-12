@@ -2345,11 +2345,11 @@ are not current phone evidence. Visual suites remain disabled.
 ## MCP endpoint for bots (ADR-0114)
 
 1. Take a bot token (workspace settings → Bots) into `CALAB_BOT_TOKEN`; the bot needs a role with a board or a room. Not run here: there is no real server in this environment, so only `bash -n tools/mcp-smoke.sh` was checked.
-2. `CALAB_BOT_TOKEN=… tools/mcp-smoke.sh https://<host>` — three calls: `initialize` (`serverInfo.name` = `calab`), `tools/list` (nine tools: find, read, create_task, comment_task, set_task_status, send_message, list_tasks, update_task, assign), `tools/call` find (`boards`). The token is not printed.
+2. `CALAB_BOT_TOKEN=… tools/mcp-smoke.sh https://<host>` — three calls: `initialize` (`serverInfo.name` = `calab`), `tools/list` (eleven tools: find, read, create_task, comment_task, set_task_status, send_message, list_tasks, update_task, assign, get_task_attachment, edit_message), `tools/call` find (`boards`). The token is not printed.
 3. `read` a task by key from `find`, then `comment_task` and `set_task_status` with a status name of its board; both appear in the task (as the bot). A wrong status name returns `isError` with the board's statuses.
 4. `send_message` to a room the bot is not in or a private board task: `isError` with `404`/`403`, nothing is created.
 5. No header: `401`. A person's token or session: `403`. `GET /api/mcp`: `405`. A JSON array body: `400`.
-6. Client check: MCP Inspector or another MCP client over Streamable HTTP, URL `https://<host>/api/mcp`, header `Authorization: Bearer <token>` — it lists nine tools. Guide: `/ru/docs/bots/mcp`.
+6. Client check: MCP Inspector or another MCP client over Streamable HTTP, URL `https://<host>/api/mcp`, header `Authorization: Bearer <token>` — it lists eleven tools. Guide: `/ru/docs/bots/mcp`.
 
 ## MCP on behalf of a person and «via MCP» (ADR-0156)
 
@@ -2359,6 +2359,14 @@ are not current phone evidence. Visual suites remain disabled.
 4. `create_task {"board": "DEV", "title": …}`, `assign {"task": key, "users": ["me"]}`, `update_task {"task": key, "priority": "high", "add_labels": [...]}`, `comment_task`. In the app: the task's creator, assignee and comment author are you, «(через бота X · MCP)» after the name in the comment and in «История»; `read` shows `git` (MR, branches) and `releases`.
 5. Without the header the same calls are the bot's, marked «(через MCP)»; a comment written in the app has no mark.
 6. Turn «Действовать от моего имени» off: the next call with the header is `403 ON_BEHALF_DISABLED`; a member's id without their consent: `403 ON_BEHALF_NO_CONSENT`.
+
+## MCP short address, Settings → MCP, task files (CBF-183, CBF-182)
+
+1. Automated: `go test ./internal/mcp/ ./internal/mcpauth/` and `make test-integration` → `TestMCPShortAddressAndFiles`.
+2. `curl -si -XPOST https://<host>/mcp` → `401`, `WWW-Authenticate` names `/.well-known/oauth-protected-resource/mcp`; that URL answers `resource` = `https://<host>/mcp`. `https://<host>/mcp/connect` stays the SPA.
+3. `https://<host>/mcp` in a browser → «Настройки → MCP» (after sign-in). Desktop and phone: the address and the commands copy; «Подключения» lists «Claude Code» after step 4, the bin disconnects it.
+4. `claude mcp add --transport http calab https://<host>/mcp` → `/mcp` → Authenticate → «Разрешить»; 11 tools.
+5. On a task with a `.log` and a screenshot (and a comment with a file): `read {"task": key, "comments": 5}` lists file ids; `get_task_attachment` returns the log as text, the screenshot as an image, a `.zip` as an error with its size; a file of another task — «not attached». `edit_message` on your own comment edits it, on someone else's — `403`.
 
 ## SIP inbound over a registration (ADR-0121)
 

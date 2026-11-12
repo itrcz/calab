@@ -11,7 +11,7 @@ The sources live in the repository; edit them, not this file:
 - `apps/landing/src/content/docs/{ru,en}/reference/*.md` — routes, gateway events, error codes, limits, tokens, version;
 - `apps/landing/src/content/docs/nav.ts` — the navigation.
 
-For LLM clients there is an MCP server, `POST /api/mcp`, on the same bot token (ADR-0114): the chapter `.../bots/mcp.md`
+For LLM clients there is an MCP server, `POST /api/mcp` (short address `https://app.calab.io/mcp`, CBF-183), on the same bot token (ADR-0114; a person connects without a bot through OAuth — ADR-0158): the chapter `.../bots/mcp.md`
 (`/en/docs/bots/mcp`); the Node.js SDK is `.../bots/sdk.md`; to check MCP use `tools/mcp-smoke.sh` and `TESTING.md`.
 
 The source of truth is still the code: `apps/server/internal/app/botroutes.go` (the bot decision for every route) and
