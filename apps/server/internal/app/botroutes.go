@@ -338,6 +338,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/me/tasks",
 		"GET /api/me/task-notices",
 		"GET /api/workspaces/{id}/tasks/search",
+		"GET /api/workspaces/{id}/recent-tasks",
 	}},
 	{access: botAllow, why: "board forms: MANAGE_BOARD to manage, the form's access list to submit (a closed form needs the bot in allowedUserIds)", routes: []string{
 		"GET /api/boards/{id}/forms",

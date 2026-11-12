@@ -8402,6 +8402,9 @@ func (x *TaskNoticeEntry) GetCreatedAt() *timestamppb.Timestamp {
 // GET /api/me/task-notices?before=<id>&limit= — newest first. A page scans limit rows of the
 // history and lists those of tasks the caller sees now, so it may hold fewer entries (even none)
 // while has_more: the next page is before=next_before, not the last entry's id.
+// GET /api/workspaces/{id}/recent-tasks (CBF-179, «Недавние» in «Мои задачи»): the same entries,
+// one per task - its latest notice - newest first, up to 50 tasks of the workspace the caller
+// sees now; has_more is always false.
 type ListTaskNoticesResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Entries []*TaskNoticeEntry     `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`

@@ -77,6 +77,63 @@ func (q *Queries) InsertTaskNotices(ctx context.Context, arg InsertTaskNoticesPa
 	return err
 }
 
+const listRecentTaskNoticeLog = `-- name: ListRecentTaskNoticeLog :many
+SELECT r.id, r.user_id, r.task_id, r.kind, r.actor_id, r.message_id, r.text, r.rule_id, r.re_requested, r.due_on, r.days_left, r.created_at
+FROM (
+    SELECT DISTINCT ON (l.task_id) l.id, l.user_id, l.task_id, l.kind, l.actor_id, l.message_id, l.text, l.rule_id, l.re_requested, l.due_on, l.days_left, l.created_at
+    FROM task_notice_log l
+    WHERE l.user_id = $1
+    ORDER BY l.task_id, l.id DESC
+) r
+JOIN tasks t ON t.id = r.task_id
+JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = $2
+ORDER BY r.id DESC
+LIMIT $3
+`
+
+type ListRecentTaskNoticeLogParams struct {
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+	Lim         int32
+}
+
+// «Недавние» (CBF-179): a user's latest notice of each task of one workspace, newest first.
+// The per-task pick runs over the user's rows only (bounded by the 90-day retention); the
+// workspace join runs over the distinct tasks.
+func (q *Queries) ListRecentTaskNoticeLog(ctx context.Context, arg ListRecentTaskNoticeLogParams) ([]TaskNoticeLog, error) {
+	rows, err := q.db.Query(ctx, listRecentTaskNoticeLog, arg.UserID, arg.WorkspaceID, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskNoticeLog{}
+	for rows.Next() {
+		var i TaskNoticeLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.TaskID,
+			&i.Kind,
+			&i.ActorID,
+			&i.MessageID,
+			&i.Text,
+			&i.RuleID,
+			&i.ReRequested,
+			&i.DueOn,
+			&i.DaysLeft,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTaskNoticeLog = `-- name: ListTaskNoticeLog :many
 SELECT id, user_id, task_id, kind, actor_id, message_id, text, rule_id, re_requested, due_on, days_left, created_at FROM task_notice_log
 WHERE user_id = $1

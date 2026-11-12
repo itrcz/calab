@@ -93,12 +93,76 @@ func (s *Service) listNotices(w http.ResponseWriter, r *http.Request) error {
 			ids = append(ids, l.TaskID)
 		}
 	}
-	ts, err := queryTasks(ctx, s.db.Pool, "WHERE t.id = ANY($1)", ids)
+	visible, err := s.visibleTasks(ctx, me, ids)
 	if err != nil {
 		return err
 	}
-	// The task as the caller may see it now: the workspace is open to them (suspension,
-	// identity policy) and the task is visible (sees: board access, task scope, live).
+	for _, l := range rows {
+		t, ok := visible[l.TaskID]
+		if !ok {
+			continue
+		}
+		out.Entries = append(out.Entries, entryOf(l, t))
+	}
+	httpx.Write(w, http.StatusOK, out)
+	return nil
+}
+
+// RecentTasksLimit is how many tasks «Недавние» lists (CBF-179).
+const RecentTasksLimit = 50
+
+// listRecentTasks: GET /api/workspaces/{id}/recent-tasks — «Недавние» in «Мои задачи» (CBF-179): the
+// latest notice of each task of the workspace the caller got one about, newest first, up to 50
+// tasks the caller sees now (the same visibility as GET /api/me/task-notices).
+func (s *Service) listRecentTasks(w http.ResponseWriter, r *http.Request) error {
+	wsID, err := httpx.PathUUID(r, "id", "workspace")
+	if err != nil {
+		return err
+	}
+	if _, err := member(r, wsID); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	me := uid(r)
+	// Twice the limit: room for tasks the caller no longer sees without a second round trip.
+	rows, err := s.db.Q.ListRecentTaskNoticeLog(ctx, sqlc.ListRecentTaskNoticeLogParams{UserID: me, WorkspaceID: wsID, Lim: 2 * RecentTasksLimit})
+	if err != nil {
+		return err
+	}
+	out := &v1.ListTaskNoticesResponse{Entries: []*v1.TaskNoticeEntry{}}
+	ids := make([]uuid.UUID, len(rows))
+	for i, l := range rows {
+		ids[i] = l.TaskID
+	}
+	visible := map[uuid.UUID]taskRow{}
+	if len(ids) > 0 {
+		visible, err = s.visibleTasks(ctx, me, ids)
+		if err != nil {
+			return err
+		}
+	}
+	for _, l := range rows {
+		t, ok := visible[l.TaskID]
+		if !ok || t.WorkspaceID != wsID {
+			continue
+		}
+		out.Entries = append(out.Entries, entryOf(l, t))
+		if len(out.Entries) == RecentTasksLimit {
+			break
+		}
+	}
+	httpx.Write(w, http.StatusOK, out)
+	return nil
+}
+
+// visibleTasks: of the tasks ids, those the caller may see now, by id — the workspace is open to
+// them (suspension, identity policy) and the task is visible (sees: board access, task scope,
+// live).
+func (s *Service) visibleTasks(ctx context.Context, me uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]taskRow, error) {
+	ts, err := queryTasks(ctx, s.db.Pool, "WHERE t.id = ANY($1)", ids)
+	if err != nil {
+		return nil, err
+	}
 	visible := map[uuid.UUID]taskRow{}
 	wsOK := map[uuid.UUID]bool{}
 	for _, t := range ts {
@@ -106,7 +170,7 @@ func (s *Service) listNotices(w http.ResponseWriter, r *http.Request) error {
 		if !known {
 			err := perm.CheckAccess(ctx, t.WorkspaceID, me)
 			if err != nil && httpx.AsError(err).Status >= 500 {
-				return err
+				return nil, err
 			}
 			ok = err == nil
 			wsOK[t.WorkspaceID] = ok
@@ -116,25 +180,22 @@ func (s *Service) listNotices(w http.ResponseWriter, r *http.Request) error {
 		}
 		users, err := sees(ctx, s.db.Q, t, []uuid.UUID{me})
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if len(users) == 1 {
 			visible[t.ID] = t
 		}
 	}
-	for _, l := range rows {
-		t, ok := visible[l.TaskID]
-		if !ok {
-			continue
-		}
-		out.Entries = append(out.Entries, &v1.TaskNoticeEntry{
-			Id: l.ID.String(), WorkspaceId: t.WorkspaceID.String(), BoardId: t.BoardID.String(), TaskId: t.ID.String(),
-			TaskKey: TaskKey(t.BoardKey, t.Number), TaskTitle: t.Title, CreatedAt: timestamppb.New(l.CreatedAt),
-			Notice: noticeOf(l),
-		})
+	return visible, nil
+}
+
+// entryOf is the wire entry of a history row of the task t as it is now.
+func entryOf(l sqlc.TaskNoticeLog, t taskRow) *v1.TaskNoticeEntry {
+	return &v1.TaskNoticeEntry{
+		Id: l.ID.String(), WorkspaceId: t.WorkspaceID.String(), BoardId: t.BoardID.String(), TaskId: t.ID.String(),
+		TaskKey: TaskKey(t.BoardKey, t.Number), TaskTitle: t.Title, CreatedAt: timestamppb.New(l.CreatedAt),
+		Notice: noticeOf(l),
 	}
-	httpx.Write(w, http.StatusOK, out)
-	return nil
 }
 
 // noticeOf is the wire notice of a history row.

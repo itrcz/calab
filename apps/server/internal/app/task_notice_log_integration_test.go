@@ -137,3 +137,61 @@ func TestTaskNoticeLogHiddenPage(t *testing.T) {
 		t.Fatalf("after the prune: hidden %d kept %d %v", left, keptRows, err)
 	}
 }
+
+// TestRecentTasks (CBF-179): «Недавние» lists one entry per task — its latest notice — newest
+// first, of the workspace asked only; a read task stays; a task the caller no longer sees (a
+// private board's task he was taken off) drops out; a non-member gets 404.
+func TestRecentTasks(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	ws2 := createWorkspace(t, o, v1.WorkspaceVisibility_WORKSPACE_VISIBILITY_PRIVATE)
+	bob.must(200, "POST", "/api/invites/"+invite(t, o, ws2.GetId())+"/join", nil, nil)
+	recent := func(ws string) []*v1.TaskNoticeEntry {
+		t.Helper()
+		var out v1.ListTaskNoticesResponse
+		bob.must(200, "GET", "/api/workspaces/"+ws+"/recent-tasks", nil, &out)
+		if out.GetHasMore() {
+			t.Fatal("recent tasks never page")
+		}
+		return out.GetEntries()
+	}
+	if n := len(recent(wid)); n != 0 {
+		t.Fatalf("a fresh user has %d recent tasks", n)
+	}
+	gb := dialGW(t)
+	gb.identify(bob.token)
+	b := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Недавние", Key: "REC"}, 201)
+	a := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Первая", Assignees: []*v1.TaskAssigneeInput{{UserId: bob.id}}}, 201)
+	gb.wait("a assigned", noticeOf(a.GetId(), v1.TaskNoticeKind_TASK_NOTICE_KIND_ASSIGNED))
+	c := createTask(t, o, b.GetId(), &v1.CreateTaskRequest{Title: "Вторая", Assignees: []*v1.TaskAssigneeInput{{UserId: bob.id}}}, 201)
+	gb.wait("c assigned", noticeOf(c.GetId(), v1.TaskNoticeKind_TASK_NOTICE_KIND_ASSIGNED))
+	b2 := createBoard(t, o, ws2.GetId(), &v1.CreateBoardRequest{Name: "Другое", Key: "OTH"}, 201)
+	other := createTask(t, o, b2.GetId(), &v1.CreateTaskRequest{Title: "Чужая", Assignees: []*v1.TaskAssigneeInput{{UserId: bob.id}}}, 201)
+	gb.wait("other assigned", noticeOf(other.GetId(), v1.TaskNoticeKind_TASK_NOTICE_KIND_ASSIGNED))
+	// A new notice of the first task moves it to the top: one entry, the mention.
+	send(t, o, a.GetRoomId(), "глянь @"+bob.id, "")
+	gb.wait("a mentioned", noticeOf(a.GetId(), v1.TaskNoticeKind_TASK_NOTICE_KIND_MENTIONED))
+	bob.must(200, "PUT", "/api/tasks/"+a.GetId()+"/read", nil, nil) // read: still listed
+
+	es := recent(wid)
+	if len(es) != 2 || es[0].GetTaskId() != a.GetId() || es[1].GetTaskId() != c.GetId() {
+		t.Fatalf("recent: %v", es)
+	}
+	if es[0].GetNotice().GetKind() != v1.TaskNoticeKind_TASK_NOTICE_KIND_MENTIONED || es[0].GetTaskKey() != "REC-1" ||
+		es[0].GetTaskTitle() != "Первая" || es[0].GetBoardId() != b.GetId() || es[0].GetWorkspaceId() != wid || es[0].GetCreatedAt() == nil {
+		t.Fatalf("latest entry: %v", es[0])
+	}
+	if es2 := recent(ws2.GetId()); len(es2) != 1 || es2[0].GetTaskId() != other.GetId() {
+		t.Fatalf("second workspace: %v", es2)
+	}
+	// The board turns private and bob is taken off the second task: it leaves his list (the
+	// first one he is still assigned to stays).
+	o.must(200, "PATCH", "/api/boards/"+b.GetId(), &v1.UpdateBoardRequest{IsPrivate: new(true)}, nil)
+	o.must(200, "PUT", "/api/tasks/"+c.GetId()+"/assignees", &v1.SetAssigneesRequest{}, nil)
+	if es := recent(wid); len(es) != 1 || es[0].GetTaskId() != a.GetId() {
+		t.Fatalf("a task bob no longer sees is listed: %v", es)
+	}
+	// Not a member of the workspace: 404.
+	o.must(204, "DELETE", "/api/workspaces/"+wid+"/members/"+bob.id, nil, nil)
+	bob.must(404, "GET", "/api/workspaces/"+wid+"/recent-tasks", nil, nil)
+}

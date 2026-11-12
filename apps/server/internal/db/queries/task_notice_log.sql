@@ -23,6 +23,23 @@ WHERE user_id = sqlc.arg('user_id')
 ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 
+-- name: ListRecentTaskNoticeLog :many
+-- «Недавние» (CBF-179): a user's latest notice of each task of one workspace, newest first.
+-- The per-task pick runs over the user's rows only (bounded by the 90-day retention); the
+-- workspace join runs over the distinct tasks.
+SELECT r.id, r.user_id, r.task_id, r.kind, r.actor_id, r.message_id, r.text, r.rule_id, r.re_requested, r.due_on, r.days_left, r.created_at
+FROM (
+    SELECT DISTINCT ON (l.task_id) l.*
+    FROM task_notice_log l
+    WHERE l.user_id = sqlc.arg('user_id')
+    ORDER BY l.task_id, l.id DESC
+) r
+JOIN tasks t ON t.id = r.task_id
+JOIN boards b ON b.id = t.board_id
+WHERE b.workspace_id = sqlc.arg('workspace_id')
+ORDER BY r.id DESC
+LIMIT sqlc.arg('lim');
+
 -- name: DismissTaskNotices :exec
 -- The ✕ on inbox cards (CBF-155, ADR-0163): the caller's own history rows only.
 DELETE FROM task_notice_log
