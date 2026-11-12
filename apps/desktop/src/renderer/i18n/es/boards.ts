@@ -439,6 +439,8 @@ export const esBoards: DictShape<typeof ruBoards> = {
   'boards.unreadTab': 'Sin leer',
   'boards.unreadTabN': 'Sin leer · {n}',
   'boards.allRead': 'Todo leído',
+  'boards.recentTab': 'Recientes',
+  'boards.recentEmpty': 'Aún no hay avisos de tareas',
   'boards.all.placeholder': 'Título, clave o descripción',
   'boards.all.hint': 'Busca tareas en todos los tableros a los que tienes acceso',
   'boards.all.empty': 'No se encontró nada',

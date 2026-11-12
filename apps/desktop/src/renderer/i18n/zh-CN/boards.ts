@@ -439,6 +439,8 @@ export const zhBoards: DictShape<typeof ruBoards> = {
   'boards.unreadTab': '未读',
   'boards.unreadTabN': '未读 · {n}',
   'boards.allRead': '全部已读',
+  'boards.recentTab': '最近',
+  'boards.recentEmpty': '暂无任务通知',
   'boards.all.placeholder': '标题、编号或描述',
   'boards.all.hint': '在你可访问的所有看板中搜索任务',
   'boards.all.empty': '未找到结果',

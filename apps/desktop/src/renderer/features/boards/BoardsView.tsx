@@ -1,5 +1,5 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { ArrowDownUp, Check, CheckCheck, Inbox, ListFilter, Plus, SquareKanban } from 'lucide-react';
+import { ArrowDownUp, Check, CheckCheck, History, Inbox, ListFilter, Plus, SquareKanban } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { Task } from '@calaba/protocol';
@@ -7,10 +7,10 @@ import { Button, IconButton, Spinner, cx } from '../../components/ui';
 import { Choice } from '../../components/Choice';
 import { t } from '../../i18n';
 import { mayCreateBoards } from '../../lib/permissions';
-import { ensureBoardTasks, ensureUnreadTasks, loadBoard, loadMyTasks, myTasksKey, unreadReason, useTaskDetails } from '../../services/boards';
+import { ensureBoardTasks, ensureUnreadTasks, loadBoard, loadMyTasks, loadRecent, myTasksKey, unreadReason, useTaskDetails } from '../../services/boards';
 import type { TaskScope } from '../../services/boardsApi';
 import { boardLayout } from '../../lib/boards/categories';
-import { unreadCount, unreadOrdered, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
+import { recentIds, unreadCount, unreadOrdered, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
 import { taskShown } from '../../lib/boards/completion';
 import { MY_DUES, MY_SORTS, EMPTY_MY_FILTER, matchMine, myFilterCount, sortMine, type MyDue, type MyFilter } from '../../lib/boards/myTasks';
 import { CountBadge } from './FilterBar';
@@ -136,12 +136,15 @@ const SCOPES: ReadonlyArray<{ value: TaskScope; label: 'boards.scope.assigned' |
   { value: 'subscribed', label: 'boards.scope.subscribed' },
 ];
 
-/** «Мои задачи» tabs: «Непрочитанное» (the badge's set), a GET /me/tasks scope or «Все задачи» (search over every board). */
-type MyTab = 'unread' | 'all' | TaskScope;
+/**
+ * «Мои задачи» tabs: «Непрочитанное» (the badge's set), «Недавние» (the last tasks I got a notice
+ * about, CBF-179), a GET /me/tasks scope or «Все задачи» (search over every board).
+ */
+type MyTab = 'unread' | 'recent' | 'all' | TaskScope;
 
 /**
  * «Мои задачи»: «Непрочитанное · N» first — every task that lights the badge, newest notice
- * first, each with why — then the GET /me/tasks scopes (grouped by board). «Непрочитанное» opens
+ * first, each with why — «Недавние» next (read ones too), then the GET /me/tasks scopes (grouped by board). «Непрочитанное» opens
  * by default while anything is unread, otherwise the remembered scope. «Все задачи» last: a search
  * over every board the caller sees (CBF-35).
  */
@@ -158,15 +161,22 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
     useTaskSearch.getState().setWantPage(false);
   }, [wantPage]);
   const unread = useBoards((s) => unreadCount(s, workspaceId));
+  // The server's latest notice per task: «Недавние» and the reasons of «Непрочитанное» after a reload.
+  useEffect(() => {
+    void loadRecent(workspaceId);
+  }, [workspaceId]);
   const boards = useBoards(useShallow((s) => workspaceBoards(s.boards, workspaceId).filter((b) => hasBit(b.permissions, CREATE_TASKS)).map((b) => `${b.id}\u0000${b.emoji} ${b.name}`)));
   const mobile = useMobile();
   const onTab = useCallback((v: MyTab) => {
     setTab(v);
-    if (v !== 'unread' && v !== 'all') useBoardsUi.getState().setMyScope(v);
+    if (v !== 'unread' && v !== 'recent' && v !== 'all') useBoardsUi.getState().setMyScope(v);
     if (v !== 'all') useTaskSearch.getState().setActiveSaved(workspaceId, '');
   }, [workspaceId]);
   const tabs = useMemo(
-    (): Array<{ value: MyTab; label: string }> => [{ value: 'unread', label: unread ? t('boards.unreadTabN', { n: unread }) : t('boards.unreadTab') }, ...SCOPES.map((s) => ({ value: s.value, label: t(s.label) })), { value: 'all', label: t('ts.tabSearch') }],
+    (): Array<{ value: MyTab; label: string }> => [
+      { value: 'unread', label: unread ? t('boards.unreadTabN', { n: unread }) : t('boards.unreadTab') },
+      { value: 'recent', label: t('boards.recentTab') },
+      ...SCOPES.map((s) => ({ value: s.value, label: t(s.label) })), { value: 'all', label: t('ts.tabSearch') }],
     [unread],
   );
   return (
@@ -203,7 +213,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
       </Bar>
       <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto px-3 [scrollbar-width:none] mobile:overflow-visible" data-testid="my-tasks-tabs">
         <Choice phone="picker" testId="my-tasks-scope" value={tab} options={tabs} onChange={onTab} label={t('boards.myTasks')} />
-        {tab === 'unread' || tab === 'all' ? null : (
+        {tab === 'unread' || tab === 'recent' || tab === 'all' ? null : (
           <>
             <span className="flex-1" />
             <MyFilterMenu workspaceId={workspaceId} />
@@ -212,7 +222,7 @@ function MyTasks({ workspaceId }: { workspaceId: string }): ReactNode {
           </>
         )}
       </div>
-      {tab === 'unread' ? <UnreadList workspaceId={workspaceId} /> : tab === 'all' ? <TaskSearchPage workspaceId={workspaceId} /> : <ScopeList workspaceId={workspaceId} scope={scope} />}
+      {tab === 'unread' ? <UnreadList workspaceId={workspaceId} /> : tab === 'recent' ? <RecentList workspaceId={workspaceId} /> : tab === 'all' ? <TaskSearchPage workspaceId={workspaceId} /> : <ScopeList workspaceId={workspaceId} scope={scope} />}
     </>
   );
 }
@@ -457,7 +467,7 @@ function UnreadList({ workspaceId }: { workspaceId: string }): ReactNode {
       ) : (
         <>
           {ids.map((id) => (
-            <UnreadRow key={id} id={id} onClick={openFromList} />
+            <NoticeRow key={id} id={id} onClick={openFromList} />
           ))}
           {missing ? (
             <div className="grid h-12 place-items-center">
@@ -470,13 +480,41 @@ function UnreadList({ workspaceId }: { workspaceId: string }): ReactNode {
   );
 }
 
-/** One unread task: key, title, why (the last notice) and the board. Primitive selectors only. */
-const UnreadRow = memo(function UnreadRow({ id, onClick }: { id: string; onClick: (id: string, e: MouseEvent) => void }): ReactNode {
-  const key = useBoards((s) => s.tasks[id]?.key ?? '');
-  const title = useBoards((s) => s.tasks[id]?.title ?? '');
-  const boardId = useBoards((s) => s.tasks[id]?.boardId ?? '');
+/**
+ * «Недавние» (CBF-179): the last tasks I got a notice about, latest notice first, one row per task;
+ * read ones stay (without the dot). The server's list (loadRecent), kept current by live notices.
+ */
+function RecentList({ workspaceId }: { workspaceId: string }): ReactNode {
+  const ids = useBoards((s) => recentIds(s, workspaceId));
+  return (
+    <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto" data-testid="recent-view">
+      {ids === null ? (
+        <div className="grid h-24 place-items-center">
+          <Spinner />
+        </div>
+      ) : ids.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 p-10 text-center text-body text-muted" data-testid="recent-empty">
+          <History className="size-10" strokeWidth={1.25} aria-hidden />
+          <p>{t('boards.recentEmpty')}</p>
+        </div>
+      ) : (
+        ids.map((id) => <NoticeRow key={id} id={id} onClick={openFromList} />)
+      )}
+    </div>
+  );
+}
+
+/**
+ * One task of «Непрочитанное» / «Недавние»: the unread dot, key, title, why (the last notice) and
+ * the board. The task from the store, else as «Недавние» named it. Primitive selectors only.
+ */
+const NoticeRow = memo(function NoticeRow({ id, onClick }: { id: string; onClick: (id: string, e: MouseEvent) => void }): ReactNode {
+  const key = useBoards((s) => s.tasks[id]?.key ?? s.recentRefs[id]?.key ?? '');
+  const title = useBoards((s) => s.tasks[id]?.title ?? s.recentRefs[id]?.title ?? '');
+  const boardId = useBoards((s) => s.tasks[id]?.boardId ?? s.recentRefs[id]?.boardId ?? '');
   const board = useBoards((s) => (boardId ? `${s.boards[boardId]?.emoji || '📋'} ${s.boards[boardId]?.name ?? ''}` : ''));
   const reason = useBoards((s) => unreadReason(s, id));
+  const unread = useBoards((s) => !!s.unread[id]);
   const active = useBoardsUi((s) => s.taskId === id);
   if (!key) return null;
   return (
@@ -486,8 +524,9 @@ const UnreadRow = memo(function UnreadRow({ id, onClick }: { id: string; onClick
       className={cx('flex w-full min-w-0 items-start gap-3 border-b border-line px-4 py-2 text-left hover:bg-hover', active && 'bg-active')}
       data-testid="unread-row"
       data-task={id}
+      data-unread={unread || undefined}
     >
-      <span className="mt-[7px] size-2 shrink-0 rounded-full bg-accent" aria-hidden />
+      <span className={cx('mt-[7px] size-2 shrink-0 rounded-full', unread && 'bg-accent')} aria-hidden />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-baseline gap-2 text-control">
           <span className="shrink-0 tabular-nums text-muted">{key}</span>

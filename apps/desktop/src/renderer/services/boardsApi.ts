@@ -31,6 +31,7 @@ import {
   CreateSmartTaskResponseSchema,
   ListBoardsResponseSchema,
   ListTasksResponseSchema,
+  ListTaskNoticesResponseSchema,
   MyTasksResponseSchema,
   SearchTasksResponseSchema,
   CreateSavedTaskSearchRequestSchema,
@@ -223,6 +224,9 @@ export const boardsApi = {
     /** Live tasks of every board the caller sees, by key and words (the relation picker); `state` — completion (server default all). */
     search: (workspaceId: string, q: string, p: { state?: Completion; limit?: number } = {}, signal?: AbortSignal) =>
       call('GET', `/api/workspaces/${workspaceId}/tasks/search${qs({ q, state: p.state, limit: p.limit })}`, SearchTasksResponseSchema, undefined, signal),
+    /** «Недавние» (CBF-179): the latest notice of each task of the workspace, newest first, ≤ 50 tasks. */
+    recent: (workspaceId: string, signal?: AbortSignal) =>
+      call('GET', `/api/workspaces/${workspaceId}/recent-tasks`, ListTaskNoticesResponseSchema, undefined, signal),
     /**
      * The task search (ADR-0139): text, completion, archive, one board, a filter, a sort and the
      * offset cursor; answers a page, `keyTask` (a typed key, whatever the filters) and snippets.

@@ -34,12 +34,45 @@ export type LoadState = 'loading' | 'ready' | 'error';
 /** The last notice of a task this session (TaskUpdate.notice), for «Непрочитанное». */
 export type LastNotice = Pick<TaskNotice, 'kind' | 'actorId' | 'text' | 'reRequested' | 'dueOn' | 'daysLeft'> & { at: number };
 
+/** How many tasks «Недавние» keeps (the server's limit, CBF-179). */
+export const RECENT_LIMIT = 50;
+
+/** A «Недавние» task as the server named it, for a row whose task the store lacks. */
+export interface RecentRef {
+  workspaceId: string;
+  key: string;
+  title: string;
+  boardId: string;
+}
+
+/** One «Недавние» entry: the task, how it is named and its latest notice (`at` = the notice time). */
+export interface RecentEntry {
+  taskId: string;
+  ref: RecentRef;
+  notice: LastNotice;
+}
+
 interface BoardsState extends BoardsData {
   /** Board tasks loaded (the columns exist once 'ready'). */
   load: Readonly<Record<string, LoadState>>;
   /** Task id → its last notice received live (cards never select it). */
   notices: Readonly<Record<string, LastNotice>>;
   setNotice: (taskId: string, n: LastNotice) => void;
+  /** «Недавние» (CBF-179): workspace → task ids, latest notice first; absent until loaded. */
+  recent: Readonly<Record<string, readonly string[]>>;
+  /** Task id → its key, title and board as GET recent-tasks named it (rows prefer the task). */
+  recentRefs: Readonly<Record<string, RecentRef>>;
+  /**
+   * The server's list replaces the workspace's; its notices fill `notices` where none is newer.
+   * `since` — when the request left: a task bumped live after it stays on top.
+   */
+  setRecent: (workspaceId: string, entries: readonly RecentEntry[], since?: number) => void;
+  /** A live notice: the task moves to the top (one row per task) of a loaded list. */
+  bumpRecent: (workspaceId: string, taskId: string, ref: RecentRef) => void;
+  /** The task's name changed: a known ref follows it. */
+  renameRecent: (taskId: string, ref: RecentRef) => void;
+  /** The task is gone for me: out of every list. */
+  dropRecent: (taskId: string) => void;
   reset: () => void;
   setLoad: (boardId: string, s: LoadState) => void;
   upsertBoard: (b: Board, event?: boolean) => void;
@@ -65,7 +98,29 @@ export const useBoards = create<BoardsState>()((set) => ({
   load: {},
   notices: {},
   setNotice: (taskId, n) => set((d) => ({ notices: { ...d.notices, [taskId]: n } })),
-  reset: () => set({ ...EMPTY_DATA, load: {}, notices: {} }),
+  recent: {},
+  recentRefs: {},
+  setRecent: (ws, entries, since) => set((d) => setRecent(d, ws, entries, since)),
+  bumpRecent: (ws, taskId, ref) => set((d) => bumpRecent(d, ws, taskId, ref)),
+  renameRecent: (taskId, ref) =>
+    set((d) => {
+      const was = d.recentRefs[taskId];
+      if (!was || (was.key === ref.key && was.title === ref.title && was.boardId === ref.boardId)) return {};
+      return { recentRefs: { ...d.recentRefs, [taskId]: ref } };
+    }),
+  dropRecent: (taskId) =>
+    set((d) => {
+      let changed = false;
+      const recent: Record<string, readonly string[]> = {};
+      for (const [ws, ids] of Object.entries(d.recent)) {
+        if (ids.includes(taskId)) {
+          changed = true;
+          recent[ws] = ids.filter((id) => id !== taskId);
+        } else recent[ws] = ids;
+      }
+      return changed ? { recent } : {};
+    }),
+  reset: () => set({ ...EMPTY_DATA, load: {}, notices: {}, recent: {}, recentRefs: {} }),
   setLoad: (boardId, s) => set((d) => (d.load[boardId] === s ? {} : { load: { ...d.load, [boardId]: s } })),
   upsertBoard: (b, event) => set((d) => upsertBoard(d, b, event)),
   setWorkspaceBoards: (wsId, list) => set((d) => setWorkspaceBoards(d, wsId, list)),
@@ -188,4 +243,37 @@ export function unreadOrdered(s: Pick<BoardsData, 'unread'> & { notices: Readonl
   const ids = unreadIds(s, workspaceId);
   const rank = new Map(ids.map((id, i) => [id, i]));
   return ids.sort((a, b) => (s.notices[b]?.at ?? 0) - (s.notices[a]?.at ?? 0) || (rank.get(a) ?? 0) - (rank.get(b) ?? 0));
+}
+
+type RecentData = Pick<BoardsState, 'recent' | 'recentRefs' | 'notices'>;
+
+/** The server's «Недавние» of a workspace; a task whose live notice came after `since` (the request) stays on top. */
+export function setRecent(d: RecentData, workspaceId: string, entries: readonly RecentEntry[], since = Infinity): Partial<RecentData> {
+  const recentRefs = { ...d.recentRefs };
+  const notices = { ...d.notices };
+  const ids: string[] = [];
+  for (const e of entries) {
+    if (ids.includes(e.taskId)) continue;
+    ids.push(e.taskId);
+    recentRefs[e.taskId] = e.ref;
+    if ((notices[e.taskId]?.at ?? 0) < e.notice.at) notices[e.taskId] = e.notice;
+  }
+  // A notice that arrived while the request was in flight keeps its task on top.
+  const live = (d.recent[workspaceId] ?? []).filter((id) => !ids.includes(id) && (d.notices[id]?.at ?? 0) >= since);
+  return { recent: { ...d.recent, [workspaceId]: [...live, ...ids].slice(0, RECENT_LIMIT) }, recentRefs, notices };
+}
+
+/** A live notice of a task: on top of a loaded list, once. A list not loaded yet stays so (the load brings it). */
+export function bumpRecent(d: RecentData, workspaceId: string, taskId: string, ref: RecentRef): Partial<RecentData> {
+  const ids = d.recent[workspaceId];
+  if (!ids) return {};
+  return {
+    recent: { ...d.recent, [workspaceId]: ids[0] === taskId ? ids : [taskId, ...ids.filter((id) => id !== taskId)].slice(0, RECENT_LIMIT) },
+    recentRefs: { ...d.recentRefs, [taskId]: ref },
+  };
+}
+
+/** «Недавние» of a workspace (stable while it does not change); null until loaded. */
+export function recentIds(s: Pick<RecentData, 'recent'>, workspaceId: string): readonly string[] | null {
+  return s.recent[workspaceId] ?? null;
 }

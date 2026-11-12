@@ -439,6 +439,8 @@ export const enBoards: DictShape<typeof ruBoards> = {
   'boards.unreadTab': 'Unread',
   'boards.unreadTabN': 'Unread · {n}',
   'boards.allRead': 'All caught up',
+  'boards.recentTab': 'Recent',
+  'boards.recentEmpty': 'No task notifications yet',
   'boards.all.placeholder': 'Title, key or description',
   'boards.all.hint': 'Search tasks on every board you can see',
   'boards.all.empty': 'Nothing found',

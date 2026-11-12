@@ -4,7 +4,7 @@ import { toSource } from '../lib/notifyClick';
 import { holdBoardsAddress } from './boardsAddress';
 import { useInbox } from '../stores/inbox';
 import { create as createMsg, type MessageInitShape } from '@bufbuild/protobuf';
-import { timestampNow } from '@bufbuild/protobuf/wkt';
+import { timestampMs, timestampNow } from '@bufbuild/protobuf/wkt';
 import {
   ApproverState,
   BoardStatusType,
@@ -31,7 +31,7 @@ import {
   type Room,
   type Task,
   type TaskApprovalDecision,
-  type TaskPriority,
+  TaskPriority,
   type TaskRelationKind,
   type UpdateTaskRequestSchema,
   type TaskResponse,
@@ -60,7 +60,7 @@ import { reportPlanError } from './plan';
 import { log } from '../lib/log';
 import { platform } from '../platform';
 import { useAutomations } from '../stores/automations';
-import { checklistsOf, unreadIds, useBoards, workspaceBoards, workspaceCategories, type LastNotice } from '../stores/boards';
+import { checklistsOf, unreadIds, useBoards, workspaceBoards, workspaceCategories, type LastNotice, type RecentEntry, type RecentRef } from '../stores/boards';
 import { leaveMail } from '../stores/mailUi';
 import { MY_TASKS, prefsOf, useBoardsUi, type BoardPrefs, type ViewKind } from '../stores/boardsUi';
 import { prefs } from '../stores/prefs';
@@ -204,7 +204,10 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       // Purged, or a scoped viewer lost the card (ADR-0059: TASK_DELETE without `purged` = the card is gone for him).
       const scoped = !!s.boards[ev.value.boardId]?.taskScoped;
       s.removeTask(ev.value.taskId);
-      if (ev.value.purged || scoped) useInbox.getState().removeTask(ev.value.taskId);
+      if (ev.value.purged || scoped) {
+        useInbox.getState().removeTask(ev.value.taskId);
+        s.dropRecent(ev.value.taskId);
+      }
       if (useBoardsUi.getState().taskId === ev.value.taskId && (ev.value.purged || scoped)) useBoardsUi.getState().openTask(null);
       return true;
     }
@@ -232,6 +235,7 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
 
 function onTask(task: Task): void {
   const s = useBoards.getState();
+  if (s.recentRefs[task.id]) s.renameRecent(task.id, recentRef(task));
   // Tasks of boards not loaded are kept only when something shows them (panel, my tasks, a
   // subtask list): otherwise the store would grow with every event of every board.
   // An unread task is kept: «Непрочитанное» shows it (the store grows by the unread set only).
@@ -249,7 +253,49 @@ function rememberNotice(u: TaskUpdate): void {
   const task = u.task;
   const n = u.notice;
   if (!task || !n || n.actorId === myUserId()) return;
-  useBoards.getState().setNotice(task.id, { kind: n.kind, actorId: n.actorId, text: n.text, reRequested: n.reRequested, dueOn: n.dueOn, daysLeft: n.daysLeft, at: Date.now() });
+  const s = useBoards.getState();
+  s.setNotice(task.id, lastNotice(n, Date.now()));
+  s.bumpRecent(task.workspaceId, task.id, recentRef(task));
+}
+
+function lastNotice(n: TaskNotice, at: number): LastNotice {
+  return { kind: n.kind, actorId: n.actorId, text: n.text, reRequested: n.reRequested, dueOn: n.dueOn, daysLeft: n.daysLeft, at };
+}
+
+function recentRef(t: Pick<Task, 'workspaceId' | 'key' | 'title' | 'boardId'>): RecentRef {
+  return { workspaceId: t.workspaceId, key: t.key, title: t.title, boardId: t.boardId };
+}
+
+const recentInflight = new Set<string>();
+
+/**
+ * «Недавние» (CBF-179): the latest notice of each task of the workspace from the server — the
+ * tab's rows, and the reason lines of «Непрочитанное» after a reload. Once per open of «Мои
+ * задачи»; live notices keep it current meanwhile (bumpRecent).
+ */
+export async function loadRecent(workspaceId: string): Promise<void> {
+  if (recentInflight.has(workspaceId)) return;
+  recentInflight.add(workspaceId);
+  const since = Date.now();
+  try {
+    const r = await boardsApi.tasks.recent(workspaceId);
+    const entries: RecentEntry[] = [];
+    for (const e of r.entries) {
+      if (!e.notice) continue;
+      entries.push({
+        taskId: e.taskId,
+        ref: { workspaceId: e.workspaceId, key: e.taskKey, title: e.taskTitle, boardId: e.boardId },
+        notice: lastNotice(e.notice, e.createdAt ? timestampMs(e.createdAt) : 0),
+      });
+    }
+    useBoards.getState().setRecent(workspaceId, entries, since);
+  } catch (e) {
+    // An older server (404) has no «Недавние»: the tab shows its empty state.
+    if (e instanceof ApiError && e.status === 404) useBoards.getState().setRecent(workspaceId, []);
+    else log.warn('recent tasks failed', e);
+  } finally {
+    recentInflight.delete(workspaceId);
+  }
 }
 
 /**
@@ -275,14 +321,23 @@ export function inboxNotice(u: TaskUpdate): void {
   );
 }
 
+const NO_TASK: Pick<Task, 'approvers' | 'priority'> = { approvers: [], priority: TaskPriority.NONE };
+
 /**
- * «Непрочитанное»'s reason line: the text of the task's last notice this session; '' when none
- * arrived live (READY carries only the ids — the row falls back to «Есть новое»). A primitive.
+ * «Непрочитанное» / «Недавние»'s reason line: the text of the task's last notice — live or from
+ * GET recent-tasks; '' when none is known (the row falls back to «Есть новое»). A task the store
+ * lacks is named by its «Недавние» ref, as the inbox does. A primitive.
  */
-export function unreadReason(s: { tasks: Readonly<Record<string, Task>>; notices: Readonly<Record<string, LastNotice>> }, taskId: string): string {
-  const task = s.tasks[taskId];
+export function unreadReason(
+  s: { tasks: Readonly<Record<string, Task>>; notices: Readonly<Record<string, LastNotice>>; recentRefs: Readonly<Record<string, RecentRef>> },
+  taskId: string,
+): string {
   const n = s.notices[taskId];
-  return task && n ? noticeText(task, n) : '';
+  if (!n) return '';
+  const task = s.tasks[taskId];
+  const ref = s.recentRefs[taskId];
+  if (task) return noticeText(task, n);
+  return ref ? noticeText({ ...NO_TASK, workspaceId: ref.workspaceId }, n) : '';
 }
 
 const unreadInflight = new Set<string>();

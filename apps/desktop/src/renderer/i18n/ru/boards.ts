@@ -446,6 +446,8 @@ export const ruBoards = {
   'boards.unreadTab': 'Непрочитанное',
   'boards.unreadTabN': 'Непрочитанное · {n}',
   'boards.allRead': 'Всё прочитано',
+  'boards.recentTab': 'Недавние',
+  'boards.recentEmpty': 'Уведомлений о задачах пока не было',
   'boards.all.placeholder': 'Название, ключ или описание',
   'boards.all.hint': 'Поиск задач на всех досках, которые вам доступны',
   'boards.all.empty': 'Ничего не найдено',
