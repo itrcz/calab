@@ -397,6 +397,8 @@ const MemberRow = memo(function MemberRow({
   const line = memberSecondLine(customStatusLine(u), memberActivity(v, onCall));
   let activity: ReactNode = null;
   let activityLabel = '';
+  // State icons live outside the truncating activity span: they never shrink, the texts ellipsize first (#326).
+  let trailing: ReactNode = null;
   if (line.activity === 'stream') {
     activityLabel = t('people.streaming');
     activity = (
@@ -422,6 +424,10 @@ const MemberRow = memo(function MemberRow({
       <>
         <Volume2 className="size-3.5 shrink-0 text-ok" aria-hidden />
         <span className="min-w-0 truncate">{activityLabel}</span>
+      </>
+    );
+    trailing = (
+      <>
         {v.camera ? <Video className="size-3.5 shrink-0" aria-label={t('video.stateOn')} role="img" /> : null}
         {v.musician ? <MusicianIcon className="size-3.5" /> : null}
         {/* #96: my own line draws the self panel's view, not the server copy. */}
@@ -439,22 +445,26 @@ const MemberRow = memo(function MemberRow({
   }
   const second: ReactNode = line.compact ? (
     <>
-      <span className="min-w-0 max-w-[70%] shrink-0 truncate" data-testid="member-custom-status">
+      <span className="min-w-0 max-w-[50%] truncate" data-testid="member-custom-status">
         {line.status}
       </span>
       <span aria-hidden className="shrink-0 text-faint">
         ·
       </span>
-      <span className="flex min-w-0 flex-1 items-center gap-1" data-testid="member-activity">
+      <span className="flex min-w-12 flex-1 items-center gap-1" data-testid="member-activity">
         {activity}
       </span>
+      {trailing ? <span className="flex shrink-0 items-center gap-1">{trailing}</span> : null}
     </>
   ) : line.status ? (
     <span className="truncate" data-testid="member-custom-status">
       {line.status}
     </span>
   ) : activity ? (
-    activity
+    <>
+      <span className="flex min-w-0 flex-1 items-center gap-1">{activity}</span>
+      {trailing ? <span className="flex shrink-0 items-center gap-1">{trailing}</span> : null}
+    </>
   ) : u.username && !u.isBot ? (
     // The nickname (ADR-0077) when nothing more current is to be said.
     <span className="truncate">@{u.username}</span>

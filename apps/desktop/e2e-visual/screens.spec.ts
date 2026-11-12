@@ -99,6 +99,7 @@ const KEY = new Set([
   'main-members-toggled',
   'main-members-birthday',
   'main-members-roles',
+  'main-members-icons-clip',
   'members-menu',
   'members-profile-switch',
   'profile-dialog',
@@ -1052,6 +1053,20 @@ test('main-members-toggled', async ({ open, win, mock, shot }) => {
   }
   [IDS.users.vera, IDS.users.grigory, IDS.users.dina].forEach((uid, i) => mock.setMemberRoles(IDS.workspaces.main, uid, roleIds.slice(i, i + 1)));
   await checkpoint(shot, 'main-members-roles');
+  // #326: mic + sound muted and a text status — the state icons must stay fully
+  // visible (the status and the room name ellipsize first).
+  const boris = await fetch(`${mock.url}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'boris@calaba.test', password: PASSWORD }) });
+  const borisToken = ((await boris.json()) as { tokens: { accessToken: string } }).tokens.accessToken;
+  const statusRes = await fetch(`${mock.url}/api/me/status`, { method: 'PATCH', headers: { 'content-type': 'application/json', authorization: `Bearer ${borisToken}` }, body: JSON.stringify({ text: 'Отошёл на обед', emoji: '' }) });
+  expect(statusRes.status).toBe(200);
+  mock.setVoiceState({ userId: IDS.users.boris, roomId: IDS.rooms.meeting, streaming: false, muted: true, deafened: true });
+  const borisRow = win.getByRole('complementary', { name: 'Участники' }).getByRole('button', { name: /Борис Петров/ });
+  await expect(borisRow.locator('[data-voice-icon="deafened"]')).toHaveCount(1);
+  await expect(borisRow.getByTestId('member-custom-status')).toContainText('Отошёл');
+  const panelBox = await win.getByRole('complementary', { name: 'Участники' }).boundingBox();
+  const iconBox = await borisRow.locator('[data-voice-icon="deafened"]').boundingBox();
+  expect(iconBox && panelBox && iconBox.x + iconBox.width <= panelBox.x + panelBox.width).toBe(true);
+  await checkpoint(shot, 'main-members-icons-clip');
 });
 
 test('members-profile', async ({ open, win, mock, shot }) => {
