@@ -8960,6 +8960,9 @@ class MockImpl {
       const limit = Math.min(100, Math.max(1, Number(q(c, 'limit') || '50') || 50));
       sendMsg(c.res, 200, ListTaskNoticesResponseSchema, b().notices(me, q(c, 'before'), limit));
     });
+    this.boardRoute('GET', '/api/workspaces/:id/recent-tasks', (c, me) => {
+      sendMsg(c.res, 200, ListTaskNoticesResponseSchema, b().recentTasks(c.params[0] ?? '', me));
+    });
     this.boardRoute('GET', '/api/me/tasks', (c, me) => {
       sendMsg(c.res, 200, MyTasksResponseSchema, { tasks: b().mine(q(c, 'workspace_id'), me, q(c, 'scope') || 'assigned', q(c, 'open') === '1'), nextCursor: '' });
     });

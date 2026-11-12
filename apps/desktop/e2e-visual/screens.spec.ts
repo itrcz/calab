@@ -7,7 +7,7 @@ import { FREE_PLAN_LIMITS, UNFURLS, defaultSettings, mockPdf, ts } from '../e2e-
 import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
-import { NOW, checkpoint, expectAssigneeStacks, expectToolbarHeights, joinVoice, login, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedRichComments, seedViaMcp, settle } from './harness';
+import { NOW, checkpoint, expectAssigneeStacks, expectToolbarHeights, joinVoice, login, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedRecentNotices, seedReleases, seedRichComments, seedViaMcp, settle } from './harness';
 import { DAY, seedDay } from './calendarWeb';
 import { startPublisher } from './publisher';
 
@@ -5106,6 +5106,29 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   const firstBoard = win.getByTestId('boards-list').getByTestId('board-row').first();
   await firstBoard.hover();
   expect(Math.abs((await axis(firstBoard.locator('[data-row-menu]'))) - plus)).toBeLessThan(1);
+  // CBF-179: «Мои задачи» — «Непрочитанное» (CAL-3) and «Недавние» right after it: CAL-3 with its
+  // dot, the read CAL-4 and MKT-2 without; with no notices at all, the empty state.
+  seedRecentNotices(mock);
+  await win.getByTestId('my-tasks').click();
+  const scope = win.getByTestId('my-tasks-scope');
+  await expect(win.getByTestId('unread-view').getByTestId('unread-row')).toHaveCount(1);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-my-unread');
+  await scope.getByRole('radio', { name: 'Недавние' }).click();
+  const recent = win.getByTestId('recent-view').getByTestId('unread-row');
+  await expect(recent).toHaveCount(3);
+  await expect(recent.first()).toHaveAttribute('data-unread', 'true');
+  await expect(recent.nth(1)).toContainText('CAL-4');
+  await expect(recent.nth(1)).not.toHaveAttribute('data-unread');
+  await checkpoint(shot, 'boards-my-recent');
+  mock.boards.clearNotices(IDS.users.anna);
+  await firstBoard.click();
+  await win.getByTestId('my-tasks').click();
+  await scope.getByRole('radio', { name: 'Недавние' }).click();
+  await expect(win.getByTestId('recent-empty')).toBeVisible();
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'boards-my-recent-empty');
+  await firstBoard.click();
   await win.getByTestId('view-list').click();
   const rows = win.getByTestId('list-row');
   await rows.filter({ hasText: 'CAL-2' }).getByTestId('row-select').click();

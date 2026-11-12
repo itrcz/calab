@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { create } from '@bufbuild/protobuf';
 import { TimestampSchema } from '@bufbuild/protobuf/wkt';
-import { TaskAssigneeSchema, TaskReleaseSchema } from '@calaba/protocol';
+import { TaskAssigneeSchema, TaskNoticeKind, TaskReleaseSchema } from '@calaba/protocol';
 import AxeBuilder from '@axe-core/playwright';
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
@@ -393,6 +393,18 @@ export function seedReleases(mock: MockServer): void {
   set('CAL-1', [rel('rel-prod-2', '4929cf3', 'prod', 2)]);
   set('CAL-2', [rel('rel-prod-1', '4a1b2c3', 'prod', 26)]);
   set('CAL-3', [rel('rel-stage-3', '1288', 'stage', 1), rel('rel-prod-2', '4929cf3', 'prod', 2)]);
+}
+
+/**
+ * «Недавние» (CBF-179): Анна's notices of CAL-3 (Борис commented; unread), CAL-4 (approved, read)
+ * and MKT-2 (a status change by Борис, read), an hour apart before NOW. Written straight into the
+ * mock, after open().
+ */
+export function seedRecentNotices(mock: MockServer): void {
+  const { anna, boris } = IDS.users;
+  mock.boards.seedNotice(anna, 'MKT-2', { kind: TaskNoticeKind.STATUS, actorId: boris }, NOW.getTime() - 3 * 3600_000);
+  mock.boards.seedNotice(anna, 'CAL-4', { kind: TaskNoticeKind.APPROVED, actorId: boris }, NOW.getTime() - 2 * 3600_000);
+  mock.boards.seedNotice(anna, 'CAL-3', { kind: TaskNoticeKind.COMMENT, actorId: boris }, NOW.getTime() - 3600_000);
 }
 
 /**

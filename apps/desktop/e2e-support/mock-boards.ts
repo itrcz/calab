@@ -600,6 +600,17 @@ export class BoardsMock {
     };
   }
 
+  /** GET /workspaces/{id}/recent-tasks (CBF-179): my latest notice of each task of the workspace, newest first, ≤ 50. */
+  recentTasks(wsId: string, userId: string): MessageInitShape<typeof ListTaskNoticesResponseSchema> {
+    const seen = new Set<string>();
+    const entries = (this.notices(userId, '', Number.MAX_SAFE_INTEGER).entries ?? []).filter((e) => {
+      if (e.workspaceId !== wsId || !e.taskId || seen.has(e.taskId)) return false;
+      seen.add(e.taskId);
+      return true;
+    });
+    return { entries: entries.slice(0, 50), hasMore: false };
+  }
+
   private emitTaskDelete(t: TaskRec, purged: boolean, board: BoardRec): void {
     const sees = this.viewers(board);
     this.host.fanout((u) => (sees(u) ? { event: { case: 'taskDelete', value: { workspaceId: t.task.workspaceId, boardId: t.task.boardId, taskId: t.task.id, purged } } } : null));
@@ -1923,6 +1934,18 @@ export class BoardsMock {
   }
 
   /** The seeded CAL-3 (comments fixture): its task and room ids. */
+  /** Test helper (CBF-179): a notice in `userId`'s history of the task `key`, `at` ms, emitting nothing. */
+  seedNotice(userId: string, key: string, notice: MessageInitShape<typeof TaskNoticeSchema>, at: number): void {
+    const t = this.taskByKey(key);
+    if (!t) throw new Error(`no ${key}`);
+    this.logNotice(userId, t, notice, timestampFromMs(at));
+  }
+
+  /** Test helper (CBF-179): `userId`'s notice history is gone (an empty «Недавние»). */
+  clearNotices(userId: string): void {
+    this.dismissNotices(userId, this.noticeLog.filter((l) => l.user === userId).map((l) => l.id));
+  }
+
   taskByKey(key: string): TaskRec | undefined {
     return [...this.tasks.values()].find((t) => t.task.key === key);
   }
