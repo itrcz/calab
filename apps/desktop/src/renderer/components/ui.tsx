@@ -2,7 +2,7 @@ import * as DialogP from '@radix-ui/react-dialog';
 import * as SliderP from '@radix-ui/react-slider';
 import * as SwitchP from '@radix-ui/react-switch';
 import * as TooltipP from '@radix-ui/react-tooltip';
-import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, Loader2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, X } from 'lucide-react';
 import { cloneElement, createContext, forwardRef, useContext, isValidElement, useEffect, useId, useLayoutEffect, useCallback, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type FocusEvent as ReactFocusEvent, type InputHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 import { extendTailwindMerge } from 'tailwind-merge';
@@ -11,7 +11,6 @@ import { haptics } from '../lib/haptics';
 import { autoFocusAllowed } from '../lib/phone';
 import { mirrorTip } from '../services/webAppTip';
 import { useWebApps } from '../stores/webApps';
-import { toast } from '../stores/toasts';
 
 /*
  * UI primitives (docs/08-design.md): macOS-like controls on design tokens only.
@@ -384,32 +383,6 @@ export const Input = forwardRef<
     </span>
   );
 });
-
-/**
- * A read-only value to copy (an address, a command): the field (selected on focus) and «Копировать».
- * Phone: the field takes the whole line (a long command stays readable), the button goes under it.
- */
-export function CopyField({ value, label, testId }: { value: string; label: string; testId?: string }): ReactNode {
-  return (
-    <div className="flex min-w-0 items-center gap-2 mobile:flex-col mobile:items-stretch">
-      <Input readOnly value={value} aria-label={label} spellCheck={false} className="min-w-0 flex-1 text-ellipsis font-mono text-caption" onFocus={(e) => e.currentTarget.select()} data-testid={testId} />
-      <Button
-        variant="secondary"
-        className="shrink-0 mobile:self-end"
-        onClick={() =>
-          void navigator.clipboard.writeText(value).then(
-            () => toast.success(t('chat.copied')),
-            (e: unknown) => toast.fail(e),
-          )
-        }
-        data-testid={testId ? `${testId}-copy` : undefined}
-      >
-        <Copy className="size-3.5" aria-hidden />
-        {t('disk.link.copyShort')}
-      </Button>
-    </div>
-  );
-}
 
 /** The «×» that empties a text field (CBF-157): a press keeps focus in the field (a keyboard press returns it there), a 44 px target on the phone. */
 export function ClearButton({ label, onClick, onDone, className }: { label?: string | undefined; onClick: () => void; onDone?: () => void; className?: string }): ReactNode {
