@@ -1,5 +1,5 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { Bell, CalendarDays, ChevronDown, ChevronRight, CircleUser, HeadphoneOff, Headphones, Info, LogOut, Mic, MicOff, MonitorSmartphone, ShieldCheck, SlidersHorizontal, Wifi, type LucideIcon } from 'lucide-react';
+import { Bell, CalendarDays, ChevronDown, ChevronRight, CircleUser, HeadphoneOff, Headphones, Info, LogOut, Mic, MicOff, MonitorSmartphone, Plug, ShieldCheck, SlidersHorizontal, Wifi, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { cx } from '../../components/ui';
@@ -39,6 +39,7 @@ export function PhoneProfile(): ReactNode {
     { id: 'calendar', label: 'settings.calendar', icon: CalendarDays, show: local && !guest },
     { id: 'connection', label: 'settings.connection', icon: Wifi, show: true },
     { id: 'sessions', label: 'settings.sessions', icon: MonitorSmartphone, show: local },
+    { id: 'mcp', label: 'mcpSettings.section', icon: Plug, show: local && !guest }, // CBF-183
     { id: 'about', label: 'settings.about', icon: Info, show: true },
   ];
   const preload = (): void => void AppSettingsWindow.preload();

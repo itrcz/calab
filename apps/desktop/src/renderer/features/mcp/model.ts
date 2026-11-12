@@ -30,3 +30,30 @@ export function mcpReturnTarget(c: Pick<McpConsent, 'redirectUri' | 'loopback'>)
     return { local: false, where: c.redirectUri };
   }
 }
+
+/** The MCP server address on this server: `<origin>/mcp` (CBF-183, ADR-0158 addendum). */
+export function mcpServerUrl(origin: string): string {
+  return `${origin.replace(/\/+$/, '')}/mcp`;
+}
+
+/** What each client is told to run or paste (Settings → MCP), for the server address `url`. */
+export function mcpClientSnippets(url: string): { claudeCode: string; codex: string; cursor: string } {
+  return {
+    claudeCode: `claude mcp add --transport http calab ${url}`,
+    codex: `codex mcp add calab --url ${url}`,
+    cursor: JSON.stringify({ mcpServers: { calab: { url } } }),
+  };
+}
+
+/** The server names an MCP session's device «MCP · <client>» (auth.MCPSessionTokens). */
+const MCP_DEVICE = 'MCP · ';
+
+/** The client's name of an MCP session, or null for any other session. */
+export function mcpSessionClient(deviceName: string): string | null {
+  return deviceName.startsWith(MCP_DEVICE) ? deviceName.slice(MCP_DEVICE.length) || '—' : null;
+}
+
+/** A web address `/settings/<section>` (the server sends a browser opening `/mcp` there), or null. */
+export function settingsRouteSection(pathname: string): string | null {
+  return /^\/settings\/([a-z][a-z-]{1,31})\/?$/.exec(pathname)?.[1] ?? null;
+}

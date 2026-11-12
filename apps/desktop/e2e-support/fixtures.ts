@@ -205,6 +205,7 @@ export const IDS = {
   sessions: {
     annaDesktop: mockId('session', 1),
     annaWeb: mockId('session', 2),
+    annaMcp: mockId('session', 3), // an MCP connection (ADR-0158): «MCP · Claude Code»
   },
   /**
    * Bots of «Команда Calab» (ADR-0031) — not in the fixture until MockServer.seedBots() (so the
@@ -935,6 +936,15 @@ export function buildState(scenario: Scenario): MockState {
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/140.0',
       createdAt: ts('2026-01-12T19:30:00Z'),
       lastSeenAt: ts('2026-01-14T21:12:00Z'),
+      expiresAt: ts('2099-01-01T00:00:00Z'),
+    }),
+    create(SessionSchema, {
+      id: IDS.sessions.annaMcp,
+      deviceName: 'MCP · Claude Code',
+      ip: '198.51.100.24',
+      userAgent: 'claude-code/2.1',
+      createdAt: ts('2026-01-13T10:00:00Z'),
+      lastSeenAt: ts('2026-01-15T10:40:00Z'),
       expiresAt: ts('2099-01-01T00:00:00Z'),
     }),
   );

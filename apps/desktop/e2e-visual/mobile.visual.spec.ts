@@ -1077,6 +1077,13 @@ test('m-settings-profile', async ({ page }) => {
   await entry.tap();
   await expect(page.getByRole('dialog', { name: 'Удалить аккаунт?' }).getByTestId('delete-account-blocked')).toBeVisible();
   await checkpoint(page, 'm-settings-delete', { snapshot: false });
+  // CBF-183: «MCP» — the server address and per-client commands (copy fields fit 390 px).
+  await page.goto(`${mock.url}/settings/mcp?visual-test`); // the address the server sends a browser opening /mcp to
+  await insets(page);
+  await expect(page.getByTestId('mcp-url')).toHaveValue(/\/mcp$/);
+  await checkpoint(page, 'm-settings-mcp', { snapshot: false });
+  await page.getByTestId('mcp-cursor').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-settings-mcp-clients', { snapshot: false });
 });
 
 // ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, now the fifth tab «Профиль» with my avatar, owner 07.10) — the

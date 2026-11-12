@@ -94,6 +94,7 @@ import { isTaskRoom } from '../stores/rooms';
 import { onRoomArchived } from '../lib/api/client';
 import { isTempRoom } from '../lib/tempRooms';
 import { roomClosedToast } from './roomClosed';
+import { settingsRouteSection } from '../features/mcp/model';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -113,6 +114,22 @@ function openAdminRoute(superadmin: boolean): void {
   } catch {
     // not fatal
   }
+}
+
+/**
+ * Web `/settings/<section>` (CBF-183: the server sends a browser opening the MCP address `/mcp`
+ * to `/settings/mcp`): the settings open on that section once READY is in; the address becomes `/`.
+ */
+function openSettingsRoute(): void {
+  if (import.meta.env.VITE_PLATFORM !== 'web' || typeof location === 'undefined') return;
+  const section = settingsRouteSection(location.pathname);
+  if (!section) return;
+  try {
+    history.replaceState(null, '', '/');
+  } catch {
+    // not fatal
+  }
+  useUi.getState().openDialog({ kind: 'settings', tab: section });
 }
 
 /** Applies one gateway DISPATCH event to the stores. */
@@ -287,6 +304,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       applyReadyAdmissions(r);
       dropStaleWorkspaceBackground();
       openAdminRoute(r.me?.isSuperadmin === true);
+      openSettingsRoute();
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
       voice.checkSeat();
       // My mic / deafen intent may not have reached the server while away (ADR-0134).

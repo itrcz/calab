@@ -2429,6 +2429,15 @@ SETTINGS_TABS.forEach((id, i) => {
     await mainWindow(win, mock);
     await openSettingsTab(win, openAppSettings(win), i + 1);
     await checkpoint(shot, `settings-${id}`);
+    if (id === 'sessions') {
+      // CBF-183: «MCP» next to «Сеансы» — the server address, per-client commands, connections.
+      await win.getByRole('dialog').getByRole('tab', { name: 'MCP' }).click();
+      await expect(win.getByTestId('mcp-url')).toHaveValue(/\/mcp$/);
+      await checkpoint(shot, 'settings-mcp');
+      await win.getByRole('dialog').getByText('Все сеансы и устройства').scrollIntoViewIfNeeded();
+      await expect(win.getByRole('dialog').getByText('Claude Code', { exact: true }).last()).toBeVisible();
+      await checkpoint(shot, 'settings-mcp-connections');
+    }
   });
 });
 

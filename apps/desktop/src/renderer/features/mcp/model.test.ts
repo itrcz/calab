@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mcpConnectHandle, mcpReturnTarget } from './model';
+import { mcpClientSnippets, mcpConnectHandle, mcpReturnTarget, mcpServerUrl, mcpSessionClient, settingsRouteSection } from './model';
 
 const handle = 'calab_mr_' + 'a'.repeat(43);
 
@@ -28,5 +28,25 @@ describe('mcpReturnTarget', () => {
         loopback: false,
       }),
     ).toEqual({ local: false, where: 'claude.ai' });
+  });
+});
+
+describe('MCP settings', () => {
+  it('builds the address and the client snippets from the origin', () => {
+    const url = mcpServerUrl('https://app.calab.io/');
+    expect(url).toBe('https://app.calab.io/mcp');
+    const s = mcpClientSnippets(url);
+    expect(s.claudeCode).toBe('claude mcp add --transport http calab https://app.calab.io/mcp');
+    expect(s.codex).toBe('codex mcp add calab --url https://app.calab.io/mcp');
+    expect(JSON.parse(s.cursor)).toEqual({ mcpServers: { calab: { url: 'https://app.calab.io/mcp' } } });
+  });
+  it('recognizes MCP sessions by the device name the server gives them', () => {
+    expect(mcpSessionClient('MCP · Claude Code')).toBe('Claude Code');
+    expect(mcpSessionClient('MacBook · Chrome')).toBeNull();
+  });
+  it('reads /settings/<section>', () => {
+    expect(settingsRouteSection('/settings/mcp')).toBe('mcp');
+    expect(settingsRouteSection('/settings/')).toBeNull();
+    expect(settingsRouteSection('/mcp')).toBeNull();
   });
 });
