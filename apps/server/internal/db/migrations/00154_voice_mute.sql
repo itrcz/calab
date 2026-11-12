@@ -1,4 +1,4 @@
--- The user's last own mic / sound choice in voice (ADR-0165, CBF-180): the next voice session on
+-- The user's last own mic / sound choice in voice (ADR-0168, CBF-180): the next voice session on
 -- any of the user's devices starts with it. voice_mute_at NULL = never chosen. Constant defaults:
 -- adding the columns rewrites nothing.
 

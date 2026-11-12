@@ -8,7 +8,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
 
-// TestVoiceMuteStored (ADR-0165, CBF-180): the user's own mic / sound choice is stored with the
+// TestVoiceMuteStored (ADR-0168, CBF-180): the user's own mic / sound choice is stored with the
 // server's time, read back in Me.settings, kept by a `settings` replace (PTT and the rest are
 // replaced, the choice is not), per user, refused for bots.
 func TestVoiceMuteStored(t *testing.T) {

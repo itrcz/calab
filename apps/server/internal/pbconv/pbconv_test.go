@@ -59,7 +59,7 @@ func TestSettingsDefaults(t *testing.T) {
 	}
 }
 
-// ADR-0165: never chosen = unset; the stored choice lives in its own columns, not in `settings`.
+// ADR-0168: never chosen = unset; the stored choice lives in its own columns, not in `settings`.
 func TestVoiceMute(t *testing.T) {
 	if VoiceMute(true, true, nil) != nil {
 		t.Fatal("never chosen must be unset")

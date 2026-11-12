@@ -34,13 +34,13 @@ WHERE id = sqlc.arg('id')
 RETURNING *;
 
 -- name: SetUserVoiceMute :one
--- ADR-0165: the user's own mic / sound choice; the server's clock orders the writers.
+-- ADR-0168: the user's own mic / sound choice; the server's clock orders the writers.
 UPDATE users SET voice_muted = $2, voice_deafened = $3, voice_mute_at = now()
 WHERE id = $1
 RETURNING *;
 
 -- name: GetUserVoiceMute :one
--- ADR-0165: read with every voice /join.
+-- ADR-0168: read with every voice /join.
 SELECT voice_muted, voice_deafened, voice_mute_at FROM users WHERE id = $1;
 
 -- name: UsernameOwner :one

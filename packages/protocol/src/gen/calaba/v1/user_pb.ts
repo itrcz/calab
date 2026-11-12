@@ -285,7 +285,7 @@ export type UserSettings = Message<"calaba.v1.UserSettings"> & {
   calendarZones: CalendarZone[];
 
   /**
-   * The user's last own mic / sound choice in voice (ADR-0165), read-only here: changed with
+   * The user's last own mic / sound choice in voice (ADR-0168), read-only here: changed with
    * PUT /api/me/voice-mute. Unset = never chosen (a device keeps its local value).
    *
    * @generated from field: calaba.v1.VoiceMute voice_mute = 14;
@@ -301,7 +301,7 @@ export const UserSettingsSchema: GenMessage<UserSettings> = /*@__PURE__*/
   messageDesc(file_calaba_v1_user, 2);
 
 /**
- * The user's last own mic / sound choice in voice (ADR-0165): the next voice session on any of
+ * The user's last own mic / sound choice in voice (ADR-0168): the next voice session on any of
  * the user's devices starts with it. Only the user's own clicks write it, never a moderator mute
  * or an automatic one. Push-to-talk is not part of it (per device).
  * PUT /api/me/voice-mute (body: muted, deafened) → 200 VoiceMute with updated_at; USER_UPDATE

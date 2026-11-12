@@ -377,7 +377,7 @@ type GetUserVoiceMuteRow struct {
 	VoiceMuteAt   *time.Time
 }
 
-// ADR-0165: read with every voice /join.
+// ADR-0168: read with every voice /join.
 func (q *Queries) GetUserVoiceMute(ctx context.Context, id uuid.UUID) (GetUserVoiceMuteRow, error) {
 	row := q.db.QueryRow(ctx, getUserVoiceMute, id)
 	var i GetUserVoiceMuteRow
@@ -1062,7 +1062,7 @@ type SetUserVoiceMuteParams struct {
 	VoiceDeafened bool
 }
 
-// ADR-0165: the user's own mic / sound choice; the server's clock orders the writers.
+// ADR-0168: the user's own mic / sound choice; the server's clock orders the writers.
 func (q *Queries) SetUserVoiceMute(ctx context.Context, arg SetUserVoiceMuteParams) (User, error) {
 	row := q.db.QueryRow(ctx, setUserVoiceMute, arg.ID, arg.VoiceMuted, arg.VoiceDeafened)
 	var i User

@@ -88,7 +88,7 @@ export type JoinVoiceResponse = Message<"calaba.v1.JoinVoiceResponse"> & {
   planLimits?: PlanLimits | undefined;
 
   /**
-   * The user's stored mic / sound choice (ADR-0165, UserSettings.voice_mute), read with the join so
+   * The user's stored mic / sound choice (ADR-0168, UserSettings.voice_mute), read with the join so
    * the client publishes the mic in that state from the start; unset = never chosen.
    *
    * @generated from field: calaba.v1.VoiceMute self_mute = 10;

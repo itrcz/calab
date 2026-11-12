@@ -347,7 +347,7 @@ type UserSettings struct {
 	// event_reminders: changed with UpdateMeRequest.calendar_zones. At most 2, in the order of
 	// the axis; default [] (only the main axis).
 	CalendarZones []*CalendarZone `protobuf:"bytes,13,rep,name=calendar_zones,json=calendarZones,proto3" json:"calendar_zones,omitempty"`
-	// The user's last own mic / sound choice in voice (ADR-0165), read-only here: changed with
+	// The user's last own mic / sound choice in voice (ADR-0168), read-only here: changed with
 	// PUT /api/me/voice-mute. Unset = never chosen (a device keeps its local value).
 	VoiceMute     *VoiceMute `protobuf:"bytes,14,opt,name=voice_mute,json=voiceMute,proto3" json:"voice_mute,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -483,7 +483,7 @@ func (x *UserSettings) GetVoiceMute() *VoiceMute {
 	return nil
 }
 
-// The user's last own mic / sound choice in voice (ADR-0165): the next voice session on any of
+// The user's last own mic / sound choice in voice (ADR-0168): the next voice session on any of
 // the user's devices starts with it. Only the user's own clicks write it, never a moderator mute
 // or an automatic one. Push-to-talk is not part of it (per device).
 // PUT /api/me/voice-mute (body: muted, deafened) → 200 VoiceMute with updated_at; USER_UPDATE

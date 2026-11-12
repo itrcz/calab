@@ -352,7 +352,7 @@ func (h *Handlers) updateStatus(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// setVoiceMute: PUT /api/me/voice-mute (ADR-0165) — the user's own mic / sound choice, carried to
+// setVoiceMute: PUT /api/me/voice-mute (ADR-0168) — the user's own mic / sound choice, carried to
 // the next voice session on any device. Last writer wins by the server's clock; the user's
 // devices get USER_UPDATE {me}. Guests have voice too; bots do not keep one (403).
 func (h *Handlers) setVoiceMute(w http.ResponseWriter, r *http.Request) error {

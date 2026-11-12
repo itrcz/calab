@@ -41,7 +41,7 @@ type JoinVoiceResponse struct {
 	Pending bool `protobuf:"varint,8,opt,name=pending,proto3" json:"pending,omitempty"`
 	// Effective plan limits of the workspace (ADR-0024), e.g. stream / camera fps caps.
 	PlanLimits *PlanLimits `protobuf:"bytes,9,opt,name=plan_limits,json=planLimits,proto3" json:"plan_limits,omitempty"`
-	// The user's stored mic / sound choice (ADR-0165, UserSettings.voice_mute), read with the join so
+	// The user's stored mic / sound choice (ADR-0168, UserSettings.voice_mute), read with the join so
 	// the client publishes the mic in that state from the start; unset = never chosen.
 	SelfMute      *VoiceMute `protobuf:"bytes,10,opt,name=self_mute,json=selfMute,proto3" json:"self_mute,omitempty"`
 	unknownFields protoimpl.UnknownFields

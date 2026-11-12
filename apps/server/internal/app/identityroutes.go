@@ -310,7 +310,7 @@ var identityRoutes = map[string]identityScope{
 	"PATCH /api/me/password":                                              scopeGlobal,
 	"POST /api/me/delete":                                                 scopeGlobal, // ADR-0153: local-account session, password in the body
 	"PATCH /api/me/status":                                                scopeGlobal,
-	"PUT /api/me/voice-mute":                                              scopeGlobal, // ADR-0165
+	"PUT /api/me/voice-mute":                                              scopeGlobal, // ADR-0168
 	"PATCH /api/messages/{id}":                                            scopeMessage,
 	"PATCH /api/notes/{id}":                                               scopeGlobal,
 	"PATCH /api/rooms/{id}":                                               scopeRoom,

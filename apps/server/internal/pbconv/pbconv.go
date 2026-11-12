@@ -231,11 +231,11 @@ func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
 	s.TaskNotifyOff = nil                    // users.task_notify_off (ADR-0089)
 	s.TaskNotifyBots = nil                   // users.task_notify_bots (ADR-0090)
 	s.CalendarZones = nil                    // users.calendar_zones (board #85)
-	s.VoiceMute = nil                        // users.voice_* (ADR-0165)
+	s.VoiceMute = nil                        // users.voice_* (ADR-0168)
 	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(s)
 }
 
-// VoiceMute is the user's stored mic / sound choice (ADR-0165); nil when never chosen.
+// VoiceMute is the user's stored mic / sound choice (ADR-0168); nil when never chosen.
 func VoiceMute(muted, deafened bool, at *time.Time) *v1.VoiceMute {
 	if at == nil {
 		return nil

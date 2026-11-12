@@ -317,7 +317,7 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// selfMute is the user's stored mic / sound choice (ADR-0165) for the join answer; nil when never
+// selfMute is the user's stored mic / sound choice (ADR-0168) for the join answer; nil when never
 // chosen or unreadable — the client then keeps its own last value.
 func (s *Service) selfMute(ctx context.Context, uid uuid.UUID) *v1.VoiceMute {
 	row, err := s.db.Q.GetUserVoiceMute(ctx, uid)
