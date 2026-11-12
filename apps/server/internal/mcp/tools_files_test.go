@@ -36,6 +36,7 @@ func (a *filesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{Id: "f-png", Name: "shot.png", Mime: "image/png", Size: uint64(len(a.files["f-png"]))},
 			{Id: "f-zip", Name: "dump.zip", Mime: "application/zip", Size: 10},
 			{Id: "f-big", Name: "photo.jpg", Mime: "image/jpeg", Size: 9 << 20},
+			{Id: "f-svg", Name: "icon.svg", Mime: "image/svg+xml", Size: uint64(len(a.files["f-svg"]))},
 		}
 		m = &v1.TaskResponse{Task: t, Board: a.f.board}
 	case r.URL.Path == "/api/rooms/room-7/messages":
@@ -84,6 +85,7 @@ func TestGetTaskAttachment(t *testing.T) {
 		"f-log":  []byte("ok\nFAIL TestX\n"),
 		"f-png":  {0x89, 'P', 'N', 'G'},
 		"f-huge": []byte(strings.Repeat("é", 1<<19)), // 1 MiB of two-byte runes
+		"f-svg":  []byte("<svg/>"),
 	}}
 	h := New("test")
 	h.API = a
@@ -101,6 +103,10 @@ func TestGetTaskAttachment(t *testing.T) {
 	bs, isErr = blocks(t, h, `{"task":"DEV-7","file":"f-big"}`)
 	if isErr || bs[1]["mimeType"] != "image/webp" || !strings.Contains(bs[0]["text"].(string), "preview") {
 		t.Fatalf("preview: %v %v", isErr, bs)
+	}
+	// SVG is text, not a preview (the app makes none for it).
+	if bs, isErr = blocks(t, h, `{"task":"DEV-7","file":"icon.svg"}`); isErr || len(bs) != 2 || bs[1]["text"] != "<svg/>" {
+		t.Fatalf("svg: %v %v", isErr, bs)
 	}
 	// A binary file is described, not returned.
 	if bs, isErr = blocks(t, h, `{"task":"DEV-7","file":"f-zip"}`); !isErr || !strings.Contains(bs[0]["text"].(string), "dump.zip") {

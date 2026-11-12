@@ -59,8 +59,9 @@ func getTaskAttachment(ctx context.Context, c *api, a args) (any, error) {
 			return nil, err
 		}
 		return imageResult(meta, b, mime, f.GetMime()), nil
-	case strings.HasPrefix(f.GetMime(), "image/"):
+	case strings.HasPrefix(f.GetMime(), "image/") && !strings.HasPrefix(f.GetMime(), "image/svg+xml"):
 		// Too large (or a type models do not take): the preview the app shows, 1024 px WebP.
+		// SVG (textMimes) is text: the app makes it no thumbnail.
 		b, mime, err := c.fetch(ctx, fileURL+"/thumbnail", url.Values{"w": {"1024"}}, nil, imageInline)
 		if err != nil {
 			var ae *apiError
