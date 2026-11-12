@@ -15,7 +15,7 @@ import (
 const confirmPendingEmail = `-- name: ConfirmPendingEmail :one
 UPDATE users SET email = pending_email, pending_email = NULL, email_verified_at = now()
 WHERE id = $1 AND pending_email IS NOT NULL
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 // The confirmed pending address becomes the login email (unique: may fail with 23505).
@@ -60,6 +60,9 @@ func (q *Queries) ConfirmPendingEmail(ctx context.Context, id uuid.UUID) (User, 
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
@@ -78,7 +81,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, display_name, settings, locale, email_verified_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type CreateUserParams struct {
@@ -138,6 +141,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
@@ -150,7 +156,7 @@ WHERE id IN (
     LIMIT 500
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 // Clears temporary custom statuses that ran out (the presence sweeper, one instance at a
@@ -202,6 +208,9 @@ func (q *Queries) ExpireCustomStatuses(ctx context.Context) ([]User, error) {
 			&i.TaskNotifyBots,
 			&i.CalendarZones,
 			&i.DeletedAt,
+			&i.VoiceMuted,
+			&i.VoiceDeafened,
+			&i.VoiceMuteAt,
 		); err != nil {
 			return nil, err
 		}
@@ -255,7 +264,7 @@ func (q *Queries) ExpireManualPresence(ctx context.Context) ([]ExpireManualPrese
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at FROM users WHERE id = $1
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -299,12 +308,15 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at FROM users WHERE email = $1
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, error) {
@@ -348,7 +360,28 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, erro
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
+	return i, err
+}
+
+const getUserVoiceMute = `-- name: GetUserVoiceMute :one
+SELECT voice_muted, voice_deafened, voice_mute_at FROM users WHERE id = $1
+`
+
+type GetUserVoiceMuteRow struct {
+	VoiceMuted    bool
+	VoiceDeafened bool
+	VoiceMuteAt   *time.Time
+}
+
+// ADR-0165: read with every voice /join.
+func (q *Queries) GetUserVoiceMute(ctx context.Context, id uuid.UUID) (GetUserVoiceMuteRow, error) {
+	row := q.db.QueryRow(ctx, getUserVoiceMute, id)
+	var i GetUserVoiceMuteRow
+	err := row.Scan(&i.VoiceMuted, &i.VoiceDeafened, &i.VoiceMuteAt)
 	return i, err
 }
 
@@ -424,7 +457,7 @@ func (q *Queries) ListManualPresence(ctx context.Context) ([]ListManualPresenceR
 }
 
 const listUsersByIDs = `-- name: ListUsersByIDs :many
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at FROM users WHERE id = ANY($1::uuid[])
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at FROM users WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) ListUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]User, error) {
@@ -474,6 +507,9 @@ func (q *Queries) ListUsersByIDs(ctx context.Context, ids []uuid.UUID) ([]User, 
 			&i.TaskNotifyBots,
 			&i.CalendarZones,
 			&i.DeletedAt,
+			&i.VoiceMuted,
+			&i.VoiceDeafened,
+			&i.VoiceMuteAt,
 		); err != nil {
 			return nil, err
 		}
@@ -579,7 +615,7 @@ func (q *Queries) ResolveUsernames(ctx context.Context, names []string) ([]Resol
 
 const setEmail = `-- name: SetEmail :one
 UPDATE users SET email = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type SetEmailParams struct {
@@ -628,13 +664,16 @@ func (q *Queries) SetEmail(ctx context.Context, arg SetEmailParams) (User, error
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
 
 const setEmailAndVerified = `-- name: SetEmailAndVerified :one
 UPDATE users SET email = $2, pending_email = NULL, email_verified_at = now() WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type SetEmailAndVerifiedParams struct {
@@ -684,13 +723,16 @@ func (q *Queries) SetEmailAndVerified(ctx context.Context, arg SetEmailAndVerifi
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
 
 const setEmailVerified = `-- name: SetEmailVerified :one
 UPDATE users SET email_verified_at = coalesce(email_verified_at, now()) WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 // Marks the current address verified (no-op if it already is).
@@ -735,6 +777,9 @@ func (q *Queries) SetEmailVerified(ctx context.Context, id uuid.UUID) (User, err
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
@@ -772,7 +817,7 @@ func (q *Queries) SetPasswordHash(ctx context.Context, arg SetPasswordHashParams
 
 const setPendingEmail = `-- name: SetPendingEmail :one
 UPDATE users SET pending_email = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type SetPendingEmailParams struct {
@@ -821,13 +866,16 @@ func (q *Queries) SetPendingEmail(ctx context.Context, arg SetPendingEmailParams
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
 
 const setUserCalendarZones = `-- name: SetUserCalendarZones :one
 UPDATE users SET calendar_zones = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type SetUserCalendarZonesParams struct {
@@ -877,13 +925,16 @@ func (q *Queries) SetUserCalendarZones(ctx context.Context, arg SetUserCalendarZ
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
 
 const setUserTaskNotifyBots = `-- name: SetUserTaskNotifyBots :one
 UPDATE users SET task_notify_bots = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type SetUserTaskNotifyBotsParams struct {
@@ -933,13 +984,16 @@ func (q *Queries) SetUserTaskNotifyBots(ctx context.Context, arg SetUserTaskNoti
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
 
 const setUserTaskNotifyOff = `-- name: SetUserTaskNotifyOff :one
 UPDATE users SET task_notify_off = $2 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type SetUserTaskNotifyOffParams struct {
@@ -989,6 +1043,70 @@ func (q *Queries) SetUserTaskNotifyOff(ctx context.Context, arg SetUserTaskNotif
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
+	)
+	return i, err
+}
+
+const setUserVoiceMute = `-- name: SetUserVoiceMute :one
+UPDATE users SET voice_muted = $2, voice_deafened = $3, voice_mute_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
+`
+
+type SetUserVoiceMuteParams struct {
+	ID            uuid.UUID
+	VoiceMuted    bool
+	VoiceDeafened bool
+}
+
+// ADR-0165: the user's own mic / sound choice; the server's clock orders the writers.
+func (q *Queries) SetUserVoiceMute(ctx context.Context, arg SetUserVoiceMuteParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserVoiceMute, arg.ID, arg.VoiceMuted, arg.VoiceDeafened)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.DisplayName,
+		&i.AvatarFileID,
+		&i.StatusText,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.StatusEmoji,
+		&i.StatusExpiresAt,
+		&i.IsGuest,
+		&i.GuestExpiresAt,
+		&i.Timezone,
+		&i.EmailVerifiedAt,
+		&i.PendingEmail,
+		&i.Locale,
+		&i.PresenceStatus,
+		&i.PresenceUntil,
+		&i.IsBot,
+		&i.BirthdayDay,
+		&i.BirthdayMonth,
+		&i.BirthdayYear,
+		&i.BirthdayHidden,
+		&i.EventReminders,
+		&i.EventRemindersDnd,
+		&i.StorageQuotaBytes,
+		&i.WorkStartMin,
+		&i.WorkEndMin,
+		&i.WorkDays,
+		&i.HideMessageTextInNotifications,
+		&i.Username,
+		&i.Phone,
+		&i.TaskNotifyOff,
+		&i.TaskNotifyBots,
+		&i.CalendarZones,
+		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
@@ -1037,7 +1155,7 @@ func (q *Queries) TaskNotifyBotsAvailable(ctx context.Context, arg TaskNotifyBot
 const updateStatus = `-- name: UpdateStatus :one
 UPDATE users SET status_text = $2, status_emoji = $3, status_expires_at = $4
 WHERE id = $1
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type UpdateStatusParams struct {
@@ -1093,6 +1211,9 @@ func (q *Queries) UpdateStatus(ctx context.Context, arg UpdateStatusParams) (Use
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }
@@ -1113,7 +1234,7 @@ UPDATE users SET
     phone          = CASE WHEN $16::boolean THEN $17::text ELSE phone END,
     username       = CASE WHEN $18::boolean THEN $19::citext ELSE username END
 WHERE id = $20
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 type UpdateUserParams struct {
@@ -1201,6 +1322,9 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }

@@ -61,6 +61,7 @@ func (h *Handlers) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler
 	mux.Handle("GET /api/me", wrap(httpx.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/me", wrap(httpx.HandlerFunc(h.update)))
 	mux.Handle("PATCH /api/me/status", wrap(httpx.HandlerFunc(h.updateStatus)))
+	mux.Handle("PUT /api/me/voice-mute", wrap(httpx.HandlerFunc(h.setVoiceMute)))
 	mux.Handle("GET /api/usernames/{name}/available", wrap(httpx.HandlerFunc(h.usernameAvailable)))
 	mux.Handle("GET /api/users/{id}/note", wrap(httpx.HandlerFunc(h.getNote)))
 	mux.Handle("PUT /api/users/{id}/note", wrap(httpx.HandlerFunc(h.putNote)))
@@ -348,6 +349,29 @@ func (h *Handlers) updateStatus(w http.ResponseWriter, r *http.Request) error {
 		h.status.StatusChanged(r.Context(), id.UserID)
 	}
 	httpx.Write(w, http.StatusOK, &v1.UpdateMeResponse{Me: pbconv.Me(u)})
+	return nil
+}
+
+// setVoiceMute: PUT /api/me/voice-mute (ADR-0165) — the user's own mic / sound choice, carried to
+// the next voice session on any device. Last writer wins by the server's clock; the user's
+// devices get USER_UPDATE {me}. Guests have voice too; bots do not keep one (403).
+func (h *Handlers) setVoiceMute(w http.ResponseWriter, r *http.Request) error {
+	id := auth.MustFromContext(r.Context())
+	if id.IsBot {
+		return auth.ErrBotNotAllowed
+	}
+	var req v1.VoiceMute
+	if err := httpx.Decode(w, r, &req); err != nil {
+		return err
+	}
+	u, err := db.GuardValue(r.Context(), h.db, func(guarded *sqlc.Queries) (sqlc.User, error) {
+		return guarded.SetUserVoiceMute(r.Context(), sqlc.SetUserVoiceMuteParams{ID: id.UserID, VoiceMuted: req.GetMuted(), VoiceDeafened: req.GetDeafened()})
+	})
+	if err != nil {
+		return err
+	}
+	profile.Publish(r.Context(), h.db.Q, h.events, u, false)
+	httpx.Write(w, http.StatusOK, pbconv.VoiceMute(u.VoiceMuted, u.VoiceDeafened, u.VoiceMuteAt))
 	return nil
 }
 

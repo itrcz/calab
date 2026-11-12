@@ -40,7 +40,10 @@ type JoinVoiceResponse struct {
 	// LiveKit; false when it was already connected there (a repeated /join).
 	Pending bool `protobuf:"varint,8,opt,name=pending,proto3" json:"pending,omitempty"`
 	// Effective plan limits of the workspace (ADR-0024), e.g. stream / camera fps caps.
-	PlanLimits    *PlanLimits `protobuf:"bytes,9,opt,name=plan_limits,json=planLimits,proto3" json:"plan_limits,omitempty"`
+	PlanLimits *PlanLimits `protobuf:"bytes,9,opt,name=plan_limits,json=planLimits,proto3" json:"plan_limits,omitempty"`
+	// The user's stored mic / sound choice (ADR-0165, UserSettings.voice_mute), read with the join so
+	// the client publishes the mic in that state from the start; unset = never chosen.
+	SelfMute      *VoiceMute `protobuf:"bytes,10,opt,name=self_mute,json=selfMute,proto3" json:"self_mute,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -134,6 +137,13 @@ func (x *JoinVoiceResponse) GetPending() bool {
 func (x *JoinVoiceResponse) GetPlanLimits() *PlanLimits {
 	if x != nil {
 		return x.PlanLimits
+	}
+	return nil
+}
+
+func (x *JoinVoiceResponse) GetSelfMute() *VoiceMute {
+	if x != nil {
+		return x.SelfMute
 	}
 	return nil
 }
@@ -554,7 +564,7 @@ var File_calaba_v1_rtc_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\n" +
-	"\x13calaba/v1/rtc.proto\x12\tcalaba.v1\x1a\x15calaba/v1/media.proto\x1a\x14calaba/v1/plan.proto\"\xb6\x02\n" +
+	"\x13calaba/v1/rtc.proto\x12\tcalaba.v1\x1a\x15calaba/v1/media.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xe9\x02\n" +
 	"\x11JoinVoiceResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1a\n" +
@@ -566,7 +576,9 @@ const file_calaba_v1_rtc_proto_rawDesc = "" +
 	"\tcan_video\x18\a \x01(\bR\bcanVideo\x12\x18\n" +
 	"\apending\x18\b \x01(\bR\apending\x126\n" +
 	"\vplan_limits\x18\t \x01(\v2\x15.calaba.v1.PlanLimitsR\n" +
-	"planLimits\"\\\n" +
+	"planLimits\x121\n" +
+	"\tself_mute\x18\n" +
+	" \x01(\v2\x14.calaba.v1.VoiceMuteR\bselfMute\"\\\n" +
 	"\x16VoiceCompanionResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1a\n" +
@@ -623,20 +635,22 @@ var file_calaba_v1_rtc_proto_goTypes = []any{
 	(*UpdateVoiceSelfRequest)(nil), // 7: calaba.v1.UpdateVoiceSelfRequest
 	(*RoomMediaSettings)(nil),      // 8: calaba.v1.RoomMediaSettings
 	(*PlanLimits)(nil),             // 9: calaba.v1.PlanLimits
-	(ScreenSharePreset)(0),         // 10: calaba.v1.ScreenSharePreset
+	(*VoiceMute)(nil),              // 10: calaba.v1.VoiceMute
+	(ScreenSharePreset)(0),         // 11: calaba.v1.ScreenSharePreset
 }
 var file_calaba_v1_rtc_proto_depIdxs = []int32{
 	8,  // 0: calaba.v1.JoinVoiceResponse.media:type_name -> calaba.v1.RoomMediaSettings
 	9,  // 1: calaba.v1.JoinVoiceResponse.plan_limits:type_name -> calaba.v1.PlanLimits
-	10, // 2: calaba.v1.RequestCameraRequest.preset:type_name -> calaba.v1.ScreenSharePreset
-	10, // 3: calaba.v1.RequestCameraResponse.preset:type_name -> calaba.v1.ScreenSharePreset
-	10, // 4: calaba.v1.RequestStreamRequest.preset:type_name -> calaba.v1.ScreenSharePreset
-	10, // 5: calaba.v1.RequestStreamResponse.preset:type_name -> calaba.v1.ScreenSharePreset
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	10, // 2: calaba.v1.JoinVoiceResponse.self_mute:type_name -> calaba.v1.VoiceMute
+	11, // 3: calaba.v1.RequestCameraRequest.preset:type_name -> calaba.v1.ScreenSharePreset
+	11, // 4: calaba.v1.RequestCameraResponse.preset:type_name -> calaba.v1.ScreenSharePreset
+	11, // 5: calaba.v1.RequestStreamRequest.preset:type_name -> calaba.v1.ScreenSharePreset
+	11, // 6: calaba.v1.RequestStreamResponse.preset:type_name -> calaba.v1.ScreenSharePreset
+	7,  // [7:7] is the sub-list for method output_type
+	7,  // [7:7] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_rtc_proto_init() }
@@ -646,6 +660,7 @@ func file_calaba_v1_rtc_proto_init() {
 	}
 	file_calaba_v1_media_proto_init()
 	file_calaba_v1_plan_proto_init()
+	file_calaba_v1_user_proto_init()
 	file_calaba_v1_rtc_proto_msgTypes[7].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

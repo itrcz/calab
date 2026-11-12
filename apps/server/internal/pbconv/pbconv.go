@@ -231,7 +231,16 @@ func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
 	s.TaskNotifyOff = nil                    // users.task_notify_off (ADR-0089)
 	s.TaskNotifyBots = nil                   // users.task_notify_bots (ADR-0090)
 	s.CalendarZones = nil                    // users.calendar_zones (board #85)
+	s.VoiceMute = nil                        // users.voice_* (ADR-0165)
 	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(s)
+}
+
+// VoiceMute is the user's stored mic / sound choice (ADR-0165); nil when never chosen.
+func VoiceMute(muted, deafened bool, at *time.Time) *v1.VoiceMute {
+	if at == nil {
+		return nil
+	}
+	return &v1.VoiceMute{Muted: muted, Deafened: deafened, UpdatedAt: ts(*at)}
 }
 
 // CalendarZones decodes users.calendar_zones (board #85); a broken value reads as none.
@@ -281,6 +290,7 @@ func Me(u sqlc.User) *v1.Me {
 		settings.WorkHours.Days = append(settings.WorkHours.Days, uint32(max(d, 0))) //nolint:gosec // 1..7
 	}
 	settings.CalendarZones = CalendarZones(u.CalendarZones)
+	settings.VoiceMute = VoiceMute(u.VoiceMuted, u.VoiceDeafened, u.VoiceMuteAt)
 	me := &v1.Me{User: WithContacts(User(u), u), Email: email, Settings: settings,
 		EmailVerified: u.IsGuest || u.EmailVerifiedAt != nil,                 // guests have no email to verify
 		IsSuperadmin:  u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)} // an unverified address proves nothing

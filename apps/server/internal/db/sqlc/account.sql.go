@@ -21,9 +21,10 @@ UPDATE users SET
     birthday_day = NULL, birthday_month = NULL, birthday_year = NULL, birthday_hidden = true,
     username = NULL, phone = NULL, task_notify_off = DEFAULT, task_notify_bots = DEFAULT,
     calendar_zones = DEFAULT, storage_quota_bytes = NULL, hide_message_text_in_notifications = DEFAULT,
+    voice_muted = DEFAULT, voice_deafened = DEFAULT, voice_mute_at = NULL,
     disabled_at = coalesce(disabled_at, now()), deleted_at = now()
 WHERE id = $1 AND NOT is_guest AND NOT is_bot AND deleted_at IS NULL
-RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at
 `
 
 // Account deletion by the user (ADR-0153). The users row becomes an anonymous tombstone; other
@@ -70,6 +71,9 @@ func (q *Queries) AnonymizeDeletedUser(ctx context.Context, id uuid.UUID) (User,
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }

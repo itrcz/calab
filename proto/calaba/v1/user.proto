@@ -92,6 +92,23 @@ message UserSettings {
   // event_reminders: changed with UpdateMeRequest.calendar_zones. At most 2, in the order of
   // the axis; default [] (only the main axis).
   repeated CalendarZone calendar_zones = 13;
+  // The user's last own mic / sound choice in voice (ADR-0165), read-only here: changed with
+  // PUT /api/me/voice-mute. Unset = never chosen (a device keeps its local value).
+  VoiceMute voice_mute = 14;
+}
+
+// The user's last own mic / sound choice in voice (ADR-0165): the next voice session on any of
+// the user's devices starts with it. Only the user's own clicks write it, never a moderator mute
+// or an automatic one. Push-to-talk is not part of it (per device).
+// PUT /api/me/voice-mute (body: muted, deafened) → 200 VoiceMute with updated_at; USER_UPDATE
+// {me} goes to the user's devices. Last writer wins by the server's clock. 403 for bots.
+message VoiceMute {
+  // The mic is off by the user's choice. While deafened: the mic as it was before deafen
+  // (undeafen returns to it); deafen itself always means the mic is off.
+  bool muted = 1;
+  bool deafened = 2;
+  // Server time of the change; set in every answer, ignored in the request.
+  google.protobuf.Timestamp updated_at = 3;
 }
 
 // An extra time zone of the calendar's hour axis (board #85).

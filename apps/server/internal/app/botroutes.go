@@ -746,6 +746,7 @@ var botRouteGroups = []botRouteGroup{
 		"PATCH /api/notes/{id}",
 		"DELETE /api/notes/{id}",
 		"PATCH /api/me/status",
+		"PUT /api/me/voice-mute",
 		"PUT /api/workspaces/{id}/notifications",
 		"PUT /api/rooms/{id}/notifications",
 		"PATCH /api/dms/{id}/state",

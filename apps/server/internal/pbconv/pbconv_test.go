@@ -2,6 +2,7 @@ package pbconv
 
 import (
 	"testing"
+	"time"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
@@ -55,5 +56,24 @@ func TestSettingsDefaults(t *testing.T) {
 	b, _ = EncodeSettings(&v1.UserSettings{AudioBitrateKbps: &br})
 	if Settings(b).GetAudioBitrateKbps() != 48 {
 		t.Fatal("bitrate lost")
+	}
+}
+
+// ADR-0165: never chosen = unset; the stored choice lives in its own columns, not in `settings`.
+func TestVoiceMute(t *testing.T) {
+	if VoiceMute(true, true, nil) != nil {
+		t.Fatal("never chosen must be unset")
+	}
+	at := time.Unix(1_700_000_000, 0)
+	vm := VoiceMute(true, false, &at)
+	if !vm.GetMuted() || vm.GetDeafened() || !vm.GetUpdatedAt().AsTime().Equal(at) {
+		t.Fatalf("stored choice: %v", vm)
+	}
+	raw, err := EncodeSettings(&v1.UserSettings{VoiceMute: vm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Settings(raw).GetVoiceMute() != nil {
+		t.Fatalf("voice_mute leaked into settings: %s", raw)
 	}
 }

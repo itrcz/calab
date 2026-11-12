@@ -2104,6 +2104,9 @@ type User struct {
 	TaskNotifyBots                 []uuid.UUID
 	CalendarZones                  []byte
 	DeletedAt                      *time.Time
+	VoiceMuted                     bool
+	VoiceDeafened                  bool
+	VoiceMuteAt                    *time.Time
 }
 
 type UserAttribution struct {

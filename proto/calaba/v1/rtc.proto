@@ -3,6 +3,7 @@ package calaba.v1;
 
 import "calaba/v1/media.proto";
 import "calaba/v1/plan.proto";
+import "calaba/v1/user.proto";
 
 // POST /api/rooms/{id}/join (CONNECT). Returns a LiveKit token for this device
 // (identity "<user_id>:<session_id>", TTL 10 min, use it to connect right away).
@@ -23,6 +24,9 @@ message JoinVoiceResponse {
   bool pending = 8;
   // Effective plan limits of the workspace (ADR-0024), e.g. stream / camera fps caps.
   PlanLimits plan_limits = 9;
+  // The user's stored mic / sound choice (ADR-0165, UserSettings.voice_mute), read with the join so
+  // the client publishes the mic in that state from the start; unset = never chosen.
+  VoiceMute self_mute = 10;
 }
 
 // POST /api/rooms/{id}/voice/companion (VIEW_ROOM + CONNECT, workspace voice rooms only)

@@ -11,6 +11,7 @@ UPDATE users SET
     birthday_day = NULL, birthday_month = NULL, birthday_year = NULL, birthday_hidden = true,
     username = NULL, phone = NULL, task_notify_off = DEFAULT, task_notify_bots = DEFAULT,
     calendar_zones = DEFAULT, storage_quota_bytes = NULL, hide_message_text_in_notifications = DEFAULT,
+    voice_muted = DEFAULT, voice_deafened = DEFAULT, voice_mute_at = NULL,
     disabled_at = coalesce(disabled_at, now()), deleted_at = now()
 WHERE id = $1 AND NOT is_guest AND NOT is_bot AND deleted_at IS NULL
 RETURNING *;
