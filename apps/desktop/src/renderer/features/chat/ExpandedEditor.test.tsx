@@ -1,0 +1,122 @@
+// @vitest-environment jsdom
+import { act, useState, type ReactNode } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { ExpandedEditor, type Sel } from './ExpandedEditor';
+
+// CBF-178: the editor's caret belongs to the user once it is open; `initialSel` is applied once, on mount.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const LONG = 'one two three four five six seven eight nine ten';
+
+function Host({ initial, sel }: { initial: string; sel: Sel }): ReactNode {
+  const [text, setText] = useState(initial);
+  return (
+    <ExpandedEditor
+      title="Message"
+      text={text}
+      setText={setText}
+      maxLength={10000}
+      initialSel={sel}
+      attachments={null}
+      canSubmit
+      editing={false}
+      onSend={() => undefined}
+      onCollapse={() => undefined}
+      onDelete={() => undefined}
+    />
+  );
+}
+
+let root: Root | null = null;
+let host: HTMLElement | null = null;
+
+function open(initial: string, sel: Sel): HTMLTextAreaElement {
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  act(() => {
+    root?.render(<Host initial={initial} sel={sel} />);
+  });
+  const el = document.querySelector<HTMLTextAreaElement>('[data-testid="editor-field"]');
+  if (!el) throw new Error('editor field not rendered');
+  return el;
+}
+
+/** What the browser does on a keystroke / paste: replaces [selectionStart - back, selectionEnd) and puts the caret after. */
+function edit(el: HTMLTextAreaElement, insert: string, back = 0): void {
+  const from = Math.max(0, el.selectionStart - back);
+  const to = el.selectionEnd;
+  const value = el.value.slice(0, from) + insert + el.value.slice(to);
+  const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+  act(() => {
+    desc?.set?.call(el, value);
+    el.setSelectionRange(from + insert.length, from + insert.length);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+/** A click in the field: the caret moves, no React state involved. */
+function click(el: HTMLTextAreaElement, at: number): void {
+  el.setSelectionRange(at, at);
+}
+
+beforeAll(() => {
+  // jsdom has no layout; the editor only reads this to scroll.
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 100 });
+});
+
+afterEach(() => {
+  act(() => root?.unmount());
+  host?.remove();
+  root = null;
+  host = null;
+  document.body.innerHTML = '';
+});
+
+describe('ExpandedEditor caret', () => {
+  it('opens with the inline caret and focus', () => {
+    const el = open(LONG, { start: 8, end: 8 });
+    expect(document.activeElement).toBe(el);
+    expect([el.selectionStart, el.selectionEnd]).toEqual([8, 8]);
+  });
+
+  it('typing at the start keeps the caret after the char', () => {
+    const el = open(LONG, { start: LONG.length, end: LONG.length });
+    click(el, 0);
+    edit(el, 'X');
+    expect(el.value.startsWith('Xone')).toBe(true);
+    expect(el.selectionStart).toBe(1);
+    edit(el, 'Y');
+    expect(el.value.startsWith('XYone')).toBe(true);
+    expect(el.selectionStart).toBe(2);
+  });
+
+  it('typing in the middle keeps the caret', () => {
+    const el = open(LONG, { start: LONG.length, end: LONG.length });
+    click(el, 8);
+    edit(el, 'X');
+    edit(el, 'Y');
+    expect(el.value.slice(0, 11)).toBe('one two XYt');
+    expect(el.selectionStart).toBe(10);
+  });
+
+  it('Backspace in the middle keeps the caret', () => {
+    const el = open(LONG, { start: LONG.length, end: LONG.length });
+    click(el, 8);
+    edit(el, '', 1);
+    edit(el, '', 1);
+    expect(el.value.slice(0, 8)).toBe('one twth');
+    expect(el.selectionStart).toBe(6);
+  });
+
+  it('paste at the start keeps the caret after the pasted text', () => {
+    const el = open(LONG, { start: LONG.length, end: LONG.length });
+    click(el, 0);
+    edit(el, 'PASTED ');
+    expect(el.value.startsWith('PASTED one')).toBe(true);
+    expect(el.selectionStart).toBe(7);
+    edit(el, 'Z');
+    expect(el.value.startsWith('PASTED Zone')).toBe(true);
+  });
+});

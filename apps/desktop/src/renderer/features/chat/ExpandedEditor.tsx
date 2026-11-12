@@ -82,25 +82,30 @@ export function ExpandedEditor({
   const ref = useRef<HTMLTextAreaElement | null>(null);
   // The selection to restore after a re-render that replaced the text (the no-execCommand fallback).
   const pendingSel = useRef<Sel | null>(null);
-  const mounted = useRef(false);
+  // The field's selection when the editor opened, read once on mount: later it is the user's.
+  const initialSelRef = useRef(initialSel);
+
+  // The textarea sits in a Radix portal that mounts one pass after this component, so «on mount» is
+  // the moment the node is attached (a layout effect on first render sees `ref.current === null`
+  // and would apply `initialSel` on the first keystroke instead — CBF-178).
+  const attach = useCallback((el: HTMLTextAreaElement | null): void => {
+    ref.current = el;
+    if (!el) return;
+    const sel = initialSelRef.current;
+    el.focus();
+    el.setSelectionRange(sel.start, sel.end);
+    // Bring the caret into view (focus() alone leaves a long text at its top).
+    const line = Number.parseFloat(getComputedStyle(el).lineHeight) || 24;
+    const row = el.value.slice(0, sel.start).split('\n').length - 1;
+    el.scrollTop = Math.max(0, row * line - el.clientHeight / 2);
+  }, []);
 
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el) return;
-    if (!mounted.current) {
-      mounted.current = true;
-      el.focus();
-      el.setSelectionRange(initialSel.start, initialSel.end);
-      // Bring the caret into view (focus() alone leaves a long text at its top).
-      const line = Number.parseFloat(getComputedStyle(el).lineHeight) || 24;
-      const row = el.value.slice(0, initialSel.start).split('\n').length - 1;
-      el.scrollTop = Math.max(0, row * line - el.clientHeight / 2);
-    }
-    if (pendingSel.current) {
-      el.setSelectionRange(pendingSel.current.start, pendingSel.current.end);
-      pendingSel.current = null;
-    }
-  }, [text, initialSel]);
+    if (!el || !pendingSel.current) return;
+    el.setSelectionRange(pendingSel.current.start, pendingSel.current.end);
+    pendingSel.current = null;
+  }, [text]);
 
   const collapse = useCallback((): void => {
     const el = ref.current;
@@ -172,7 +177,7 @@ export function ExpandedEditor({
     >
       <FormatBar onFormat={onFormat} onHistory={onHistory} />
       <textarea
-        ref={ref}
+        ref={attach}
         value={text}
         maxLength={maxLength}
         aria-label={title}
