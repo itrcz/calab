@@ -278,6 +278,9 @@ func listEvents(ctx context.Context, c *api, a args, me whoAmI) (any, error) {
 	var list []map[string]any
 	more := false
 	for _, ws := range wss {
+		if more {
+			break
+		}
 		var r v1.ListCalendarEventsResponse
 		if err := c.call(ctx, http.MethodGet, "/api/workspaces/"+seg(ws)+"/events", qs, nil, &r); err != nil {
 			// a workspace where the caller is a guest (403) has no calendar: skipped when not asked for
