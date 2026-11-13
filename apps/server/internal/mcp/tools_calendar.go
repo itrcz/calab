@@ -424,7 +424,8 @@ func suggestSlots(ctx context.Context, c *api, a args, me whoAmI) (any, error) {
 	if now := time.Now(); from.Before(now) { // the server looks from now on
 		from = now.Truncate(time.Minute)
 	}
-	req := &v1.SuggestSlotsRequest{Users: ids, DurationMin: uint32(clamp(a.Duration, 30, 1440)), From: timestamppb.New(from), To: timestamppb.New(to),
+	minutes := uint32(clamp(a.Duration, 30, 1440)) //nolint:gosec // 1..1440
+	req := &v1.SuggestSlotsRequest{Users: ids, DurationMin: minutes, From: timestamppb.New(from), To: timestamppb.New(to),
 		WithinWorkHours: a.WorkHours == nil || *a.WorkHours}
 	if a.Room != "" {
 		if req.RoomId, err = resolveRoom(ctx, c, ws, a.Room, true); err != nil {
