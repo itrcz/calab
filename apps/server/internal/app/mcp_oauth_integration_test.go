@@ -261,7 +261,7 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 	access, refresh := mcpExchange(t, f, code)
 
 	// The tools as bob, marked «via MCP», no bot.
-	if st, out, _ := mcpCall(t, access, "tools/list", map[string]any{}); st != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 11 {
+	if st, out, _ := mcpCall(t, access, "tools/list", map[string]any{}); st != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 12 {
 		t.Fatalf("tools/list: %d %v", st, out)
 	}
 	text := mcpToolText(t, access, "create_task", map[string]any{"board": "MOA", "title": "через OAuth"})
@@ -305,6 +305,21 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 	mcpToolText(t, access, "set_task_status", map[string]any{"task": created.Key, "status": "Backlog"})
 	if text = mcpToolText(t, access, "list_tasks", map[string]any{"board": "MOA", "assignee": "me"}); !strings.Contains(text, created.Key) {
 		t.Fatalf("list_tasks board: %s", text)
+	}
+	// The signed file URLs (CBF-185/187) carry the MCP session: upload, attach, download.
+	var up map[string]any
+	_ = json.Unmarshal([]byte(mcpToolText(t, access, "upload_attachment", map[string]any{"task": created.Key})), &up)
+	ur := curlUpload(t, up["upload_url"].(string), "oauth.log", []byte("oauth log"))
+	var upped map[string]any
+	_ = json.Unmarshal(ur.body, &upped)
+	if ur.status != 201 {
+		t.Fatalf("upload as the MCP session: %d %s", ur.status, ur.body)
+	}
+	mcpToolText(t, access, "comment_task", map[string]any{"task": created.Key, "files": []string{upped["file"].(string)}})
+	bs, isErr := mcpBlocks(t, "/api/mcp", access, "get_task_attachment", map[string]any{"task": created.Key, "file": "oauth.log"})
+	dlURL, _ := metaJSON(t, bs)["download_url"].(string)
+	if dl := fetchURL(t, "GET", dlURL, nil, nil); isErr || dl.status != 200 || string(dl.body) != "oauth log" {
+		t.Fatalf("download as the MCP session: %v %d", isErr, dl.status)
 	}
 
 	// The MCP token is for the MCP endpoint only: REST and the app's refresh refuse it.
@@ -361,6 +376,10 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 	_, _ = mcpTokenCall(t, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {cid}})
 	if st, _, _ := mcpCall(t, access2, "tools/list", map[string]any{}); st != 401 {
 		t.Fatalf("after refresh reuse: %d", st)
+	}
+	// The ended session's file URL is refused too: the grant is checked alive at request time.
+	if dl := fetchURL(t, "GET", dlURL, nil, nil); dl.status != 401 {
+		t.Fatalf("download after the session ended: %d", dl.status)
 	}
 
 	// A consent from another site is refused; an unknown scope goes back as invalid_scope.

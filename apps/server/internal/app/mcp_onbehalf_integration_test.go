@@ -101,6 +101,18 @@ func TestMCPOnBehalfVia(t *testing.T) {
 	if text = mustTool(t, bt, "owner", "list_tasks", map[string]any{"mine": true}); !strings.Contains(text, created.Key) {
 		t.Fatalf("list_tasks mine: %s", text)
 	}
+	// A file on behalf of bob (CBF-187): the upload is bob's, so bob's comment takes it.
+	var up map[string]any
+	_ = json.Unmarshal([]byte(mustTool(t, bt, "owner", "upload_attachment", map[string]any{"task": created.Key})), &up)
+	ur := curlUpload(t, up["upload_url"].(string), "agent.txt", []byte("from the agent"))
+	var upped map[string]any
+	_ = json.Unmarshal(ur.body, &upped)
+	if ur.status != 201 {
+		t.Fatalf("upload on behalf: %d %s", ur.status, ur.body)
+	}
+	mustTool(t, bt, "owner", "comment_task", map[string]any{"task": created.Key, "text": "отчёт агента", "files": []string{upped["file"].(string)}})
+	_ = json.Unmarshal([]byte(mustTool(t, bt, "owner", "upload_attachment", map[string]any{"task": created.Key})), &up)
+	lateURL := up["upload_url"].(string)
 	// The bot itself through MCP, then through REST; o in the app.
 	mustTool(t, bt, "", "comment_task", map[string]any{"task": created.Key, "text": "сам бот через MCP"})
 	var tr v1.TaskResponse
@@ -127,6 +139,7 @@ func TestMCPOnBehalfVia(t *testing.T) {
 		text, author, viaBot, via string
 	}{
 		{"взял в работу", bob.id, bt.id, "mcp"},
+		{"отчёт агента", bob.id, bt.id, "mcp"},
 		{"сам бот через MCP", bt.id, "", "mcp"},
 		{"бот через REST", bt.id, "", ""},
 		{"человек в приложении", o.id, "", ""},
@@ -164,6 +177,10 @@ func TestMCPOnBehalfVia(t *testing.T) {
 	}
 	if st, text, _ := mcpToolAs(t, bt, "owner", "comment_task", map[string]any{"task": created.Key, "text": "x"}); st != http.StatusForbidden {
 		t.Fatalf("after off: %d %s", st, text)
+	}
+	// An upload URL signed while it was on is refused too: on behalf is checked again at request time.
+	if r := curlUpload(t, lateURL, "x.txt", []byte("x")); r.status != http.StatusForbidden || !strings.Contains(string(r.body), "ON_BEHALF_DISABLED") {
+		t.Fatalf("upload URL after off: %d %s", r.status, r.body)
 	}
 }
 
