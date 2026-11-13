@@ -35,7 +35,8 @@ func TestMentions(t *testing.T) {
 	if len(got.GetMessages()) != 2 || got.GetMessages()[0].GetId() != everyone.GetId() || got.GetMessages()[1].GetId() != direct.GetId() {
 		t.Fatalf("bob mentions: %v", got.GetMessages())
 	}
-	if n := len(mentions(o, "").GetMessages()); n != 0 {
+	// o is the shared test owner: other tests mention it too, so count only this workspace.
+	if n := len(mentions(o, "?workspace_id="+ws.GetId()).GetMessages()); n != 0 {
 		t.Fatalf("owner has %d mentions (own @everyone and code spans must not count)", n)
 	}
 	page := mentions(bob, "?limit=1")
