@@ -60,6 +60,28 @@ type args struct {
 	Comments int    `json:"comments"`
 	// comment_task, send_message: uploaded files to attach (upload_attachment, CBF-187)
 	Files []string `json:"files"`
+	// CBF-188: calendar, people, inbox, reactions, checklists, task links, approval
+	Action     string   `json:"action"`
+	Event      string   `json:"event"`
+	From       string   `json:"from"`
+	To         string   `json:"to"` // calendar: the window's end; send_message: the person
+	End        *string  `json:"end"`
+	Duration   int      `json:"duration"`
+	AllDay     bool     `json:"all_day"`
+	All        bool     `json:"all"`
+	WorkHours  *bool    `json:"work_hours"`
+	Repeat     string   `json:"repeat"`
+	Occurrence string   `json:"occurrence"`
+	Scope      string   `json:"scope"`
+	Person     string   `json:"person"`
+	Members    bool     `json:"members"`
+	Emoji      string   `json:"emoji"`
+	Item       string   `json:"item"`
+	Items      []string `json:"items"`
+	Checklist  string   `json:"checklist"`
+	Related    string   `json:"related"`
+	Decision   string   `json:"decision"`
+	Reason     string   `json:"reason"`
 }
 
 type tool struct {
@@ -99,10 +121,12 @@ var toolDefs = []tool{
 		"workspace": str("workspace id; default all"),
 		"limit":     map[string]any{"type": "integer", "description": "per kind, 1-20, default 10"},
 	})), find},
-	{def("read", "Read a task (with its board's statuses, labels, checklists, files, Git links, releases) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
+	{def("read", "Read a task (with its board's statuses, labels, checklists, files, Git links, releases, approval, links), a room's recent messages (members=true: who is in it) or a person's profile. Give task, room or person.", schema(nil, map[string]any{
 		"task":      taskArg,
 		"workspace": wsArg,
 		"room":      str("room id (a task's comments: its room)"),
+		"person":    str("me, a user id, a name or a nickname: profile, role, status, timezone"),
+		"members":   map[string]any{"type": "boolean", "description": "room: who can see it"},
 		"comments":  map[string]any{"type": "integer", "description": "task: latest comments, 1-50"},
 		"limit":     map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
 		"before":    str("message id: older history"),
@@ -125,11 +149,13 @@ var toolDefs = []tool{
 		"workspace": wsArg,
 		"status":    str("status name or id"),
 	})), setTaskStatus},
-	{def("send_message", "Send a message to a room or DM; files: ids from upload_attachment (all attach or nothing is sent).", schema([]string{"room"}, map[string]any{
-		"room":     str("room id"),
-		"text":     str("markdown, up to 4000 chars; may be empty with files"),
-		"reply_to": str("message id"),
-		"files":    filesArg,
+	{def("send_message", "Send a message to a room or to a person (their DM); files: ids from upload_attachment (all attach or nothing is sent).", schema(nil, map[string]any{
+		"room":      str("room id"),
+		"to":        str("instead of room: a user id, a name or a nickname"),
+		"workspace": str("workspace id, to find the person in"),
+		"text":      str("markdown, up to 4000 chars; may be empty with files"),
+		"reply_to":  str("message id"),
+		"files":     filesArg,
 	})), sendMessage},
 	// ADR-0156: the tools a developer's agent needs on a task besides the ones above.
 	{def("list_tasks", "List tasks of a board or of all boards of a workspace by filters, newest update first; mine=true: my tasks (without board/workspace: my open tasks everywhere).", schema(nil, map[string]any{
@@ -183,6 +209,69 @@ var toolDefs = []tool{
 		"message": str("message id"),
 		"text":    str("markdown"),
 	})), editMessage},
+	// CBF-188: calendar, inbox, reactions, checklists, task links, approval.
+	{def("calendar", "Meetings: my meetings of a period (all=true: every one I can see), one meeting with its comments, people's free/busy, common free slots. Times ISO 8601; answers in my timezone.", schema(nil, map[string]any{
+		"action":     map[string]any{"type": "string", "enum": []string{"list", "event", "freebusy", "suggest"}, "description": "default list"},
+		"workspace":  str("workspace id; list: default all"),
+		"from":       str("start, default today 00:00 (with an offset, else my timezone)"),
+		"to":         str("end; default list/suggest +7 days, freebusy +1 day"),
+		"all":        map[string]any{"type": "boolean", "description": "list: not only mine"},
+		"event":      str("event: meeting id"),
+		"users":      strs("freebusy/suggest: me, user ids, names or nicknames"),
+		"duration":   map[string]any{"type": "integer", "description": "suggest: minutes, default 30"},
+		"work_hours": map[string]any{"type": "boolean", "description": "suggest: within everyone's working hours, default true"},
+		"room":       str("suggest: a voice room (id or name) that must be free too"),
+		"limit":      map[string]any{"type": "integer", "description": "list: 1-100, default 50"},
+	})), calendarTool},
+	{def("event", "Create, reschedule/change, cancel a meeting, or comment on it.", schema([]string{"action"}, map[string]any{
+		"action":      map[string]any{"type": "string", "enum": []string{"create", "update", "cancel", "comment"}},
+		"event":       str("meeting id (not for create)"),
+		"workspace":   str("create: workspace id, when I am in several"),
+		"title":       str("1-120 chars"),
+		"description": str("markdown"),
+		"start":       str("ISO 8601 (with an offset, else my timezone); update: keeps the length"),
+		"end":         str("ISO 8601; or duration"),
+		"duration":    map[string]any{"type": "integer", "description": "minutes, default 30"},
+		"all_day":     map[string]any{"type": "boolean"},
+		"users":       strs("attendees: me, user ids, names or nicknames"),
+		"mode":        map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "update users, default add"},
+		"room":        str("voice room id or name; update: none = no room"),
+		"repeat":      map[string]any{"type": "string", "enum": []string{"none", "daily", "weekly", "biweekly", "monthly", "workdays"}},
+		"occurrence":  str("a series' occurrence (from calendar) to change or cancel"),
+		"scope":       map[string]any{"type": "string", "enum": []string{"this", "following", "all"}, "description": "with occurrence, default this"},
+		"text":        str("comment: markdown"),
+	})), eventTool},
+	{def("inbox", "What was written to me: unread DMs and messages mentioning me, newest first.", schema(nil, map[string]any{
+		"workspace": str("mentions of one workspace"),
+		"limit":     map[string]any{"type": "integer", "description": "1-50, default 20"},
+		"before":    str("message id: older mentions"),
+	})), inbox},
+	{def("react", "Add or remove my reaction to a message.", schema([]string{"message", "emoji"}, map[string]any{
+		"message": str("message id"),
+		"emoji":   str("an emoji, e.g. 👍"),
+		"mode":    map[string]any{"type": "string", "enum": []string{"add", "remove"}, "description": "default add"},
+	})), react},
+	{def("checklist", "Check, uncheck or toggle a task's checklist item, or add items.", schema([]string{"task"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"action":    map[string]any{"type": "string", "enum": []string{"check", "uncheck", "toggle", "add"}, "description": "default check"},
+		"item":      str("the item: number (as in read), text or id; add: its text"),
+		"items":     strs("add: several items"),
+		"checklist": str("checklist title or id; add: default the first, created if none"),
+	})), checklistTool},
+	{def("link_tasks", "Link two tasks of a workspace or remove the link.", schema([]string{"task", "related"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"related":   str("the other task: id or key"),
+		"kind":      map[string]any{"type": "string", "enum": []string{"relates", "blocks", "blocked_by", "duplicates"}, "description": "task <kind> related, default relates"},
+		"mode":      map[string]any{"type": "string", "enum": []string{"add", "remove"}, "description": "default add"},
+	})), linkTasks},
+	{def("approve", "Vote on a task's approval as its approver: approve, reject with a reason, or withdraw the vote.", schema([]string{"task", "decision"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"decision":  map[string]any{"type": "string", "enum": []string{"approve", "reject", "withdraw"}},
+		"reason":    str("required to reject, up to 500 chars"),
+	})), approve},
 }
 
 var (
@@ -370,6 +459,8 @@ func workspaceIDs(ctx context.Context, c *api, ws string) ([]string, error) {
 
 func read(ctx context.Context, c *api, a args) (any, error) {
 	switch {
+	case strings.TrimSpace(a.Person) != "":
+		return readPerson(ctx, c, a) // CBF-188
 	case strings.TrimSpace(a.Task) != "":
 		tr, board, err := loadTask(ctx, c, a.Task, a.Workspace)
 		if err != nil {
@@ -405,6 +496,7 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 			"created_by": t.GetCreatedBy(), "updated": ts(t.GetUpdatedAt()),
 			"git": gitLinks(t), "releases": releases(t), // ADR-0156
 			"files": fileList(t.GetAttachments()), "checklists": checklists(t), // CBF-182
+			"approval": approvalInfo(t), "links": taskLinks(tr), // CBF-188
 		}
 		if p := tr.GetParent(); p != nil {
 			out["parent"] = compact(map[string]any{"id": p.GetId(), "key": p.GetKey(), "title": p.GetTitle()})
@@ -443,13 +535,24 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 		for _, m := range slices.Backward(ms.GetMessages()) { // newest first in the API, oldest first here
 			list = append(list, message(m))
 		}
-		return compact(map[string]any{
+		out := map[string]any{
 			"room": compact(map[string]any{"id": r.GetId(), "name": r.GetName(), "type": enum(r.GetType().String(), "ROOM_TYPE_"),
 				"topic": r.GetTopic(), "workspace": r.GetWorkspaceId()}),
 			"messages": list, "more": ms.GetHasMore(),
-		}), nil
+		}
+		if a.Members { // CBF-188
+			people, total, err := roomMembers(ctx, c, r)
+			if err != nil {
+				return nil, err
+			}
+			out["members"] = people
+			if total > len(people) {
+				out["members_total"] = total
+			}
+		}
+		return compact(out), nil
 	}
-	return nil, errors.New("give task or room")
+	return nil, errors.New("give task, room or person")
 }
 
 func message(m *v1.Message) map[string]any {
@@ -648,10 +751,22 @@ func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
 }
 
 func sendMessage(ctx context.Context, c *api, a args) (any, error) {
-	if err := errors.Join(need("room", a.Room), needBody(a)); err != nil {
+	if err := needBody(a); err != nil {
 		return nil, err
 	}
-	return send(ctx, c, a.Room, a.Text, a.ReplyTo, a.Files)
+	room := strings.TrimSpace(a.Room)
+	switch {
+	case room != "" && strings.TrimSpace(a.To) != "":
+		return nil, errors.New("give room or to, not both")
+	case room == "" && strings.TrimSpace(a.To) == "":
+		return nil, errors.New("give room or to")
+	case room == "": // CBF-188: the person's DM, opened if new
+		var err error
+		if room, err = dmWith(ctx, c, a.Workspace, a.To); err != nil {
+			return nil, err
+		}
+	}
+	return send(ctx, c, room, a.Text, a.ReplyTo, a.Files)
 }
 
 // needBody: a message needs text or files.

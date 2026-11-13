@@ -21,9 +21,17 @@ import (
 // (ADR-0158) reaches these and the endpoint, nothing else (auth.Service.MCPInnerRoutes). A new
 // tool that calls another route adds it here; the OAuth integration test runs every tool.
 var innerRoutes = []string{
+	"DELETE /api/events/{id}",
+	"DELETE /api/messages/{id}/reactions/{emoji}",
+	"DELETE /api/tasks/{id}/relations",
 	"GET /api/boards/{id}",
+	"GET /api/dms",
+	"GET /api/events/{id}",
+	"GET /api/events/{id}/comments",
 	"GET /api/files/{id}",
 	"GET /api/files/{id}/thumbnail",
+	"GET /api/me",
+	"GET /api/me/mentions",
 	"GET /api/me/tasks",
 	"GET /api/rooms/{id}",
 	"GET /api/rooms/{id}/messages",
@@ -33,18 +41,32 @@ var innerRoutes = []string{
 	"GET /api/tasks/{id}",
 	"GET /api/workspaces",
 	"GET /api/workspaces/{id}/boards",
+	"GET /api/workspaces/{id}/events",
+	"GET /api/workspaces/{id}/freebusy",
 	"GET /api/workspaces/{id}/members",
 	"GET /api/workspaces/{id}/members/{userId}",
+	"GET /api/workspaces/{id}/roles",
 	"GET /api/workspaces/{id}/rooms",
 	"GET /api/workspaces/{id}/tasks/search",
+	"PATCH /api/checklist-items/{id}",
+	"PATCH /api/events/{id}",
 	"PATCH /api/messages/{id}",
 	"PATCH /api/tasks/{id}",
-	"POST /api/boards/{id}/files", // the upload URLs of upload_attachment (links.go): a task's board,
+	"POST /api/boards/{id}/files", // upload_attachment (links.go): a task's board
 	"POST /api/boards/{id}/tasks",
-	"POST /api/dms/{id}/files", // a DM,
+	"POST /api/checklists/{id}/items",
+	"POST /api/dms",
+	"POST /api/dms/{id}/files", // upload_attachment: a DM
+	"POST /api/events/{id}/comments",
 	"POST /api/rooms/{id}/messages",
-	"POST /api/workspaces/{id}/files", // a room of a workspace
+	"POST /api/tasks/{id}/approval",
+	"POST /api/tasks/{id}/checklists",
+	"POST /api/workspaces/{id}/events",
+	"POST /api/workspaces/{id}/files", // upload_attachment: a room of a workspace
+	"POST /api/workspaces/{id}/freebusy/suggest",
+	"PUT /api/messages/{id}/reactions/{emoji}",
 	"PUT /api/tasks/{id}/assignees",
+	"PUT /api/tasks/{id}/relations",
 }
 
 // InnerRoutes returns the set of innerRoutes.
