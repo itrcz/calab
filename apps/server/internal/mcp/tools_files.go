@@ -10,6 +10,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
@@ -37,6 +38,8 @@ func textBlock(s string) map[string]any { return map[string]any{"type": "text", 
 
 // ---- get_task_attachment ----
 
+// getTaskAttachment (CBF-182, CBF-185/186): the file's metadata with a signed download URL
+// (links.go) for every supported file within the limits; text and images also inline, as before.
 func getTaskAttachment(ctx context.Context, c *api, a args) (any, error) {
 	if err := errors.Join(need("task", a.Task), need("file", a.File)); err != nil {
 		return nil, err
@@ -49,30 +52,48 @@ func getTaskAttachment(ctx context.Context, c *api, a args) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	meta := compact(map[string]any{"file": f.GetId(), "name": f.GetName(), "mime": f.GetMime(), "size": f.GetSize(),
-		"task": tr.GetTask().GetKey(), "comment": comment})
+	mt := fileMime(f.GetMime(), f.GetName())
+	meta := compact(map[string]any{"file": f.GetId(), "name": f.GetName(), "mime": mt, "size": f.GetSize(),
+		"sha256": f.GetSha256(), "task": tr.GetTask().GetKey(), "comment": comment})
+	kind := fileKind(mt, f.GetName())
+	if kind == "" {
+		meta["error"], meta["supported"] = "unsupported_file_type", supportedTypes
+		return nil, errors.New(jsonText(meta))
+	}
+	limit := uint64(MaxFileBytes)
+	if kind == "image" {
+		limit = MaxImageBytes
+	}
+	if f.GetSize() > limit {
+		meta["error"], meta["limit"] = "file_too_large", limit
+		return nil, errors.New(jsonText(meta))
+	}
+	u, err := c.m.link(c.outer, filePrefix, linkClaims{Op: opDownload, File: f.GetId(), Name: f.GetName(), Mime: mt})
+	if err != nil {
+		return nil, err
+	}
+	meta["download_url"], meta["expires_in"] = u, int(LinkTTL/time.Second)
 	fileURL := "/api/files/" + seg(f.GetId())
 	switch {
-	case inlineImage(f.GetMime()) && f.GetSize() <= imageInline:
-		b, mime, err := c.fetch(ctx, fileURL, nil, nil, imageInline)
+	case kind == "image" && f.GetSize() <= imageInline:
+		b, got, err := c.fetch(ctx, fileURL, nil, nil, imageInline)
 		if err != nil {
 			return nil, err
 		}
-		return imageResult(meta, b, mime, f.GetMime()), nil
-	case strings.HasPrefix(f.GetMime(), "image/") && !strings.HasPrefix(f.GetMime(), "image/svg+xml"):
-		// Too large (or a type models do not take): the preview the app shows, 1024 px WebP.
-		// SVG (textMimes) is text: the app makes it no thumbnail.
-		b, mime, err := c.fetch(ctx, fileURL+"/thumbnail", url.Values{"w": {"1024"}}, nil, imageInline)
+		return imageResult(meta, b, got, mt), nil
+	case kind == "image":
+		// Over 3 MiB: the preview the app shows (1024 px WebP) inline, the original by the URL.
+		b, got, err := c.fetch(ctx, fileURL+"/thumbnail", url.Values{"w": {"1024"}}, nil, imageInline)
 		if err != nil {
 			var ae *apiError
 			if errors.As(err, &ae) && ae.status == http.StatusNotFound {
-				return nil, tooLarge(meta, "an image without a preview")
+				return binaryResult(meta), nil
 			}
 			return nil, err
 		}
 		meta["preview"] = "1024 px"
-		return imageResult(meta, b, mime, "image/webp"), nil
-	case textual(f.GetMime(), f.GetName()):
+		return imageResult(meta, b, got, "image/webp"), nil
+	case kind == "text":
 		var h http.Header
 		if f.GetSize() > textInline {
 			h = http.Header{"Range": {"bytes=0-" + strconv.Itoa(textInline-1)}}
@@ -86,14 +107,135 @@ func getTaskAttachment(ctx context.Context, c *api, a args) (any, error) {
 			for len(b) > 0 && !utf8.Valid(b) && len(b) > textInline-utf8.UTFMax {
 				b = b[:len(b)-1]
 			}
-			meta["truncated"] = fmt.Sprintf("first %d of %d bytes", len(b), f.GetSize())
+			meta["truncated"] = fmt.Sprintf("first %d of %d bytes; the whole file by download_url", len(b), f.GetSize())
 		}
 		if !utf8.Valid(b) {
-			return nil, tooLarge(meta, "not UTF-8 text")
+			delete(meta, "truncated")
+			return binaryResult(meta), nil // not UTF-8: the file only
 		}
 		return content{textBlock(jsonText(meta)), textBlock(string(b))}, nil
 	}
-	return nil, tooLarge(meta, "a binary file")
+	return binaryResult(meta), nil
+}
+
+// binaryResult is a file without an inline body: its metadata and how to fetch it with a shell.
+func binaryResult(meta map[string]any) content {
+	name := safeShellName(meta["name"].(string))
+	return content{textBlock(jsonText(meta)), textBlock(fmt.Sprintf(
+		"Download with a shell (the URL works %d min; keep the bytes out of the chat): curl -fsSL -o %q %q && shasum -a 256 %q (must equal sha256)",
+		int(LinkTTL/time.Minute), name, meta["download_url"], name))}
+}
+
+// safeShellName is a file name to suggest in a shell command: the base name without quotes,
+// dollars, backticks, backslashes or a leading dash or dot.
+func safeShellName(name string) string {
+	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || strings.ContainsRune("\"'`$\\!", r) {
+			return '_'
+		}
+		return r
+	}, name)
+	name = strings.TrimLeft(name, "-.")
+	if name == "" || name == "/" {
+		return "file"
+	}
+	return name
+}
+
+// supportedTypes is what get_task_attachment returns (unsupported_file_type lists it).
+var supportedTypes = []string{"text (txt, csv, tsv, json, xml, md, sql, yaml, code, logs)", "xlsx", "docx", "pptx", "pdf", "zip",
+	"ogg/opus", "mp3", "wav", "m4a", "png", "jpeg", "webp", "gif"}
+
+// extMimes: the type of a file by its extension, when the stored one is generic (sniffing stores
+// an OOXML document as application/zip, an Ogg file as application/ogg).
+var extMimes = map[string]string{
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".pdf":  "application/pdf", ".zip": "application/zip",
+	".ogg": "audio/ogg", ".oga": "audio/ogg", ".opus": "audio/ogg", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4",
+	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif",
+	".txt": "text/plain", ".csv": "text/csv", ".tsv": "text/tab-separated-values", ".json": "application/json",
+	".xml": "application/xml", ".md": "text/markdown", ".sql": "application/sql", ".yaml": "application/yaml", ".yml": "application/yaml",
+}
+
+// genericMimes are stored types that say less than the extension.
+var genericMimes = map[string]bool{"": true, "application/octet-stream": true, "application/zip": true, "application/x-zip-compressed": true,
+	"text/plain": true, "application/ogg": true, "audio/x-wav": true, "audio/wave": true, "audio/x-m4a": true, "audio/mp3": true}
+
+// fileMime is the type of a file for the agent: the stored one, or the extension's when the
+// stored one is generic.
+func fileMime(stored, name string) string {
+	mt, _, _ := strings.Cut(stored, ";")
+	mt = strings.TrimSpace(strings.ToLower(mt))
+	if byExt, ok := extMimes[strings.ToLower(path.Ext(name))]; ok && genericMimes[mt] {
+		return byExt
+	}
+	return mt
+}
+
+// fileKind is the class of a supported file ("" = not supported): text, image, document,
+// archive or audio.
+func fileKind(mt, name string) string {
+	switch mt {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return "image"
+	case "application/pdf", extMimes[".xlsx"], extMimes[".docx"], extMimes[".pptx"]:
+		return "document"
+	case "application/zip":
+		return "archive"
+	case "audio/ogg", "audio/opus", "audio/mpeg", "audio/wav", "audio/mp4":
+		return "audio"
+	}
+	if textual(mt, name) {
+		return "text"
+	}
+	return ""
+}
+
+// ---- upload_attachment ----
+
+// uploadAttachment (CBF-187): a single-use upload URL for a file the agent then attaches with
+// comment_task or send_message (files). The URL goes to the route the app uses: a task's board
+// (its comments' attachments, ADR-0042), else the room's workspace, or the DM.
+func uploadAttachment(ctx context.Context, c *api, a args) (any, error) {
+	task, room := strings.TrimSpace(a.Task), strings.TrimSpace(a.Room)
+	if (task == "") == (room == "") {
+		return nil, errors.New("give task or room (exactly one)")
+	}
+	out := map[string]any{}
+	var target string
+	if task != "" {
+		tr, err := taskByRef(ctx, c, task, a.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		target = "/api/boards/" + seg(tr.GetTask().GetBoardId()) + "/files"
+		out["task"] = tr.GetTask().GetKey()
+	} else {
+		var r v1.GetRoomResponse
+		if err := c.call(ctx, http.MethodGet, "/api/rooms/"+seg(room), nil, nil, &r); err != nil {
+			return nil, err
+		}
+		if ws := r.GetRoom().GetWorkspaceId(); ws != "" {
+			target = "/api/workspaces/" + seg(ws) + "/files"
+		} else {
+			target = "/api/dms/" + seg(r.GetRoom().GetId()) + "/files"
+		}
+		out["room"] = r.GetRoom().GetId()
+	}
+	if !uploadTarget(target) {
+		return nil, errors.New("this task or room takes no files")
+	}
+	u, err := c.m.link(c.outer, uploadPfx, linkClaims{Op: opUpload, Target: target})
+	if err != nil {
+		return nil, err
+	}
+	out["upload_url"], out["expires_in"], out["max_size"] = u, int(LinkTTL/time.Second), MaxFileBytes
+	out["curl"] = fmt.Sprintf("curl -fsS -F file=@./report.xlsx %q", u)
+	out["next"] = "the answer is {file, name, mime, size, sha256}; attach with files: [file] in " + map[bool]string{true: "comment_task", false: "send_message"}[task != ""] + "; the URL works once"
+	return out, nil
 }
 
 // attachmentOf finds file (an id, or a name) among the attachments of task t, then of its
@@ -158,15 +300,6 @@ func pick(fs []*v1.FileMeta, ref string) (*v1.FileMeta, error) {
 	return nil, errors.New("several files are named " + strconv.Quote(ref) + ", give the id: " + strings.Join(ids, ", "))
 }
 
-// inlineImage: the image types MCP clients pass to models as they are.
-func inlineImage(mime string) bool {
-	switch mime {
-	case "image/png", "image/jpeg", "image/gif", "image/webp":
-		return true
-	}
-	return false
-}
-
 var textMimes = map[string]bool{
 	"application/json": true, "application/xml": true, "application/yaml": true, "application/x-yaml": true,
 	"application/javascript": true, "application/x-javascript": true, "application/typescript": true,
@@ -194,11 +327,6 @@ func imageResult(meta map[string]any, b []byte, got, want string) content {
 		mime = want
 	}
 	return content{textBlock(jsonText(meta)), {"type": "image", "data": base64.StdEncoding.EncodeToString(b), "mimeType": mime}}
-}
-
-// tooLarge is the refusal of a file the tool does not return: what it is, and where to open it.
-func tooLarge(meta map[string]any, why string) error {
-	return errors.New(why + ", not returned inline (text up to 256 KiB, images up to 3 MiB or as a preview): " + jsonText(meta) + "; open it in Calab")
 }
 
 // ---- edit_message ----

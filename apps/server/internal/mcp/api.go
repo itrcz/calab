@@ -39,8 +39,11 @@ var innerRoutes = []string{
 	"GET /api/workspaces/{id}/tasks/search",
 	"PATCH /api/messages/{id}",
 	"PATCH /api/tasks/{id}",
+	"POST /api/boards/{id}/files", // the upload URLs of upload_attachment (links.go): a task's board,
 	"POST /api/boards/{id}/tasks",
+	"POST /api/dms/{id}/files", // a DM,
 	"POST /api/rooms/{id}/messages",
+	"POST /api/workspaces/{id}/files", // a room of a workspace
 	"PUT /api/tasks/{id}/assignees",
 }
 
@@ -62,6 +65,7 @@ const maxAnswer = 8 << 20
 type api struct {
 	h     http.Handler
 	outer *http.Request
+	m     *Handler // signed file URLs (links.go)
 }
 
 // apiError is a REST refusal as the model reads it.

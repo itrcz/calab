@@ -708,6 +708,9 @@ var identityRoutes = map[string]identityScope{
 	// call goes through this gate again with its own route and scope.
 	"/api/mcp": scopePublic,
 	"/mcp":     scopePublic, // the same endpoint at the short address (CBF-183)
+	// Its signed file URLs (CBF-185/187): the replayed REST call is gated with its own route and scope.
+	"GET /api/mcp/file/{token}":    scopePublic,
+	"POST /api/mcp/upload/{token}": scopePublic,
 	// MCP without a bot (ADR-0158): the OAuth server of the endpoint. Metadata, registration and
 	// token are public (no ambient credential); the consent routes authenticate the person's app
 	// session themselves (local authority, the browser that started the request).

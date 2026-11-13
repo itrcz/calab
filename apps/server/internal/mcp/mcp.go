@@ -16,6 +16,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/redis/rueidis"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -67,6 +70,13 @@ type Handler struct {
 	API http.Handler
 	// Version is the server version reported in initialize.
 	Version string
+	// Signed file URLs (links.go): the signing key (DeriveURLKey; none = the tools refuse to
+	// make URLs), Valkey for the single use of upload URLs, the app origins the URLs are built
+	// on (the MCP request's Host among them, else the first), and the clock (tests).
+	URLKey  []byte
+	Redis   rueidis.Client
+	Origins []string
+	Now     func() time.Time
 }
 
 // New returns a handler; API is set later.
@@ -180,7 +190,7 @@ func (h *Handler) dispatch(r *http.Request, req rpcRequest) (any, *rpcError) {
 				return toolError("arguments: " + err.Error()), nil
 			}
 		}
-		out, err := t.run(r.Context(), &api{h: h.API, outer: r}, a)
+		out, err := t.run(r.Context(), &api{h: h.API, outer: r, m: h}, a)
 		if err != nil {
 			return toolError(errText(err)), nil
 		}

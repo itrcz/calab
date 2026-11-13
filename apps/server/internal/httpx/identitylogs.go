@@ -43,10 +43,10 @@ func sensitiveCanvasPath(r *http.Request) bool {
 
 // sensitiveOfficePath: the file and callback URLs the Document Server calls carry signed
 // capabilities (ADR-0143: the callback token has no expiry and names the item and the session
-// key).
+// key); so do the file URLs of the MCP tools (CBF-185/187).
 func sensitiveOfficePath(r *http.Request) (string, bool) {
 	for _, value := range []string{r.URL.Path, path.Clean(r.URL.Path)} {
-		for _, prefix := range []string{"/api/office/file", "/api/office/callback"} {
+		for _, prefix := range []string{"/api/office/file", "/api/office/callback", "/api/mcp/file", "/api/mcp/upload"} {
 			if value == prefix || strings.HasPrefix(value, prefix+"/") {
 				return prefix + "/{token}", true
 			}

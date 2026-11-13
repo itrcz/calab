@@ -58,6 +58,8 @@ type args struct {
 	Comment  string `json:"comment"`
 	Message  string `json:"message"`
 	Comments int    `json:"comments"`
+	// comment_task, send_message: uploaded files to attach (upload_attachment, CBF-187)
+	Files []string `json:"files"`
 }
 
 type tool struct {
@@ -85,6 +87,8 @@ func def(name, desc string, input map[string]any) map[string]any {
 
 var taskArg = str("task id or key (ABC-12)")
 
+var filesArg = strs("file ids from upload_attachment: your own uploads, not attached yet")
+
 // wsArg narrows a task key to one workspace (a key may repeat across workspaces).
 var wsArg = str("workspace id, when a task key is in several workspaces")
 
@@ -110,20 +114,22 @@ var toolDefs = []tool{
 		"description": str("markdown"),
 		"status":      str("status name or id; default the board's"),
 	})), createTask},
-	{def("comment_task", "Comment on a task.", schema([]string{"task", "text"}, map[string]any{
+	{def("comment_task", "Comment on a task; files: ids from upload_attachment (all attach or nothing is posted).", schema([]string{"task"}, map[string]any{
 		"task":      taskArg,
 		"workspace": wsArg,
-		"text":      str("comment, markdown"),
+		"text":      str("comment, markdown; may be empty with files"),
+		"files":     filesArg,
 	})), commentTask},
 	{def("set_task_status", "Move a task to another status of its board.", schema([]string{"task", "status"}, map[string]any{
 		"task":      taskArg,
 		"workspace": wsArg,
 		"status":    str("status name or id"),
 	})), setTaskStatus},
-	{def("send_message", "Send a message to a room or DM.", schema([]string{"room", "text"}, map[string]any{
+	{def("send_message", "Send a message to a room or DM; files: ids from upload_attachment (all attach or nothing is sent).", schema([]string{"room"}, map[string]any{
 		"room":     str("room id"),
-		"text":     str("markdown, up to 4000 chars"),
+		"text":     str("markdown, up to 4000 chars; may be empty with files"),
 		"reply_to": str("message id"),
+		"files":    filesArg,
 	})), sendMessage},
 	// ADR-0156: the tools a developer's agent needs on a task besides the ones above.
 	{def("list_tasks", "List tasks of a board or of all boards of a workspace by filters, newest update first; mine=true: my tasks (without board/workspace: my open tasks everywhere).", schema(nil, map[string]any{
@@ -161,12 +167,18 @@ var toolDefs = []tool{
 		"lead":      str("the lead among the assignees (me, id, name); default: kept, else the first"),
 	})), assign},
 	// CBF-182: a task's files for the agent; fixing its own comment instead of posting another.
-	{def("get_task_attachment", "A file of a task or its comment: text (256 KiB, longer cut) or image (over 3 MiB: preview); others only described.", schema([]string{"task", "file"}, map[string]any{
+	{def("get_task_attachment", "A file of a task or its comment: metadata (sha256) and download_url, a signed URL for 10 min: fetch it with curl in a shell, never paste the bytes into the chat. Text (256 KiB) and images (up to 3 MiB, else a preview) also inline. Limits 3 MiB, images 5 MiB; text, xlsx, docx, pptx, pdf, zip, ogg, mp3, wav, m4a, png, jpeg, webp, gif.", schema([]string{"task", "file"}, map[string]any{
 		"task":      taskArg,
 		"workspace": wsArg,
 		"file":      str("file id (from read) or name"),
 		"comment":   str("comment message id; default: the task, its last 100 comments"),
 	})), getTaskAttachment},
+	// CBF-187: a local file to a comment or message: upload URL, curl, then files of comment_task / send_message.
+	{def("upload_attachment", "A single-use upload URL (10 min) for one local file up to 3 MiB for a task comment (task) or a room message (room): run the returned curl in a shell, then pass the answer's file id in files of comment_task or send_message.", schema(nil, map[string]any{
+		"task":      str("task id or key whose comment gets the file (or room)"),
+		"workspace": wsArg,
+		"room":      str("room id whose message gets the file (or task)"),
+	})), uploadAttachment},
 	{def("edit_message", "Edit your own message or comment.", schema([]string{"message", "text"}, map[string]any{
 		"message": str("message id"),
 		"text":    str("markdown"),
@@ -600,14 +612,14 @@ func where(out map[string]any, t *v1.Task, b *v1.Board) map[string]any {
 }
 
 func commentTask(ctx context.Context, c *api, a args) (any, error) {
-	if err := errors.Join(need("task", a.Task), need("text", a.Text)); err != nil {
+	if err := errors.Join(need("task", a.Task), needBody(a)); err != nil {
 		return nil, err
 	}
 	tr, err := taskByRef(ctx, c, a.Task, a.Workspace)
 	if err != nil {
 		return nil, err
 	}
-	out, err := send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "")
+	out, err := send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "", a.Files)
 	if err != nil {
 		return nil, err
 	}
@@ -636,19 +648,38 @@ func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
 }
 
 func sendMessage(ctx context.Context, c *api, a args) (any, error) {
-	if err := errors.Join(need("room", a.Room), need("text", a.Text)); err != nil {
+	if err := errors.Join(need("room", a.Room), needBody(a)); err != nil {
 		return nil, err
 	}
-	return send(ctx, c, a.Room, a.Text, a.ReplyTo)
+	return send(ctx, c, a.Room, a.Text, a.ReplyTo, a.Files)
 }
 
-func send(ctx context.Context, c *api, room, text, replyTo string) (any, error) {
+// needBody: a message needs text or files.
+func needBody(a args) error {
+	if strings.TrimSpace(a.Text) == "" && len(a.Files) == 0 {
+		return errors.New("text is required (or files)")
+	}
+	return nil
+}
+
+// send posts a message with files (ids of the caller's unattached uploads) through the app's
+// route: it checks ATTACH_FILES and that every file is the caller's own unattached upload in
+// this workspace, in one transaction: one bad id and nothing is posted.
+func send(ctx context.Context, c *api, room, text, replyTo string, files []string) (any, error) {
 	var r v1.CreateMessageResponse
-	req := &v1.CreateMessageRequest{Content: text, ReplyToId: strings.TrimSpace(replyTo), Nonce: uuid.NewString()}
+	var ids []string
+	for _, f := range files {
+		ids = append(ids, strings.TrimSpace(f))
+	}
+	req := &v1.CreateMessageRequest{Content: text, ReplyToId: strings.TrimSpace(replyTo), Nonce: uuid.NewString(), AttachmentIds: ids}
 	if err := c.call(ctx, http.MethodPost, "/api/rooms/"+seg(room)+"/messages", nil, req, &r); err != nil {
 		return nil, err
 	}
-	return map[string]any{"id": r.GetMessage().GetId(), "room": r.GetMessage().GetRoomId()}, nil
+	out := map[string]any{"id": r.GetMessage().GetId(), "room": r.GetMessage().GetRoomId()}
+	if fs := fileList(r.GetMessage().GetAttachments()); fs != nil {
+		out["files"] = fs
+	}
+	return out, nil
 }
 
 // ---- compact answers ----

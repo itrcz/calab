@@ -90,10 +90,16 @@ func (s *Service) Authenticate(r *http.Request) (Identity, error) {
 // allowMCP admits an MCP session's token (ADR-0158; Require then confines it to the MCP endpoint).
 func (s *Service) authenticate(r *http.Request, allowMCP bool) (Identity, error) {
 	tok, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !found || tok == "" {
+	var id Identity
+	var err error
+	switch g, granted := grantFrom(r.Context()); {
+	case granted && r.Header.Get("Authorization") == "" && allowMCP:
+		id, err = s.grantIdentity(r.Context(), g) // a signed URL of an MCP tool (grant.go)
+	case !found || tok == "":
 		return Identity{}, httpx.Unauthenticated("missing bearer token")
+	default:
+		id, err = s.authenticateToken(r.Context(), tok, allowMCP)
 	}
-	id, err := s.authenticateToken(r.Context(), tok, allowMCP)
 	switch {
 	case err == nil:
 		return id, nil
@@ -105,6 +111,24 @@ func (s *Service) authenticate(r *http.Request, allowMCP bool) (Identity, error)
 		slog.ErrorContext(r.Context(), "token check failed", "err", err)
 		return Identity{}, httpx.Unavailable(err)
 	}
+}
+
+// liveSession checks that the session of id is alive now (not revoked, not expired, the same
+// user and kind) and loads its principal: the part of a token check after the signature, shared
+// with the signed URLs of the MCP tools (grant.go).
+func (s *Service) liveSession(ctx context.Context, id Identity) (Identity, error) {
+	if err := s.checkSession(ctx, id.SessionID); err != nil {
+		return Identity{}, err
+	}
+	liveSessions.mu.Lock()
+	p := liveSessions.principals[id.SessionID]
+	mcpSession := liveSessions.mcp[id.SessionID]
+	liveSessions.mu.Unlock()
+	if p.UserID != id.UserID || mcpSession != id.MCP || !identitypolicy.CheckSession(s.now(), p).Allowed {
+		return Identity{}, ErrInvalidToken
+	}
+	id.Principal = p
+	return id, nil
 }
 
 // AuthenticateToken validates an access JWT or a bot token (REST and gateway IDENTIFY).
@@ -122,17 +146,9 @@ func (s *Service) authenticateToken(ctx context.Context, tok string, allowMCP bo
 	if err != nil || (id.MCP && !allowMCP) {
 		return Identity{}, ErrInvalidToken
 	}
-	if err := s.checkSession(ctx, id.SessionID); err != nil {
+	if id, err = s.liveSession(ctx, id); err != nil {
 		return Identity{}, err
 	}
-	liveSessions.mu.Lock()
-	p := liveSessions.principals[id.SessionID]
-	mcpSession := liveSessions.mcp[id.SessionID]
-	liveSessions.mu.Unlock()
-	if p.UserID != id.UserID || mcpSession != id.MCP || !identitypolicy.CheckSession(s.now(), p).Allowed {
-		return Identity{}, ErrInvalidToken
-	}
-	id.Principal = p
 	// The pair this token came with has arrived: its previous refresh token is reuse now.
 	s.markGenUsed(ctx, id)
 	return id, nil

@@ -103,3 +103,27 @@ func TestOfficeTokensNeverAppearInHTTPLogs(t *testing.T) {
 		t.Fatal("redaction lost the route")
 	}
 }
+
+func TestMCPFileTokensNeverAppearInHTTPLogs(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
+	marker := "mcp-file-token-sentinel"
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/mcp/file/{token}", HandlerFunc(func(http.ResponseWriter, *http.Request) error { return fmt.Errorf("database down") }))
+	mux.Handle("POST /api/mcp/upload/{token}", HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil }))
+	handler := Observe(mux)
+	for _, c := range []struct{ method, raw string }{
+		{"GET", "/api/mcp/file/" + marker}, {"POST", "/api/mcp/upload/" + marker}, {"GET", "/api/mcp//file/" + marker},
+	} {
+		req := httptest.NewRequestWithContext(context.Background(), c.method, c.raw, nil)
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	if strings.Contains(logs.String(), marker) {
+		t.Fatalf("mcp file token leaked: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "/api/mcp/upload/{token}") {
+		t.Fatal("redaction lost the route")
+	}
+}

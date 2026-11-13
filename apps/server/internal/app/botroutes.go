@@ -618,6 +618,10 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/mcp/oauth/revoke",
 		"OPTIONS /api/mcp/oauth/revoke",
 	}},
+	{access: botPublic, why: "signed file URLs of the MCP tools (CBF-185/187, ADR-0158 addendum): no bearer, the token in the path is a 10-minute capability bound to the tool's caller; the handler replays GET /api/files/{id} or the upload route in process as that caller, through this table and the identity gate again", routes: []string{
+		"GET /api/mcp/file/{token}",
+		"POST /api/mcp/upload/{token}",
+	}},
 	{access: botDeny, why: "MCP without a bot (ADR-0158): the consent is a person's — a bot has its own token and needs none", routes: []string{
 		"POST /api/mcp/oauth/requests/{request}/bind",
 		"POST /api/mcp/oauth/requests/{request}/decision",
