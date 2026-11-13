@@ -196,6 +196,32 @@ func TestMCPFileLinks(t *testing.T) {
 	if r := curlUpload(t, uURL, "again.txt", []byte("x")); r.status != http.StatusGone {
 		t.Fatalf("reuse: %d %s", r.status, r.body)
 	}
+	// A download token is no upload token, and an upload token no download token.
+	if r := curlUpload(t, strings.Replace(xURL, "/api/mcp/file/", "/api/mcp/upload/", 1), "x.txt", []byte("x")); r.status != 404 {
+		t.Fatalf("download token on the upload route: %d %s", r.status, r.body)
+	}
+	// Two requests at once with one URL: one upload, one 410.
+	text, _ = mcpTool(t, bt, "upload_attachment", map[string]any{"task": task.GetKey()})
+	_ = json.Unmarshal([]byte(text), &up)
+	if r := fetchURL(t, "GET", strings.Replace(up["upload_url"].(string), "/api/mcp/upload/", "/api/mcp/file/", 1), nil, nil); r.status != 404 {
+		t.Fatalf("upload token on the download route: %d", r.status)
+	}
+	codes := make(chan int, 4)
+	for range cap(codes) {
+		go func() { codes <- curlUpload(t, up["upload_url"].(string), "race.txt", []byte("race")).status }()
+	}
+	created, gone := 0, 0
+	for range cap(codes) {
+		switch <-codes {
+		case http.StatusCreated:
+			created++
+		case http.StatusGone:
+			gone++
+		}
+	}
+	if created != 1 || gone != cap(codes)-1 {
+		t.Fatalf("concurrent uploads with one URL: %d created, %d gone", created, gone)
+	}
 	// Over the limit: file_too_large with the size and the limit.
 	text, _ = mcpTool(t, bt, "upload_attachment", map[string]any{"task": task.GetKey()})
 	_ = json.Unmarshal([]byte(text), &up)

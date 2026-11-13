@@ -43,17 +43,20 @@ func (a *filesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{Id: "f-mp4", Name: "demo.mp4", Mime: "video/mp4", Size: 100},
 			{Id: "f-bin", Name: "blob.txt", Mime: "text/plain", Size: 4},
 			{Id: "f-svg", Name: "icon.svg", Mime: "image/svg+xml", Size: uint64(len(a.files["f-svg"]))},
+			{Id: "f-heic", Name: "photo.heic", Mime: "image/heic", Size: 100},
+			{Id: "f-tiff", Name: "scan.tiff", Mime: "image/tiff", Size: 100},
+			{Id: "f-biglog", Name: "server.log", Mime: "text/plain", Size: uint64(len(a.files["f-biglog"]))},
 		}
 		m = &v1.TaskResponse{Task: t, Board: a.f.board}
 	case r.URL.Path == "/api/rooms/room-7/messages":
 		m = &v1.ListMessagesResponse{Messages: []*v1.Message{{Id: "m-1", RoomId: "room-7",
 			Attachments: []*v1.FileMeta{{Id: "f-huge", Name: "trace.txt", Mime: "text/plain", Size: 1 << 20},
 				{Id: "f-ogg", Name: "voice.ogg", Mime: "audio/ogg", Size: 900}}}}}
-	case r.URL.Path == "/api/files/f-big/thumbnail":
+	case r.URL.Path == "/api/files/f-big/thumbnail", r.URL.Path == "/api/files/f-heic/thumbnail":
 		w.Header().Set("Content-Type", "image/webp")
 		_, _ = w.Write([]byte("WEBP"))
 		return
-	case strings.HasPrefix(r.URL.Path, "/api/files/"):
+	case strings.HasPrefix(r.URL.Path, "/api/files/") && !strings.HasSuffix(r.URL.Path, "/thumbnail"):
 		id := strings.TrimPrefix(r.URL.Path, "/api/files/")
 		a.ranges = append(a.ranges, r.Header.Get("Range"))
 		b := a.files[id]
@@ -89,11 +92,12 @@ func blocks(t *testing.T, h http.Handler, args string) ([]map[string]any, bool) 
 func TestGetTaskAttachment(t *testing.T) {
 	f := newTaskFixture()
 	a := &filesAPI{f: f, files: map[string][]byte{
-		"f-log":  []byte("ok\nFAIL TestX\n"),
-		"f-png":  {0x89, 'P', 'N', 'G'},
-		"f-huge": []byte(strings.Repeat("é", 1<<19)), // 1 MiB of two-byte runes
-		"f-svg":  []byte("<svg/>"),
-		"f-bin":  {0xff, 0xfe, 0x00, 0x01},
+		"f-log":    []byte("ok\nFAIL TestX\n"),
+		"f-png":    {0x89, 'P', 'N', 'G'},
+		"f-huge":   []byte(strings.Repeat("é", 1<<19)), // 1 MiB of two-byte runes
+		"f-svg":    []byte("<svg/>"),
+		"f-bin":    {0xff, 0xfe, 0x00, 0x01},
+		"f-biglog": []byte(strings.Repeat("x", MaxFileBytes+1)),
 	}}
 	h := linked(a)
 
@@ -151,6 +155,21 @@ func TestGetTaskAttachment(t *testing.T) {
 		if bs, isErr = blocks(t, h, `{"task":"DEV-7","file":"`+c.file+`"}`); !isErr || !strings.Contains(bs[0]["text"].(string), c.code) {
 			t.Fatalf("%s: %v %v", c.file, isErr, bs)
 		}
+	}
+	// Without a URL the old inline answers stay: a preview of an image of another type (HEIC), the
+	// head of a text file over the limit; an image without a preview is refused.
+	bs, isErr = blocks(t, h, `{"task":"DEV-7","file":"f-heic"}`)
+	if m := metaOf(t, bs); isErr || bs[1]["mimeType"] != "image/webp" || m["no_download"] != "unsupported_file_type" || m["download_url"] != nil {
+		t.Fatalf("heic: %v %v", isErr, bs)
+	}
+	bs, isErr = blocks(t, h, `{"task":"DEV-7","file":"f-biglog"}`)
+	if m := metaOf(t, bs); isErr || len(bs[1]["text"].(string)) != textInline || m["no_download"] != "file_too_large" || m["limit"] != float64(MaxFileBytes) ||
+		m["download_url"] != nil || !strings.Contains(m["truncated"].(string), "open it in Calab") {
+		t.Fatalf("big text: %v %s", isErr, bs[0]["text"])
+	}
+	if bs, isErr = blocks(t, h, `{"task":"DEV-7","file":"f-tiff"}`); !isErr || !strings.Contains(bs[0]["text"].(string), `"error":"unsupported_file_type"`) ||
+		strings.Contains(bs[0]["text"].(string), "no_download") {
+		t.Fatalf("tiff: %v %v", isErr, bs)
 	}
 	// A comment's binary file.
 	if bs, isErr = blocks(t, h, `{"task":"DEV-7","file":"f-ogg"}`); isErr || metaOf(t, bs)["comment"] != "m-1" {

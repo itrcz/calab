@@ -102,7 +102,7 @@ Answers are compact: empty fields are left out. The usual flow: `find` → ids �
 
 Files never pass through the model's context: the agent (Codex, Claude Code) downloads and uploads them **in its shell** with `curl`, by short-lived signed URLs a tool returns. A URL works for **10 minutes**, is bound to the tool's caller (the bot and its token, the MCP connection, on behalf) and to one file (download) or one target (upload). No token header is needed: on every request the server checks again that the connection is alive and that the caller may still read the file (as `GET /api/files/{id}` does). These are not Disk public links.
 
-Supported: text (TXT, CSV, TSV, JSON, XML, MD, SQL, YAML, logs, code), XLSX, DOCX, PPTX, PDF, ZIP, OGG/Opus, MP3, WAV, M4A — up to 3 MiB (3 145 728 bytes); PNG, JPEG, WEBP, GIF — up to 5 MiB (5 242 880 bytes). A file exactly at the limit passes. OOXML stored as `application/zip` gets its proper MIME by extension. Video and other types: `unsupported_file_type`.
+Supported: text (TXT, CSV, TSV, JSON, XML, MD, SQL, YAML, logs, code), XLSX, DOCX, PPTX, PDF, ZIP, OGG/Opus, MP3, WAV, M4A — up to 3 MiB (3 145 728 bytes); PNG, JPEG, WEBP, GIF — up to 5 MiB (5 242 880 bytes). A file exactly at the limit passes. OOXML stored as `application/zip` gets its proper MIME by extension. Video and other types: `unsupported_file_type`. Without a URL the agent still gets what fits the chat: an image of another type (HEIC and the like) or over the limit comes as its 1024 px preview, a text file over the limit as its first 256 KiB, with `no_download` (the reason) instead of `download_url`.
 
 `get_task_attachment` answers with JSON: `file`, `name`, `mime`, `size`, `sha256`, `task`, `comment` (a comment's file only), `download_url`, `expires_in` (600).
 
@@ -111,7 +111,7 @@ curl -fsSL -o "report.xlsx" "$DOWNLOAD_URL"
 shasum -a 256 report.xlsx   # equals sha256
 ```
 
-Upload: `upload_attachment {"task":"WEB-12"}` (or `room`) → `curl -fsS -F file=@./report.xlsx "$UPLOAD_URL"` → `{"file","name","mime","size","sha256"}` → `comment_task {"task":"WEB-12","text":"Weekly report","files":["<file>"]}`. An upload URL works once, the file is up to 3 MiB; only your own unattached upload can be attached.
+Upload: `upload_attachment {"task":"WEB-12"}` (or `room`) → `curl -fsS -F file=@./report.xlsx "$UPLOAD_URL"` → `{"file","name","mime","size","sha256"}` → `comment_task {"task":"WEB-12","text":"Weekly report","files":["<file>"]}`. An upload URL works once, also when the upload fails (call `upload_attachment` again), the file is up to 3 MiB; only your own unattached upload can be attached.
 
 Errors: the tool answers `{"error":"file_too_large","size":…,"limit":…}` or `{"error":"unsupported_file_type","supported":[…]}` with `isError`; a URL answers `404` (bad, changed or expired URL, or access lost), `401` (bot token replaced, MCP connection ended), `403` (no right, on behalf off), `413` `FILE_TOO_LARGE` with `reason: file_too_large`, `used`, `limit` (upload over 3 MiB), `410` `reason: upload_url_used` (reused upload URL).
 

@@ -214,9 +214,12 @@ func (f *fileWriter) WriteHeader(code int) {
 			hd := f.Header()
 			hd.Set("Cache-Control", "no-store")
 			hd.Del("ETag")
-			if f.name != "" {
-				hd.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": f.name}))
+			// Always a download, also when the name cannot be put in the header.
+			disp := mime.FormatMediaType("attachment", map[string]string{"filename": f.name})
+			if f.name == "" || disp == "" {
+				disp = "attachment"
 			}
+			hd.Set("Content-Disposition", disp)
 			if f.mime != "" {
 				hd.Set("Content-Type", f.mime)
 			}

@@ -40,6 +40,8 @@ func textBlock(s string) map[string]any { return map[string]any{"type": "text", 
 
 // getTaskAttachment (CBF-182, CBF-185/186): the file's metadata with a signed download URL
 // (links.go) for every supported file within the limits; text and images also inline, as before.
+// Without a URL (another type, over the limit) an image still gives its preview and a text file
+// its head, with no_download saying why; anything else is refused.
 func getTaskAttachment(ctx context.Context, c *api, a args) (any, error) {
 	if err := errors.Join(need("task", a.Task), need("file", a.File)); err != nil {
 		return nil, err
@@ -56,16 +58,41 @@ func getTaskAttachment(ctx context.Context, c *api, a args) (any, error) {
 	meta := compact(map[string]any{"file": f.GetId(), "name": f.GetName(), "mime": mt, "size": f.GetSize(),
 		"sha256": f.GetSha256(), "task": tr.GetTask().GetKey(), "comment": comment})
 	kind := fileKind(mt, f.GetName())
-	if kind == "" {
-		meta["error"], meta["supported"] = "unsupported_file_type", supportedTypes
-		return nil, errors.New(jsonText(meta))
-	}
 	limit := uint64(MaxFileBytes)
 	if kind == "image" {
 		limit = MaxImageBytes
 	}
-	if f.GetSize() > limit {
-		meta["error"], meta["limit"] = "file_too_large", limit
+	fileURL := "/api/files/" + seg(f.GetId())
+	// No download URL for a type outside the list or a file over the limit. What the tool gave
+	// before the URLs stays: an image's preview (HEIC and the like too), the head of a text file.
+	refusal := ""
+	switch {
+	case kind == "":
+		refusal = "unsupported_file_type"
+		meta["supported"] = supportedTypes
+	case f.GetSize() > limit:
+		refusal = "file_too_large"
+		meta["limit"] = limit
+	}
+	if refusal != "" {
+		meta["no_download"] = refusal
+		var out content
+		var ok bool
+		var err error
+		switch {
+		case kind == "text":
+			out, ok, err = textHead(ctx, c, meta, f, fileURL, "open it in Calab for the rest")
+		case strings.HasPrefix(mt, "image/"): // SVG is text
+			out, ok, err = imagePreview(ctx, c, meta, fileURL)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return out, nil
+		}
+		delete(meta, "no_download")
+		meta["error"] = refusal
 		return nil, errors.New(jsonText(meta))
 	}
 	u, err := c.m.link(c.outer, filePrefix, linkClaims{Op: opDownload, File: f.GetId(), Name: f.GetName(), Mime: mt})
@@ -73,7 +100,6 @@ func getTaskAttachment(ctx context.Context, c *api, a args) (any, error) {
 		return nil, err
 	}
 	meta["download_url"], meta["expires_in"] = u, int(LinkTTL/time.Second)
-	fileURL := "/api/files/" + seg(f.GetId())
 	switch {
 	case kind == "image" && f.GetSize() <= imageInline:
 		b, got, err := c.fetch(ctx, fileURL, nil, nil, imageInline)
@@ -83,39 +109,64 @@ func getTaskAttachment(ctx context.Context, c *api, a args) (any, error) {
 		return imageResult(meta, b, got, mt), nil
 	case kind == "image":
 		// Over 3 MiB: the preview the app shows (1024 px WebP) inline, the original by the URL.
-		b, got, err := c.fetch(ctx, fileURL+"/thumbnail", url.Values{"w": {"1024"}}, nil, imageInline)
+		out, ok, err := imagePreview(ctx, c, meta, fileURL)
 		if err != nil {
-			var ae *apiError
-			if errors.As(err, &ae) && ae.status == http.StatusNotFound {
-				return binaryResult(meta), nil
-			}
 			return nil, err
 		}
-		meta["preview"] = "1024 px"
-		return imageResult(meta, b, got, "image/webp"), nil
+		if ok {
+			return out, nil
+		}
 	case kind == "text":
-		var h http.Header
-		if f.GetSize() > textInline {
-			h = http.Header{"Range": {"bytes=0-" + strconv.Itoa(textInline-1)}}
-		}
-		b, _, err := c.fetch(ctx, fileURL, nil, h, textInline)
+		out, ok, err := textHead(ctx, c, meta, f, fileURL, "the whole file by download_url")
 		if err != nil {
 			return nil, err
 		}
-		if f.GetSize() > uint64(len(b)) {
-			// Cut at a whole character: a multi-byte rune split by the range is dropped.
-			for len(b) > 0 && !utf8.Valid(b) && len(b) > textInline-utf8.UTFMax {
-				b = b[:len(b)-1]
-			}
-			meta["truncated"] = fmt.Sprintf("first %d of %d bytes; the whole file by download_url", len(b), f.GetSize())
-		}
-		if !utf8.Valid(b) {
-			delete(meta, "truncated")
-			return binaryResult(meta), nil // not UTF-8: the file only
-		}
-		return content{textBlock(jsonText(meta)), textBlock(string(b))}, nil
+		if ok {
+			return out, nil
+		} // else not UTF-8: the file only
 	}
 	return binaryResult(meta), nil
+}
+
+// imagePreview is the preview the app shows of an image (1024 px WebP); false when it has none.
+func imagePreview(ctx context.Context, c *api, meta map[string]any, fileURL string) (content, bool, error) {
+	b, got, err := c.fetch(ctx, fileURL+"/thumbnail", url.Values{"w": {"1024"}}, nil, imageInline)
+	if err != nil {
+		var ae *apiError
+		if errors.As(err, &ae) && ae.status == http.StatusNotFound {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	meta["preview"] = "1024 px"
+	return imageResult(meta, b, got, "image/webp"), true, nil
+}
+
+// textHead is a text file inline: whole up to textInline, else its first textInline bytes cut at
+// a whole character (rest says where the rest is); false when the bytes are not UTF-8.
+func textHead(ctx context.Context, c *api, meta map[string]any, f *v1.FileMeta, fileURL, rest string) (content, bool, error) {
+	var h http.Header
+	if f.GetSize() > textInline {
+		h = http.Header{"Range": {"bytes=0-" + strconv.Itoa(textInline-1)}}
+	}
+	b, _, err := c.fetch(ctx, fileURL, nil, h, textInline)
+	if err != nil {
+		return nil, false, err
+	}
+	cut := f.GetSize() > uint64(len(b))
+	if cut {
+		// A multi-byte rune split by the range is dropped.
+		for len(b) > 0 && !utf8.Valid(b) && len(b) > textInline-utf8.UTFMax {
+			b = b[:len(b)-1]
+		}
+	}
+	if !utf8.Valid(b) {
+		return nil, false, nil
+	}
+	if cut {
+		meta["truncated"] = fmt.Sprintf("first %d of %d bytes; %s", len(b), f.GetSize(), rest)
+	}
+	return content{textBlock(jsonText(meta)), textBlock(string(b))}, true, nil
 }
 
 // binaryResult is a file without an inline body: its metadata and how to fetch it with a shell.
