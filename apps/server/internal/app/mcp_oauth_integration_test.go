@@ -261,7 +261,7 @@ func TestMCPOAuthPersonConnects(t *testing.T) {
 	access, refresh := mcpExchange(t, f, code)
 
 	// The tools as bob, marked «via MCP», no bot.
-	if st, out, _ := mcpCall(t, access, "tools/list", map[string]any{}); st != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 12 {
+	if st, out, _ := mcpCall(t, access, "tools/list", map[string]any{}); st != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 19 {
 		t.Fatalf("tools/list: %d %v", st, out)
 	}
 	text := mcpToolText(t, access, "create_task", map[string]any{"board": "MOA", "title": "через OAuth"})

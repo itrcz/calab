@@ -62,7 +62,7 @@ func TestMCPShortAddressAndFiles(t *testing.T) {
 	}
 	access, _ := mcpExchange(t, f, code)
 	for _, p := range []string{"/mcp", "/api/mcp"} {
-		if st, out, _ := mcpCallAt(t, p, access, "tools/list", map[string]any{}); st != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 12 {
+		if st, out, _ := mcpCallAt(t, p, access, "tools/list", map[string]any{}); st != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 19 {
 			t.Fatalf("tools/list at %s: %d %v", p, st, out)
 		}
 	}
