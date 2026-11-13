@@ -86,16 +86,34 @@ The transport is Streamable HTTP: a JSON-RPC 2.0 request in the `POST` body, one
 | `find` | `q` (words; for rooms, boards and people a name part, empty = all), `kind` (`tasks` · `messages` · `rooms` · `boards` · `people`; default all, `people` only with `q`), `workspace` (id; default all the bot's workspaces), `limit` (per kind, 1–20, default 10) | Ids for the other tools: `tasks`, `messages` (including task comments), `rooms`, `boards`, `people` (id, name, nickname); nothing found — `{"found": 0}`. `q` is required for `tasks` and `messages` |
 | `read` | `task` (id or key `ABC-12`) **or** `room` (id; a task's comments are in its room), `limit` (messages, 1–50, default 20), `before` (message id: older history), `full` (`true` — the whole API object), `comments` (with a task: its latest comments, 1–50) | A task with its board's statuses, subtasks, assignees and lead, labels, checklists, files (`files`: id, name, type, size), Git links (`git`: merge requests and branches, commits as a count) and releases, with `comments` — `recent_comments`; messages carry `files` with ids; or a room and its recent messages (oldest first, `more` — there is older history) |
 | `create_task` | **`board`** (id or key), **`title`** (1–200 characters), `description` (markdown), `status` (name or id; default the board's) | `id`, `key`, `room`, `status` |
-| `comment_task` | **`task`** (id or key), **`text`** (markdown) | `id`, `room` of the new comment |
+| `comment_task` | **`task`** (id or key), `text` (markdown), `files` (file ids from `upload_attachment`; with them `text` may be empty) | `id`, `room` of the new comment, `files`. One bad id and nothing is posted |
 | `set_task_status` | **`task`**, **`status`** (a name or id of a status of **that task's board**) | `key`, `status`. An unknown status is an error listing the board's statuses |
-| `send_message` | **`room`** (id; a DM works too), **`text`** (markdown, up to 4000 characters), `reply_to` (message id) | `id`, `room` |
+| `send_message` | **`room`** (id; a DM works too), `text` (markdown, up to 4000 characters), `reply_to` (message id), `files` (file ids from `upload_attachment`) | `id`, `room`, `files`. One bad id and nothing is sent |
 | `list_tasks` | `board` (id or key `DEV`) or `workspace` (id), `q` (words or a key), `status` (names, comma-separated; needs `board`), `assignee` (`me`, an id, a name or a nickname), `labels` (names; needs `board`), `state` (`open` by default · `done` · `all`), `sort` (`updated` by default · `created` · `key` · `priority` · `due`, `-` for descending), `mine` (`true` without a board — my open tasks everywhere), `limit` (1–50, default 20), `cursor` | `tasks` (key, title, status, priority, assignees, labels, due, updated), `next` — the next page's cursor |
 | `update_task` | **`task`** (`workspace` — where to look the key up), and only the fields to change: `title`, `description`, `priority` (`none` · `low` · `medium` · `high` · `urgent`), `due` / `start` (`YYYY-MM-DD`, empty — clear), `estimate` (0 — none), `parent` (a task, empty — clear), `labels` (the whole set by name) or `add_labels` / `remove_labels` | The task after the change |
 | `assign` | **`task`**, **`users`** (`me`, ids, names or nicknames), `mode` (`add` by default · `remove` · `set`), `lead` (the lead among the assignees; by default the current one, else the first) | `key`, `assignees`, `lead`. An ambiguous name is an error listing the matches |
-| `get_task_attachment` | **`task`**, **`file`** (an id from `read` or the exact name), `comment` (the comment's message id; by default the task's files, then those of its latest 100 comments) | A `text` block describing the file and the file itself: text (`text/*`, JSON, YAML, code…) up to 256 KiB whole, longer — its first 256 KiB (`truncated`); PNG/JPEG/GIF/WebP up to 3 MiB — an `image` block, larger or another image type — the 1024 px preview (WebP); other files — an error with the description. Rights are those of a download in the app; a file of another task is an error |
+| `get_task_attachment` | **`task`**, **`file`** (an id from `read` or the exact name), `comment` (the comment's message id; by default the task's files, then those of its latest 100 comments) | The file's description with `download_url`, a signed URL valid for 10 minutes (see [Attachments](#attachments)); text up to 256 KiB and images up to 3 MiB (larger: the 1024 px preview) also inline. Rights are those of a download in the app; a file of another task is an error |
+| `upload_attachment` | **`task`** (id or key) **or** **`room`** (id), `workspace` | `upload_url` (single use, 10 minutes), the `curl` command, `max_size`. Attach the uploaded file with `files` of `comment_task` / `send_message` |
 | `edit_message` | **`message`** (id), **`text`** (markdown) | `id`, `room`, `edited`. Only your own message |
 
 Answers are compact: empty fields are left out. The usual flow: `find` → ids → `read` → an action.
+
+## Attachments
+
+Files never pass through the model's context: the agent (Codex, Claude Code) downloads and uploads them **in its shell** with `curl`, by short-lived signed URLs a tool returns. A URL works for **10 minutes**, is bound to the tool's caller (the bot and its token, the MCP connection, on behalf) and to one file (download) or one target (upload). No token header is needed: on every request the server checks again that the connection is alive and that the caller may still read the file (as `GET /api/files/{id}` does). These are not Disk public links.
+
+Supported: text (TXT, CSV, TSV, JSON, XML, MD, SQL, YAML, logs, code), XLSX, DOCX, PPTX, PDF, ZIP, OGG/Opus, MP3, WAV, M4A — up to 3 MiB (3 145 728 bytes); PNG, JPEG, WEBP, GIF — up to 5 MiB (5 242 880 bytes). A file exactly at the limit passes. OOXML stored as `application/zip` gets its proper MIME by extension. Video and other types: `unsupported_file_type`.
+
+`get_task_attachment` answers with JSON: `file`, `name`, `mime`, `size`, `sha256`, `task`, `comment` (a comment's file only), `download_url`, `expires_in` (600).
+
+```sh
+curl -fsSL -o "report.xlsx" "$DOWNLOAD_URL"
+shasum -a 256 report.xlsx   # equals sha256
+```
+
+Upload: `upload_attachment {"task":"WEB-12"}` (or `room`) → `curl -fsS -F file=@./report.xlsx "$UPLOAD_URL"` → `{"file","name","mime","size","sha256"}` → `comment_task {"task":"WEB-12","text":"Weekly report","files":["<file>"]}`. An upload URL works once, the file is up to 3 MiB; only your own unattached upload can be attached.
+
+Errors: the tool answers `{"error":"file_too_large","size":…,"limit":…}` or `{"error":"unsupported_file_type","supported":[…]}` with `isError`; a URL answers `404` (bad, changed or expired URL, or access lost), `401` (bot token replaced, MCP connection ended), `403` (no right, on behalf off), `413` `FILE_TOO_LARGE` with `reason: file_too_large`, `used`, `limit` (upload over 3 MiB), `410` `reason: upload_url_used` (reused upload URL).
 
 ## Example
 

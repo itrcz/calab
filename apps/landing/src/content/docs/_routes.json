@@ -387,6 +387,8 @@
 {"method":"GET","path":"/api/internal/ivr-agent","decision":"public","group":"other"},
 {"method":"GET","path":"/api/internal/sipreg-agent","decision":"public","group":"other"},
 {"method":"*","path":"/api/mcp","decision":"allow","group":"other"},
+{"method":"GET","path":"/api/mcp/file/{token}","decision":"public","group":"other"},
+{"method":"POST","path":"/api/mcp/upload/{token}","decision":"public","group":"other"},
 {"method":"POST","path":"/api/office/callback/{token}","decision":"public","group":"other"},
 {"method":"GET","path":"/api/office/capabilities","decision":"deny","group":"other"},
 {"method":"GET","path":"/api/office/config","decision":"deny","group":"other"},

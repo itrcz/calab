@@ -86,16 +86,91 @@ order: 21
 | `find` | `q` (слова; для комнат, досок и людей — часть имени, пусто = все), `kind` (`tasks` · `messages` · `rooms` · `boards` · `people`; по умолчанию все, `people` — только с `q`), `workspace` (id; по умолчанию все пространства бота), `limit` (на каждый вид, 1–20, по умолчанию 10) | Идентификаторы для других инструментов: `tasks`, `messages` (включая комментарии задач), `rooms`, `boards`, `people` (id, имя, ник); ничего нет — `{"found": 0}`. `q` обязателен для `tasks` и `messages` |
 | `read` | `task` (id или ключ `ABC-12`) **или** `room` (id; комментарии задачи — в её комнате), `limit` (сообщений, 1–50, по умолчанию 20), `before` (id сообщения: более старая история), `full` (`true` — объект API целиком), `comments` (с задачей: последние комментарии, 1–50) | Задача со статусами её доски, подзадачами, исполнителями и ведущим, метками, чек-листами, файлами (`files`: id, имя, тип, размер), Git-связями (`git`: MR и ветки, коммиты — числом) и релизами, с `comments` — `recent_comments`; у сообщений `files` с id; или комната и последние сообщения (старые первыми, `more` — есть ещё более старые) |
 | `create_task` | **`board`** (id или ключ), **`title`** (1–200 символов), `description` (markdown), `status` (имя или id; по умолчанию статус доски) | `id`, `key`, `room`, `status` |
-| `comment_task` | **`task`** (id или ключ), **`text`** (markdown) | `id`, `room` нового комментария |
+| `comment_task` | **`task`** (id или ключ), `text` (markdown), `files` (id файлов из `upload_attachment`; с ними `text` можно не давать) | `id`, `room` нового комментария, `files`. Один неверный id — комментарий не публикуется |
 | `set_task_status` | **`task`**, **`status`** (имя или id статуса **доски этой задачи**) | `key`, `status`. Неизвестный статус — ошибка со списком статусов доски |
-| `send_message` | **`room`** (id; подойдёт и DM), **`text`** (markdown, до 4000 символов), `reply_to` (id сообщения) | `id`, `room` |
+| `send_message` | **`room`** (id; подойдёт и DM), `text` (markdown, до 4000 символов), `reply_to` (id сообщения), `files` (id файлов из `upload_attachment`) | `id`, `room`, `files`. Один неверный id — сообщение не отправляется |
 | `list_tasks` | `board` (id или ключ `DEV`) или `workspace` (id), `q` (слова или ключ), `status` (имена через запятую; нужна `board`), `assignee` (`me`, id, имя или ник), `labels` (имена; нужна `board`), `state` (`open` по умолчанию · `done` · `all`), `sort` (`updated` по умолчанию · `created` · `key` · `priority` · `due`, `-` — по убыванию), `mine` (`true` без доски — мои открытые задачи везде), `limit` (1–50, по умолчанию 20), `cursor` | `tasks` (ключ, название, статус, приоритет, исполнители, метки, срок, обновлена), `next` — курсор следующей страницы |
 | `update_task` | **`task`** (`workspace` — где искать ключ), и только меняемые поля: `title`, `description`, `priority` (`none` · `low` · `medium` · `high` · `urgent`), `due` / `start` (`YYYY-MM-DD`, пусто — снять), `estimate` (0 — нет), `parent` (задача, пусто — снять), `labels` (весь набор по именам) или `add_labels` / `remove_labels` | Задача после правки |
 | `assign` | **`task`**, **`users`** (`me`, id, имена или ники), `mode` (`add` по умолчанию · `remove` · `set`), `lead` (ведущий из исполнителей; по умолчанию прежний, иначе первый) | `key`, `assignees`, `lead`. Неоднозначное имя — ошибка со списком подходящих |
-| `get_task_attachment` | **`task`**, **`file`** (id из `read` или точное имя), `comment` (id сообщения-комментария; по умолчанию — файлы задачи, затем последних 100 комментариев) | Блок `text` с описанием файла и сам файл: текст (`text/*`, JSON, YAML, код…) до 256 КиБ целиком, длиннее — первые 256 КиБ (`truncated`); PNG/JPEG/GIF/WebP до 3 МиБ — блок `image`, больше или другой формат картинки — превью 1024 px (WebP); прочие файлы — ошибка с описанием. Права — как на скачивание в приложении; файл другой задачи — ошибка |
+| `get_task_attachment` | **`task`**, **`file`** (id из `read` или точное имя), `comment` (id сообщения-комментария; по умолчанию — файлы задачи, затем последних 100 комментариев) | Описание файла с `download_url` (подписанная ссылка на 10 минут, см. [Работа с вложениями](#работа-с-вложениями)); текст до 256 КиБ и картинки до 3 МиБ (больше — превью 1024 px) — ещё и прямо в ответе. Права — как на скачивание в приложении; файл другой задачи — ошибка |
+| `upload_attachment` | **`task`** (id или ключ) **или** **`room`** (id), `workspace` | `upload_url` (одноразовая ссылка на 10 минут), готовая команда `curl`, `max_size`. Загруженный файл прикрепляется через `files` у `comment_task` / `send_message` |
 | `edit_message` | **`message`** (id), **`text`** (markdown) | `id`, `room`, `edited`. Править можно только своё |
 
 Ответы компактные: пустые поля опускаются. Обычный путь: `find` → id → `read` → действие.
+
+## Работа с вложениями
+
+Файлы не идут через контекст модели: агент (Codex, Claude Code) скачивает и загружает их **в своей оболочке** через `curl` по короткоживущим подписанным ссылкам. Ссылку выдаёт инструмент; она действует **10 минут**, привязана к тому, кто вызвал инструмент (бот, его токен, MCP-подключение, «от имени»), и к одному файлу (скачивание) или одной цели (загрузка). Токен в заголовке `curl` не нужен — его роль играет подпись в ссылке; при каждом запросе сервер заново проверяет, что подключение живо и что права на файл остались (как у `GET /api/files/{id}`). Отозвали токен, отключили подключение, удалили комментарий, лишили доступа — ссылка перестаёт работать до истечения срока. Публичными ссылками Диска это не является и в «Поделиться» не появляется.
+
+### Что поддерживается
+
+| Вид | Форматы | MIME в ответе | Лимит |
+|---|---|---|---|
+| Текст | TXT, CSV, TSV, JSON, XML, MD, SQL, YAML, логи, код | `text/plain`, `text/csv`, `text/tab-separated-values`, `application/json`, `application/xml`, `text/markdown`, `application/sql`, `application/yaml`… | 3 МиБ (3 145 728 байт) |
+| Документы | XLSX, DOCX, PPTX, PDF | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `…wordprocessingml.document`, `…presentationml.presentation`, `application/pdf` | 3 МиБ |
+| Архивы | ZIP | `application/zip` | 3 МиБ |
+| Аудио | OGG/Opus (голосовые), MP3, WAV, M4A | `audio/ogg`, `audio/mpeg`, `audio/wav`, `audio/mp4` | 3 МиБ |
+| Картинки | PNG, JPEG, WEBP, GIF | `image/png`, `image/jpeg`, `image/webp`, `image/gif` | 5 МиБ (5 242 880 байт) |
+
+Лимит — по размеру исходного файла; ровно на лимите файл проходит. Видео и прочие типы — `unsupported_file_type`. Файлы OOXML, сохранённые сервером как `application/zip` или `application/octet-stream`, получают правильный MIME по расширению.
+
+### Вложения задачи и комментария
+
+`get_task_attachment` находит файл среди вложений задачи и её комментариев: `file` — id (из `read`, у задачи `files`, у комментариев `recent_comments[].files`) или точное имя; `comment` — id сообщения-комментария (иначе ищется в задаче и последних 100 комментариях). Ответ — JSON с описанием:
+
+```json
+{"file":"0199…","name":"report.xlsx","mime":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+ "size":48213,"sha256":"5f1c…","task":"WEB-12","comment":"0199…",
+ "download_url":"https://app.calab.io/api/mcp/file/eyJ…","expires_in":600}
+```
+
+`comment` есть только у файла комментария. Для текста и картинок следом идёт сам файл (блок `text` или `image`); для остальных — строка с командой скачивания.
+
+### Скачать и проверить SHA-256
+
+```sh
+curl -fsSL -o "report.xlsx" "$DOWNLOAD_URL"
+shasum -a 256 report.xlsx   # должно совпасть с sha256 из описания
+```
+
+Повторное скачивание по той же ссылке в течение 10 минут работает (и с `Range`); потом — снова `get_task_attachment`. Ответ — `Content-Disposition: attachment`, `Cache-Control: no-store`.
+
+### Загрузить файл и прикрепить к комментарию
+
+1. `upload_attachment` с `task` (комментарий задачи) или `room` (сообщение в комнате или DM) — одноразовая ссылка и команда `curl`.
+2. `curl -fsS -F file=@./report.xlsx "$UPLOAD_URL"` — ответ `{"file","name","mime","size","sha256"}`. Ссылка срабатывает один раз; файл до 3 МиБ.
+3. `comment_task` (или `send_message`) с `files: ["<file>"]`. Прикрепить можно только свой ещё не прикреплённый файл этого пространства; один неверный id — ничего не публикуется. Права на загрузку и комментарий — как в приложении (`ATTACH_FILES`, квота и лимиты тарифа).
+
+### Ошибки
+
+| Где | Ошибка | Что значит |
+|---|---|---|
+| инструмент (`isError`) | `{"error":"file_too_large","size":…,"limit":…}` | файл больше лимита, ссылки нет |
+| инструмент (`isError`) | `{"error":"unsupported_file_type","supported":[…]}` | тип не поддерживается |
+| инструмент (`isError`) | `404 NOT_FOUND`, `403 FORBIDDEN` | нет доступа к задаче или файлу |
+| ссылка | `404` | ссылка неверна, изменена или истекла, либо доступ к файлу пропал |
+| ссылка | `401` | токен бота заменён или MCP-подключение отключено |
+| ссылка | `403` | нет прав (`ATTACH_FILES`, «от имени» выключено) |
+| загрузка | `413` `FILE_TOO_LARGE`, `reason: file_too_large`, `used` — размер, `limit` — 3 145 728 | файл больше 3 МиБ |
+| загрузка | `410`, `reason: upload_url_used` | ссылка уже использована — вызовите `upload_attachment` ещё раз |
+
+### Примеры для Codex
+
+Скачать XLSX из задачи и прочитать: «возьми `report.xlsx` из WEB-12» → `get_task_attachment {"task":"WEB-12","file":"report.xlsx"}` → `curl -fsSL -o report.xlsx "<download_url>" && shasum -a 256 report.xlsx` → дальше `python3 -c "import openpyxl…"`.
+
+DOCX из комментария: `get_task_attachment {"task":"WEB-12","file":"spec.docx","comment":"<id комментария>"}` → `curl -fsSL -o spec.docx "<download_url>"` → `pandoc spec.docx -t markdown`.
+
+Голосовое OGG: `get_task_attachment {"task":"WEB-12","file":"<id>"}` (`mime: audio/ogg`) → `curl -fsSL -o voice.ogg "<download_url>"` → расшифровка локально (`whisper voice.ogg`).
+
+Отчёт XLSX → комментарий:
+
+```text
+upload_attachment {"task":"WEB-12"}
+  → {"upload_url":"https://app.calab.io/api/mcp/upload/eyJ…","curl":"curl -fsS -F file=@./report.xlsx \"…\"", …}
+curl -fsS -F file=@./report.xlsx "https://app.calab.io/api/mcp/upload/eyJ…"
+  → {"file":"0199…","name":"report.xlsx","mime":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","size":48213,"sha256":"5f1c…"}
+comment_task {"task":"WEB-12","text":"Отчёт за неделю","files":["0199…"]}
+```
 
 ## Пример
 
