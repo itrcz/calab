@@ -102,7 +102,7 @@ func TestProtocol(t *testing.T) {
 		t.Fatalf("tools: %v", ToolNames())
 	}
 	// Token economy: the whole tool list stays small.
-	if b, _ := json.Marshal(list); len(b) > 13900 { // 19 tools (CBF-187, CBF-188)
+	if b, _ := json.Marshal(list); len(b) > 13200 { // 19 tools (CBF-187, CBF-188)
 		t.Fatalf("tools/list is %d bytes", len(b))
 	}
 	_, out = post(t, h, &botID, `{"jsonrpc":"2.0","id":2,"method":"nope"}`)

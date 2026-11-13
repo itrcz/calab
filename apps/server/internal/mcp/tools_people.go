@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
 )
 
@@ -155,19 +156,8 @@ func roomMembers(ctx context.Context, c *api, room *v1.Room) ([]map[string]any, 
 	if err := c.call(ctx, http.MethodGet, "/api/workspaces/"+seg(ws)+"/members", nil, nil, &ms); err != nil {
 		return nil, 0, err
 	}
-	var createdBy *uuid.UUID
-	if id, err := uuid.Parse(room.GetCreatedBy()); err == nil {
-		createdBy = &id
-	}
-	flags := perm.Flags(room.GetRestricted(), room.GetIsPrivate(), room.GetExpiresAt() != nil, createdBy)
-	ovs := make([]perm.OverrideTarget, 0, len(room.GetPermissionOverrides()))
-	for _, o := range room.GetPermissionOverrides() {
-		kind := "role"
-		if o.GetTargetType() == v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER {
-			kind = "user"
-		}
-		ovs = append(ovs, perm.OverrideTarget{TargetType: kind, TargetID: o.GetTargetId(), Override: perm.Override{Allow: perm.Bits(o.GetAllow()), Deny: perm.Bits(o.GetDeny())}})
-	}
+	// the same conversions the server's own room permissions use (rooms, workspaces)
+	flags, ovs := pbconv.RoomFlags(room), pbconv.ProtoOverrideTargets(room.GetPermissionOverrides())
 	var out []map[string]any
 	total := 0
 	for _, m := range ms.GetMembers() {

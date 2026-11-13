@@ -156,6 +156,11 @@ func TestMCPCalendarPeopleApproval(t *testing.T) {
 	if _, text, isErr := mcpToolAs(t, bt, "owner", "event", map[string]any{"action": "comment", "event": ev.ID, "text": "x"}); !isErr || !strings.Contains(text, "ON_BEHALF_ROUTE") {
 		t.Fatalf("meeting comment on behalf: %s", text)
 	}
+	// ...but a meeting with comments is still read on behalf (without them).
+	bob.must(201, "POST", "/api/events/"+ev.ID+"/comments", &v1.CalendarEventCommentRequest{Body: "сам"}, nil)
+	if text = mustTool(t, bt, "owner", "calendar", map[string]any{"action": "event", "event": ev.ID}); !strings.Contains(text, "Через бота") || strings.Contains(text, "сам") {
+		t.Fatalf("meeting read on behalf: %s", text)
+	}
 	// The bot by itself: inbox and calendar work within its own rights.
 	mustTool(t, bt, "", "inbox", map[string]any{})
 	mustTool(t, bt, "", "calendar", map[string]any{"workspace": wid})

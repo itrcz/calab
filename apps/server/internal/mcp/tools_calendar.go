@@ -342,6 +342,11 @@ func readEvent(ctx context.Context, c *api, a args, me whoAmI) (any, error) {
 		var cs v1.ListCalendarEventCommentsResponse
 		qs := url.Values{"limit": {strconv.Itoa(clamp(a.Comments, 20, 50))}}
 		if err := c.call(ctx, http.MethodGet, "/api/events/"+seg(a.Event)+"/comments", qs, nil, &cs); err != nil {
+			// on behalf the comments are closed (ADR-0109): the meeting is still read
+			var ae *apiError
+			if errors.As(err, &ae) && ae.status == http.StatusForbidden && ae.e.GetReason() == "ON_BEHALF_ROUTE" {
+				return compact(out), nil
+			}
 			return nil, err
 		}
 		list := make([]map[string]any, 0, len(cs.GetComments()))
