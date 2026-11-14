@@ -12,19 +12,19 @@ License audit: no GPL / LGPL / AGPL / SSPL / RSAL / BUSL (the generator fails on
 
   MODULE                                   VERSION                LICENSE
   github.com/Azure/go-ntlmssp              v0.1.1                 MIT
-  github.com/aws/aws-sdk-go-v2             v1.47.5                Apache-2.0
-  github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25                Apache-2.0
-  github.com/aws/aws-sdk-go-v2/credentials v1.20.13               Apache-2.0
-  github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.19               Apache-2.0
-  github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8                 Apache-2.0
-  github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8                 Apache-2.0
-  github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8                 Apache-2.0
-  github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23               Apache-2.0
-  github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.9                Apache-2.0
-  github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8                Apache-2.0
-  github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.8                Apache-2.0
-  github.com/aws/aws-sdk-go-v2/service/s3  v1.114.6               Apache-2.0
-  github.com/aws/smithy-go                 v1.28.8                Apache-2.0
+  github.com/aws/aws-sdk-go-v2             v1.48.0                Apache-2.0
+  github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.27                Apache-2.0
+  github.com/aws/aws-sdk-go-v2/credentials v1.21.0                Apache-2.0
+  github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.24               Apache-2.0
+  github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12                Apache-2.0
+  github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12                Apache-2.0
+  github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12                Apache-2.0
+  github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25               Apache-2.0
+  github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.13               Apache-2.0
+  github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12               Apache-2.0
+  github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.12               Apache-2.0
+  github.com/aws/aws-sdk-go-v2/service/s3  v1.114.10              Apache-2.0
+  github.com/aws/smithy-go                 v1.28.9                Apache-2.0
   github.com/beorn7/perks                  v1.0.1                 MIT
   github.com/caarlos0/env/v11              v11.4.2                MIT
   github.com/cespare/xxhash/v2             v2.3.0                 MIT
@@ -32,7 +32,7 @@ License audit: no GPL / LGPL / AGPL / SSPL / RSAL / BUSL (the generator fails on
   github.com/coreos/go-oidc/v3             v3.21.0                Apache-2.0
   github.com/gen2brain/webp                v0.6.4                 MIT
   github.com/go-asn1-ber/asn1-ber          v1.5.8                 MIT
-  github.com/go-jose/go-jose/v4            v4.1.8                 Apache-2.0
+  github.com/go-jose/go-jose/v4            v4.1.9                 Apache-2.0
   github.com/go-ldap/ldap/v3               v3.4.15                MIT
   github.com/golang-jwt/jwt/v5             v5.3.1                 MIT
   github.com/google/uuid                   v1.6.0                 BSD-3-Clause
@@ -44,23 +44,23 @@ License audit: no GPL / LGPL / AGPL / SSPL / RSAL / BUSL (the generator fails on
   github.com/klippa-app/go-pdfium          v1.21.4                MIT
   github.com/mfridman/interpolate          v0.0.2                 MIT
   github.com/munnerz/goautoneg             v0.0.0-20191010083416-a7dc8b61c822 BSD-3-Clause
-  github.com/pressly/goose/v3              v3.29.0                MIT
+  github.com/pressly/goose/v3              v3.30.0                MIT
   github.com/prometheus/client_golang      v1.25.0                Apache-2.0
   github.com/prometheus/client_model       v0.6.3                 Apache-2.0
   github.com/prometheus/common             v0.72.0                Apache-2.0
-  github.com/prometheus/procfs             v0.22.0                Apache-2.0
+  github.com/prometheus/procfs             v0.23.0                Apache-2.0
   github.com/redis/rueidis                 v1.0.79                Apache-2.0
   github.com/sethvargo/go-retry            v0.5.0                 Apache-2.0
   github.com/stripe/stripe-go/v86          v86.4.2                MIT
   github.com/tetratelabs/wazero            v1.12.0                Apache-2.0
   go.uber.org/multierr                     v1.11.0                MIT
   golang.org/x/crypto                      v0.58.0                BSD-3-Clause
-  golang.org/x/image                       v0.47.0                BSD-3-Clause
+  golang.org/x/image                       v0.48.0                BSD-3-Clause
   golang.org/x/net                         v0.62.0                BSD-3-Clause
-  golang.org/x/oauth2                      v0.37.0                BSD-3-Clause
-  golang.org/x/sync                        v0.24.0                BSD-3-Clause
-  golang.org/x/sys                         v0.49.0                BSD-3-Clause
-  golang.org/x/text                        v0.43.0                BSD-3-Clause
+  golang.org/x/oauth2                      v0.38.0                BSD-3-Clause
+  golang.org/x/sync                        v0.25.0                BSD-3-Clause
+  golang.org/x/sys                         v0.50.0                BSD-3-Clause
+  golang.org/x/text                        v0.44.0                BSD-3-Clause
   google.golang.org/protobuf               v1.36.12               BSD-3-Clause
 
 ================================================================================
@@ -91,7 +91,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2 v1.47.5 — Apache-2.0
+github.com/aws/aws-sdk-go-v2 v1.48.0 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -303,7 +303,7 @@ Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Copyright 2014-2015 Stripe, Inc.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.27 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -510,7 +510,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/credentials v1.20.13 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/credentials v1.21.0 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -717,7 +717,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.19 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.24 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -924,7 +924,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -1131,7 +1131,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -1338,7 +1338,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -1545,7 +1545,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -1752,7 +1752,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.9 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.13 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -1959,7 +1959,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -2166,7 +2166,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.8 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.12 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -2373,7 +2373,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/service/s3 v1.114.6 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -2580,7 +2580,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/smithy-go v1.28.8 — Apache-2.0
+github.com/aws/smithy-go v1.28.9 — Apache-2.0
 ================================================================================
 
 --- LICENSE ---
@@ -3163,7 +3163,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-github.com/go-jose/go-jose/v4 v4.1.8 — Apache-2.0
+github.com/go-jose/go-jose/v4 v4.1.9 — Apache-2.0
 ================================================================================
 
 --- LICENSE ---
@@ -6136,7 +6136,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-github.com/pressly/goose/v3 v3.29.0 — MIT
+github.com/pressly/goose/v3 v3.30.0 — MIT
 ================================================================================
 
 --- LICENSE ---
@@ -6819,7 +6819,7 @@ This product includes software developed at
 SoundCloud Ltd. (http://soundcloud.com/).
 
 ================================================================================
-github.com/prometheus/procfs v0.22.0 — Apache-2.0
+github.com/prometheus/procfs v0.23.0 — Apache-2.0
 ================================================================================
 
 --- LICENSE ---
@@ -7749,7 +7749,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-golang.org/x/image v0.47.0 — BSD-3-Clause
+golang.org/x/image v0.48.0 — BSD-3-Clause
 ================================================================================
 
 --- LICENSE ---
@@ -7815,7 +7815,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-golang.org/x/oauth2 v0.37.0 — BSD-3-Clause
+golang.org/x/oauth2 v0.38.0 — BSD-3-Clause
 ================================================================================
 
 --- LICENSE ---
@@ -7848,7 +7848,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-golang.org/x/sync v0.24.0 — BSD-3-Clause
+golang.org/x/sync v0.25.0 — BSD-3-Clause
 ================================================================================
 
 --- LICENSE ---
@@ -7881,7 +7881,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-golang.org/x/sys v0.49.0 — BSD-3-Clause
+golang.org/x/sys v0.50.0 — BSD-3-Clause
 ================================================================================
 
 --- LICENSE ---
@@ -7914,7 +7914,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-golang.org/x/text v0.43.0 — BSD-3-Clause
+golang.org/x/text v0.44.0 — BSD-3-Clause
 ================================================================================
 
 --- LICENSE ---
