@@ -8,7 +8,8 @@
         "ru": "Клаксон",
         "en": "Air horn",
         "es": "Bocina",
-        "zh-CN": "气笛"
+        "zh-CN": "气笛",
+        "de": "Lufthorn"
       },
       "durationMs": 2899,
       "source": "owner-provided (2026-09-29)"
@@ -21,7 +22,8 @@
         "ru": "Ба-дум-тсс",
         "en": "Ba dum tss",
         "es": "Ba dum tss",
-        "zh-CN": "咚哒嚓"
+        "zh-CN": "咚哒嚓",
+        "de": "Ba dum tss"
       },
       "durationMs": 2821,
       "source": "owner-provided (2026-09-29)"
@@ -34,7 +36,8 @@
         "ru": "Сверчок",
         "en": "Cricket",
         "es": "Grillo",
-        "zh-CN": "蟋蟀"
+        "zh-CN": "蟋蟀",
+        "de": "Grille"
       },
       "durationMs": 2899,
       "source": "owner-provided (2026-09-29)"
@@ -47,7 +50,8 @@
         "ru": "Аплодисменты",
         "en": "Golf clap",
         "es": "Aplausos",
-        "zh-CN": "鼓掌"
+        "zh-CN": "鼓掌",
+        "de": "Golfklatschen"
       },
       "durationMs": 2899,
       "source": "owner-provided (2026-09-29)"
@@ -60,7 +64,8 @@
         "ru": "Кряк",
         "en": "Quack",
         "es": "Cuac",
-        "zh-CN": "嘎嘎"
+        "zh-CN": "嘎嘎",
+        "de": "Gackern"
       },
       "durationMs": 1097,
       "source": "owner-provided (2026-09-29)"
@@ -73,7 +78,8 @@
         "ru": "Грустная труба",
         "en": "Sad horn",
         "es": "Trompeta triste",
-        "zh-CN": "悲伤号角"
+        "zh-CN": "悲伤号角",
+        "de": "Traurige Trompete"
       },
       "durationMs": 2821,
       "source": "owner-provided (2026-09-29)"

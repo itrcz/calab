@@ -1,7 +1,7 @@
 import type { ru } from './ru';
 
 /** Locales with a dictionary (ADR-0022). `ru` is the source of truth for keys and types. */
-export const LOCALES = ['ru', 'en', 'es', 'zh-CN'] as const;
+export const LOCALES = ['ru', 'en', 'es', 'zh-CN', 'de'] as const;
 export type Locale = (typeof LOCALES)[number];
 /** Language names in the language itself (the picker shows them the same in every UI language). */
 export const LOCALE_NAMES: Record<Locale, string> = {
@@ -9,6 +9,7 @@ export const LOCALE_NAMES: Record<Locale, string> = {
   en: 'English',
   es: 'Español',
   'zh-CN': '中文（简体）',
+  de: 'Deutsch',
 };
 
 /** The user's choice in «Настройки → Основное → Язык»; 'auto' = follow the OS. */

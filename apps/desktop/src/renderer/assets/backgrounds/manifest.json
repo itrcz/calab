@@ -7,7 +7,8 @@
       "ru": "Рассвет",
       "en": "Dawn",
       "es": "Amanecer",
-      "zh-CN": "黎明"
+      "zh-CN": "黎明",
+      "de": "Morgengrauen"
     }
   },
   {
@@ -18,7 +19,8 @@
       "ru": "Океан",
       "en": "Ocean",
       "es": "Océano",
-      "zh-CN": "海洋"
+      "zh-CN": "海洋",
+      "de": "Ozean"
     }
   },
   {
@@ -29,7 +31,8 @@
       "ru": "Графит",
       "en": "Graphite",
       "es": "Grafito",
-      "zh-CN": "石墨"
+      "zh-CN": "石墨",
+      "de": "Graphit"
     }
   },
   {
@@ -40,7 +43,8 @@
       "ru": "Лес",
       "en": "Forest",
       "es": "Bosque",
-      "zh-CN": "森林"
+      "zh-CN": "森林",
+      "de": "Wald"
     }
   },
   {
@@ -51,7 +55,8 @@
       "ru": "Гостиная",
       "en": "Living room",
       "es": "Sala de estar",
-      "zh-CN": "客厅"
+      "zh-CN": "客厅",
+      "de": "Wohnzimmer"
     }
   },
   {
@@ -62,7 +67,8 @@
       "ru": "Кабинет",
       "en": "Study",
       "es": "Despacho",
-      "zh-CN": "书房"
+      "zh-CN": "书房",
+      "de": "Arbeitszimmer"
     }
   },
   {
@@ -73,7 +79,8 @@
       "ru": "Закат",
       "en": "Sunset",
       "es": "Atardecer",
-      "zh-CN": "日落"
+      "zh-CN": "日落",
+      "de": "Sonnenuntergang"
     }
   },
   {
@@ -84,7 +91,8 @@
       "ru": "Туман",
       "en": "Mist",
       "es": "Niebla",
-      "zh-CN": "薄雾"
+      "zh-CN": "薄雾",
+      "de": "Nebel"
     }
   }
 ]
