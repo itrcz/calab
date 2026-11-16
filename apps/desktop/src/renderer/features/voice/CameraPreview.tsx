@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Field, Modal, Select, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { cameraMirrored } from '../../lib/media/cameraLogic';
-import type { MediaErrorAction } from '../../lib/media/errors';
+import { mediaErrorDetail, type MediaErrorAction } from '../../lib/media/errors';
 import { applyCameraBackground, backgroundEnv } from '../../services/cameraBackground';
 import { humanMediaError, mediaActionLabel, runMediaAction } from '../../services/mediaErrors';
 import { voice } from '../../services/voice';
@@ -41,7 +41,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
   const canFlip = useCanFlipCamera();
   const inCall = useVoice((s) => s.phase === 'connected' && s.camera === 'off');
   const [track, setTrack] = useState<LocalVideoTrack | null>(null);
-  const [error, setError] = useState<{ text: string; action: MediaErrorAction | null } | null>(null);
+  const [error, setError] = useState<{ text: string; action: MediaErrorAction | null; code: string } | null>(null);
   const handed = useRef<LocalVideoTrack | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   // Initial focus on the preview frame (not focusable by Tab): Radix would focus the close box and
@@ -69,7 +69,9 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
       (err: unknown) => {
         if (!alive) return;
         const h = humanMediaError(err, 'camera');
-        setError({ text: h.text, action: h.action });
+        // The DOMException name under the text (issue #322): a screenshot tells support which
+        // failure it was («busy» vs a start timeout) without the log.
+        setError({ text: h.text, action: h.action, code: mediaErrorDetail(err).name });
       },
     );
     return () => {
@@ -144,6 +146,11 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
               <span className="absolute inset-0 grid place-items-center p-4 text-center" role="alert">
                 <span className="flex flex-col items-center gap-2 text-body text-white">
                   {error.text}
+                  {error.code ? (
+                    <span className="text-caption text-white/60" data-testid="camera-preview-error-code">
+                      {t('mediaErr.code', { code: error.code })}
+                    </span>
+                  ) : null}
                   {error.action ? (
                     <Button size="sm" variant="secondary" onClick={() => error.action && runMediaAction(error.action)}>
                       {mediaActionLabel(error.action)}

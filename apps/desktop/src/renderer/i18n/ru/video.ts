@@ -158,6 +158,7 @@ export const ruVideo = {
   'mediaErr.camera.notFound': 'Камера не найдена — подключите её или выберите другую',
   'mediaErr.camera.busy': 'Камера занята другим приложением',
   'mediaErr.camera.stalled': 'Камера включилась, но не передаёт изображение',
+  'mediaErr.code': 'Код ошибки: {code}',
   'mediaErr.camera.unsupported': 'Камера не поддерживается на этом устройстве',
   'mediaErr.camera.generic': 'Не удалось включить камеру',
   'mediaErr.camera.publish': 'Не удалось показать видео — попробуйте ещё раз',

@@ -189,10 +189,14 @@ export function canSpeakFrom(p: { canPublish: boolean; canPublishSources: readon
   return p.canPublish && (p.canPublishSources.length === 0 || p.canPublishSources.includes(LK_SOURCE_MICROPHONE));
 }
 
-/** getUserMedia failed because the chosen device is gone (unplugged / id changed). */
+/**
+ * getUserMedia failed because the chosen device is gone (unplugged / id changed) or does not
+ * start (NotReadableError; AbortError — Chromium's «Timeout starting audio source», issue #322):
+ * the default device is worth a try.
+ */
 export function isDeviceGone(err: unknown): boolean {
   const name = typeof err === 'object' && err !== null && 'name' in err ? err.name : null;
-  return name === 'OverconstrainedError' || name === 'NotFoundError' || name === 'NotReadableError';
+  return name === 'OverconstrainedError' || name === 'NotFoundError' || name === 'NotReadableError' || name === 'AbortError';
 }
 
 /** Highest per-user volume in the member menu (docs/09 #20: 0–200 %). */

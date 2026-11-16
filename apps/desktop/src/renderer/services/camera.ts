@@ -22,7 +22,6 @@ import { pickPublishCodec } from '../lib/media/codecSelect';
 import { allowedCameraPreset } from '../lib/plan';
 import { workspacePlan } from './plan';
 import type { OutboundVideoLayer } from '../lib/media/stats';
-import { isDeviceGone } from '../lib/voiceLogic';
 import { prefs, usePrefs } from '../stores/prefs';
 import { toast } from '../stores/toasts';
 import { setVoice, useVoice } from '../stores/voice';
@@ -71,19 +70,17 @@ export class CameraController {
 
   /**
    * Opens the camera for the «Проверьте камеру» sheet (or a direct start). The chosen device, or
-   * the system default when it is gone. The caller owns the track until it hands it to start().
+   * — when it is gone or does not start — another one (captureCamera's ladder, issue #322). The
+   * caller owns the track until it hands it to start().
    */
   async capture(): Promise<LocalVideoTrack> {
     const want = prefs().cameraDeviceId;
-    const q = this.wanted().quality;
-    try {
-      return await captureCamera(want, q, useVoice.getState().cameraFacing);
-    } catch (err) {
-      if (!want || !isDeviceGone(err)) throw err;
-      log.warn('chosen camera unavailable, using the default one', err);
+    const track = await captureCamera(want, this.wanted().quality, useVoice.getState().cameraFacing);
+    if (want && track.mediaStreamTrack.getSettings().deviceId !== want) {
+      log.warn('chosen camera unavailable, using another one', { label: track.mediaStreamTrack.label });
       toast.info(t('video.fallback'));
-      return captureCamera(null, q, useVoice.getState().cameraFacing);
     }
+    return track;
   }
 
   /**

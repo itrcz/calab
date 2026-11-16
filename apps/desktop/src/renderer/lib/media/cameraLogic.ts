@@ -174,3 +174,65 @@ export function cameraTarget(deviceId: string | null, facing: CameraFacing | nul
   if (facing) return { facingMode: facing };
   return {};
 }
+
+/**
+ * The open ladder (issue #322). Steps:
+ *  - 'exact'   — the target (cameraTarget: the chosen device `exact`, or the side) at the
+ *                quality's size and fps; the first try, LiveKit's path;
+ *  - 'sized'   — the chosen device is gone: the system's camera at the quality's size;
+ *  - 'relaxed' — the device did not start: the target as a preference (`ideal`), no size and no
+ *                fps — what a plain web page asks, the driver's own default mode;
+ *  - 'loose'   — still nothing: whatever the system opens first, no size (a stored id can name
+ *                another sensor, e.g. the IR camera of a Windows Hello laptop).
+ * A permission denial, a missing API or no camera at all ends the ladder: another try only makes
+ * the user wait (a stalled start costs Chromium's ~10 s each).
+ */
+export type CameraStep = 'exact' | 'sized' | 'relaxed' | 'loose';
+
+type CameraFailure = 'gone' | 'start' | 'final';
+
+/** gone: the exact device / constraint cannot be met; start: the device refused or never delivered a frame. */
+function cameraFailure(err: unknown): CameraFailure {
+  const name = typeof err === 'object' && err !== null && 'name' in err ? err.name : null;
+  switch (name) {
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+    case 'OverconstrainedError':
+    case 'ConstraintNotSatisfiedError':
+      return 'gone';
+    case 'NotReadableError':
+    case 'TrackStartError':
+    case 'AbortError': // incl. Chromium's «Timeout starting video source»: the light is on, no frame came
+      return 'start';
+    default:
+      return 'final';
+  }
+}
+
+/** No looser try can fix it (permission, missing API, unknown error). */
+export const finalCameraError = (err: unknown): boolean => cameraFailure(err) === 'final';
+
+/** The step after `step` failed with `err`, or null: give up and show the error. */
+export function nextCameraStep(step: CameraStep, err: unknown, deviceId: string | null): CameraStep | null {
+  const f = cameraFailure(err);
+  if (f === 'final') return null;
+  switch (step) {
+    case 'exact':
+      if (f === 'start') return 'relaxed';
+      return deviceId ? 'sized' : null;
+    case 'sized':
+      return f === 'start' ? 'loose' : null;
+    case 'relaxed':
+      return deviceId ? 'loose' : null;
+    case 'loose':
+      return null;
+  }
+}
+
+/** getUserMedia `video` of a try without a size ('exact' and 'sized' go through LiveKit). */
+export function looseCameraConstraints(step: 'relaxed' | 'loose', deviceId: string | null, facing: CameraFacing | null): MediaTrackConstraints | true {
+  if (step === 'loose') return true;
+  if (deviceId) return { deviceId: { ideal: deviceId } };
+  if (facing) return { facingMode: { ideal: facing } };
+  return true;
+}

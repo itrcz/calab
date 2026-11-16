@@ -161,6 +161,7 @@ export const esVideo: DictShape<typeof enVideo> = {
   'mediaErr.camera.notFound': 'No se encontró ninguna cámara — conecta una o elige otra',
   'mediaErr.camera.busy': 'La cámara está en uso por otra aplicación',
   'mediaErr.camera.stalled': 'La cámara se encendió, pero no envía imagen',
+  'mediaErr.code': 'Código de error: {code}',
   'mediaErr.camera.unsupported': 'La cámara no es compatible con este dispositivo',
   'mediaErr.camera.generic': 'No se pudo activar la cámara',
   'mediaErr.camera.publish': 'No se pudo compartir tu video — inténtalo de nuevo',

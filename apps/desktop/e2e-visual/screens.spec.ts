@@ -3807,6 +3807,16 @@ test('camera-preview', async ({ open, win, mock, shot }) => {
   await expect(win.getByTestId('camera-bg-workspace').getByRole('radio')).toHaveCount(2);
   await backgroundThumbsLoaded(win);
   await checkpoint(shot, 'camera-preview');
+  // Issue #322: a camera that does not start — the human text, the error code under it (every
+  // try of the open ladder fails the same way).
+  await win.keyboard.press('Escape');
+  await expect(win.getByTestId('camera-preview-enable')).toBeHidden();
+  await win.evaluate(() => {
+    navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Could not start video source', 'NotReadableError'));
+  });
+  await win.getByTestId('camera-button').click();
+  await expect(win.getByTestId('camera-preview-error-code')).toHaveText('Код ошибки: NotReadableError', { timeout: 15_000 });
+  await checkpoint(shot, 'camera-preview-error');
 });
 
 // docs/09 #121: a workspace background added while the app runs shows up at once — in the open

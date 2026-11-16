@@ -1,6 +1,6 @@
 import { ScreenSharePreset } from '@calaba/protocol';
 import { describe, expect, it } from 'vitest';
-import { cameraCapture, cameraLayers, grantedCameraQuality } from './cameraLogic';
+import { cameraCapture, cameraLayers, finalCameraError, grantedCameraQuality, looseCameraConstraints, nextCameraStep } from './cameraLogic';
 import { CAMERA_LAYERS, canFlipCamera, cameraMirrored, cameraTarget, otherFacing, CPU_LIMIT_SAMPLES, isChromium, cameraBlock, cameraWanted, cameraNext, camerasFull, cpuLimitStep, type CameraEvent, type CameraPhase } from './cameraLogic';
 
 describe('camera layers (docs/09 #41)', () => {
@@ -144,5 +144,41 @@ describe('phone camera side', () => {
     expect(cameraTarget('d1', 'environment')).toEqual({ deviceId: { exact: 'd1' } });
     expect(cameraTarget(null, 'environment')).toEqual({ facingMode: 'environment' });
     expect(cameraTarget(null, null)).toEqual({});
+  });
+});
+
+describe('camera open ladder (issue #322)', () => {
+  const dom = (name: string, message = ''): Error => Object.assign(new Error(message), { name });
+  const stall = dom('AbortError', 'Timeout starting video source');
+
+  it('a start failure tries the device without a size, then whatever the system opens', () => {
+    expect(nextCameraStep('exact', stall, 'cam1')).toBe('relaxed');
+    expect(nextCameraStep('exact', dom('NotReadableError'), null)).toBe('relaxed');
+    expect(nextCameraStep('relaxed', stall, 'cam1')).toBe('loose');
+    expect(nextCameraStep('relaxed', stall, null)).toBeNull();
+    expect(nextCameraStep('loose', stall, 'cam1')).toBeNull();
+  });
+
+  it('a gone device falls back to the default at full size, as before', () => {
+    expect(nextCameraStep('exact', dom('OverconstrainedError'), 'cam1')).toBe('sized');
+    expect(nextCameraStep('exact', dom('NotFoundError'), 'cam1')).toBe('sized');
+    expect(nextCameraStep('sized', stall, 'cam1')).toBe('loose');
+    expect(nextCameraStep('sized', dom('NotFoundError'), 'cam1')).toBeNull();
+  });
+
+  it('never retries what a retry cannot fix', () => {
+    expect(nextCameraStep('exact', dom('NotFoundError'), null)).toBeNull();
+    expect(nextCameraStep('exact', dom('NotAllowedError', 'Permission denied'), 'cam1')).toBeNull();
+    expect(nextCameraStep('relaxed', dom('NotAllowedError'), 'cam1')).toBeNull();
+    expect(nextCameraStep('exact', new TypeError('x'), 'cam1')).toBeNull();
+    expect(finalCameraError(dom('NotAllowedError'))).toBe(true);
+    expect(finalCameraError(stall)).toBe(false);
+  });
+
+  it('loose tries ask for no size and never an exact device', () => {
+    expect(looseCameraConstraints('relaxed', 'cam1', null)).toEqual({ deviceId: { ideal: 'cam1' } });
+    expect(looseCameraConstraints('relaxed', null, 'user')).toEqual({ facingMode: { ideal: 'user' } });
+    expect(looseCameraConstraints('relaxed', null, null)).toBe(true);
+    expect(looseCameraConstraints('loose', 'cam1', 'user')).toBe(true);
   });
 });

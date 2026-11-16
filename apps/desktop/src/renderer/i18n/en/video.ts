@@ -161,6 +161,7 @@ export const enVideo: DictShape<typeof ruVideo> = {
   'mediaErr.camera.notFound': 'No camera found — connect one or choose another',
   'mediaErr.camera.busy': 'The camera is in use by another app',
   'mediaErr.camera.stalled': 'The camera turned on but sends no picture',
+  'mediaErr.code': 'Error code: {code}',
   'mediaErr.camera.unsupported': 'Camera isn’t supported on this device',
   'mediaErr.camera.generic': 'Couldn’t turn on the camera',
   'mediaErr.camera.publish': 'Couldn’t share your video — try again',

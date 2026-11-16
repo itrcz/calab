@@ -1,5 +1,17 @@
 import { LocalVideoTrack, Track, VideoPreset, createLocalVideoTrack, type TrackPublishOptions } from 'livekit-client';
-import { CAMERA_CPU_CAPTURE, CAMERA_DEFAULT_QUALITY, cameraCapture, cameraLayers, cameraTarget, type CameraFacing, type CameraQuality } from './cameraLogic';
+import {
+  CAMERA_CPU_CAPTURE,
+  CAMERA_DEFAULT_QUALITY,
+  cameraCapture,
+  cameraLayers,
+  cameraTarget,
+  finalCameraError,
+  looseCameraConstraints,
+  nextCameraStep,
+  type CameraFacing,
+  type CameraStep,
+  type CameraQuality,
+} from './cameraLogic';
 import { BACKGROUND_PROCESSOR } from './background/logic';
 import type { CodecPick, PublishCodec } from './codecSelect';
 import { layerSize, type H264Layout } from './h264';
@@ -28,27 +40,72 @@ export function cameraSource(track: LocalVideoTrack): MediaStreamTrack {
   return (track as unknown as { _mediaStreamTrack?: MediaStreamTrack })._mediaStreamTrack ?? track.mediaStreamTrack;
 }
 
-/** Opens the camera (preview sheet or straight publish). `motion`: faces and gestures, keep fps. */
+/**
+ * Opens the camera (preview sheet or straight publish). `motion`: faces and gestures, keep fps.
+ * Walks the open ladder (nextCameraStep, issue #322): the exact device at the quality's size
+ * first, then other / looser tries while the failure is one they can fix.
+ */
 export async function captureCamera(deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY, facing: CameraFacing | null = null): Promise<LocalVideoTrack> {
   const c = cameraCapture(q);
-  const t0 = performance.now();
-  // One line per open (issue #322): the time tells Chromium's ~10 s start timeout (the device
-  // opened, no frame came) from an instant refusal; the request, from what the camera granted.
-  const ask = { device: deviceId ? 'chosen' : (facing ?? 'default'), width: c.width, height: c.height, fps: c.fps };
-  let track: LocalVideoTrack;
-  try {
-    track = await createLocalVideoTrack({
-      ...cameraTarget(deviceId, facing),
-      resolution: { width: c.width, height: c.height, frameRate: c.fps },
-    });
-  } catch (err) {
-    log.warn('[camera] getUserMedia failed', { ...mediaErrorDetail(err), ms: Math.round(performance.now() - t0), ...ask });
-    throw err;
+  let first: unknown = undefined;
+  let step: CameraStep = 'exact';
+  for (;;) {
+    const t0 = performance.now();
+    const sized = step === 'exact' || step === 'sized';
+    // One line per try: the time tells Chromium's ~10 s start timeout (the device opened, no
+    // frame came) from an instant refusal; the request, from what the camera granted.
+    const ask = { step, device: step === 'exact' || step === 'relaxed' ? (deviceId ? 'chosen' : (facing ?? 'default')) : 'default', ...(sized ? { width: c.width, height: c.height, fps: c.fps } : {}) };
+    let track: LocalVideoTrack;
+    try {
+      track =
+        step === 'exact' || step === 'sized'
+          ? await createLocalVideoTrack({ ...cameraTarget(step === 'exact' ? deviceId : null, facing), resolution: { width: c.width, height: c.height, frameRate: c.fps } })
+          : await openLoose(looseCameraConstraints(step, deviceId, facing));
+    } catch (err) {
+      log.warn('[camera] getUserMedia failed', { ...mediaErrorDetail(err), ms: Math.round(performance.now() - t0), ...ask });
+      first ??= err;
+      const next = nextCameraStep(step, err, deviceId);
+      if (next) {
+        step = next;
+        continue;
+      }
+      if (step !== 'exact') await logVideoInputs(deviceId);
+      // A final error (e.g. a permission denied on a later try) is the one to show; otherwise
+      // the first — it is about what the user chose.
+      throw finalCameraError(err) ? err : first;
+    }
+    const st = track.mediaStreamTrack.getSettings();
+    log.info('[camera] capture opened', { ms: Math.round(performance.now() - t0), ...ask, got: { width: st.width, height: st.height, fps: st.frameRate }, label: track.mediaStreamTrack.label });
+    track.mediaStreamTrack.contentHint = 'motion';
+    return track;
   }
-  const st = track.mediaStreamTrack.getSettings();
-  log.info('[camera] capture opened', { ms: Math.round(performance.now() - t0), ...ask, got: { width: st.width, height: st.height, fps: st.frameRate }, label: track.mediaStreamTrack.label });
-  track.mediaStreamTrack.contentHint = 'motion';
+}
+
+/** A looser try: plain getUserMedia (LiveKit would add its 720p default), wrapped as LiveKit's own track. */
+async function openLoose(video: MediaTrackConstraints | true): Promise<LocalVideoTrack> {
+  const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+  const mst = stream.getVideoTracks()[0];
+  if (!mst) throw new Error('getUserMedia returned no video track');
+  // As createLocalVideoTrack does: not user-provided (LiveKit may restart it), the constraints
+  // of a restart name the device that opened.
+  const track = new LocalVideoTrack(mst, { deviceId: mst.getSettings().deviceId }, false);
+  track.source = Track.Source.Camera;
+  track.mediaStream = stream;
   return track;
+}
+
+/**
+ * Every try failed: which cameras the system lists (labels only) and whether the chosen one is
+ * among them — a stale id or an IR sensor in the list is the next thing to rule out (#322).
+ */
+async function logVideoInputs(deviceId: string | null): Promise<void> {
+  try {
+    const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    const chosen = deviceId ? inputs.findIndex((d) => d.deviceId === deviceId) : -1;
+    log.warn('[camera] video inputs', { labels: inputs.map((d) => d.label), chosen: deviceId ? chosen : 'default' });
+  } catch {
+    // Diagnostics only.
+  }
 }
 
 /**
