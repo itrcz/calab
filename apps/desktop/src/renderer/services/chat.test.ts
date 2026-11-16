@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf';
-import { MessageSchema, UnfurlResponseSchema, type Message, type UnfurlResponse } from '@calaba/protocol';
+import { FileMetaSchema, MessageSchema, UnfurlResponseSchema, type Message, type UnfurlResponse } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createMessage = vi.fn<(roomId: string, body: { nonce: string; content: string }) => Promise<{ message?: Message }>>();
@@ -11,6 +11,7 @@ vi.mock('../lib/api/endpoints', () => ({
     unfurl: { get: (url: string) => unfurlGet(url) },
   },
   uploadFile: vi.fn(),
+  uploadPath: (ws: string, room: string) => (ws ? `/api/workspaces/${ws}/files` : `/api/dms/${room}/files`),
 }));
 vi.mock('./gateway', () => ({ sendTyping: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { fail: vi.fn(), info: vi.fn(), error: vi.fn() } }));
@@ -19,6 +20,8 @@ vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undef
 const { sendMessage, retrySend, loadPins, resyncPins, unfurl, unfurlRetryMs, peekUnfurl, resetChatCaches } = await import('./chat');
 const { ApiError } = await import('../lib/api/client');
 const { useMessages } = await import('../stores/messages');
+const { useSession } = await import('../stores/session');
+const { uploadFile } = await import('../lib/api/endpoints');
 
 const ROOM = 'room-1';
 const server = (nonce: string, id = '0190a0b0-0000-7000-8000-000000000001'): Message =>
@@ -84,6 +87,43 @@ describe('chat.sendMessage', () => {
     if (failed) await retrySend('ws', ROOM, failed);
     expect(createMessage.mock.calls.map((c) => c[1].nonce)).toEqual(['n4', 'n4']);
     expect(items()).toHaveLength(1);
+    expect(items()[0]?.status).toBe('sent');
+  });
+});
+
+describe('chat.sendMessage — attachments too large (CBF-191)', () => {
+  const blob = (size: number) => new Blob([new Uint8Array(size)], { type: 'application/octet-stream' });
+  const upload = vi.mocked(uploadFile);
+  beforeEach(() => {
+    upload.mockReset();
+    useSession.getState().set({ maxFileMb: 0 });
+  });
+
+  it('a file above the known limit fails before uploading, without «Повторить»', async () => {
+    useSession.getState().set({ maxFileMb: 1 }); // a DM: the server's limit
+    await sendMessage('', ROOM, '', [{ file: blob(2 << 20), name: 'big.bin' }], undefined, 'n5');
+    expect(upload).not.toHaveBeenCalled();
+    expect(items()[0]).toMatchObject({ status: 'failed', final: true, error: 'Файл слишком большой, лимит 1 МБ' });
+  });
+
+  it('a proxy 413 page names the size, not «Сервер недоступен», and is final', async () => {
+    upload.mockReturnValue({ promise: Promise.reject(new ApiError('ERROR_CODE_UNSPECIFIED', 'Request Entity Too Large', 413)), abort: () => undefined });
+    await sendMessage('', ROOM, '', [{ file: blob(10), name: 'a.bin' }], undefined, 'n6');
+    expect(items()[0]).toMatchObject({ status: 'failed', final: true, error: 'Файл слишком большой' });
+  });
+
+  it('«Повторить» after a network failure uploads the same files again', async () => {
+    const meta = create(FileMetaSchema, { id: 'f1', name: 'a.bin' });
+    upload.mockReturnValueOnce({ promise: Promise.reject(new ApiError('ERROR_CODE_UNAVAILABLE', 'upload failed', 0)), abort: () => undefined });
+    const file = { file: blob(10), name: 'a.bin' };
+    await sendMessage('', ROOM, '', [file], undefined, 'n7');
+    const failed = items()[0];
+    expect(failed).toMatchObject({ status: 'failed', final: false });
+    upload.mockReturnValueOnce({ promise: Promise.resolve(meta), abort: () => undefined });
+    createMessage.mockImplementation((_r, b) => Promise.resolve({ message: server(b.nonce) }));
+    if (failed) await retrySend('', ROOM, failed);
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(upload.mock.calls[1]?.[1]).toBe(file.file);
     expect(items()[0]?.status).toBe('sent');
   });
 });

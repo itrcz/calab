@@ -1,4 +1,5 @@
 import { t, type MessageKey } from '../../i18n';
+import { fmt } from '../format';
 import { ImageError } from '../image/errors';
 import { ApiError } from './client';
 
@@ -194,6 +195,30 @@ export function identityNotConfigured(e: unknown): boolean {
   return e instanceof ApiError && e.reason === 'IDENTITY_NOT_CONFIGURED';
 }
 
+/**
+ * A file refused for its size (CBF-191): 413 FILE_TOO_LARGE of the API (`limit` = bytes), or a
+ * 413 page of a proxy in front of it (nginx HTML, no code). Not FILE_QUOTA_EXCEEDED (the storage
+ * is full) nor PAYLOAD_TOO_LARGE (a JSON body). Repeating the same upload cannot help.
+ */
+export function fileTooLarge(e: unknown): boolean {
+  return e instanceof ApiError && (e.code === 'ERROR_CODE_FILE_TOO_LARGE' || (e.status === 413 && e.code === 'ERROR_CODE_UNSPECIFIED'));
+}
+
+/**
+ * «Файл слишком большой, лимит 1 ГБ» («50 МБ»; limits are whole MB, ADR-0155), with the file's
+ * `name` «„x.zip“ слишком большой, лимит …»; without the limit when it is unknown (a proxy's 413).
+ */
+export function fileTooLargeText(limit: number | undefined, name?: string): string {
+  if (!limit) return t('err.fileTooLarge');
+  const mb = limit / (1 << 20);
+  const size = !Number.isInteger(mb)
+    ? fmt.size(limit)
+    : mb >= 1024 && mb % 1024 === 0
+      ? t('unit.gb', { n: fmt.number(mb / 1024) })
+      : t('unit.mb', { n: fmt.number(mb) });
+  return name ? t('err.fileTooLargeNamed', { name, size }) : t('err.fileTooLargeLimit', { size });
+}
+
 /** 403 RECENT_AUTH_REQUIRED: the action needs a fresh local password proof (5 min, ADR-0054). */
 export function recentAuthRequired(e: unknown): boolean {
   return e instanceof ApiError && e.code === 'ERROR_CODE_RECENT_AUTH_REQUIRED';
@@ -207,6 +232,7 @@ export function describeError(e: unknown): HumanError {
       return { text: t(e.code === 'ERROR_CODE_ROOM_FULL' ? 'billing.lapsed.roomFull' : 'billing.lapsed.error'), retry: false, generic: false };
     // CBF-69: an AI route on a plan without AI (Free / Team).
     if (e.reason === 'AI_PLAN_REQUIRED') return { text: t('plan.lockedFrom', { plan: t('plan.name.enterprise') }), retry: false, generic: false };
+    if (fileTooLarge(e)) return { text: fileTooLargeText(e.extra.limit), retry: false, generic: false };
     if (e.code === 'ERROR_CODE_UNAVAILABLE') return e.status === 0 ? fromStatus(0) : { text: t('err.unavailable'), retry: true, generic: false };
     if (e.code === 'ERROR_CODE_VALIDATION') {
       const sticker = e.field ? stickerField(e.field, e.message) : null;

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../platform', () => ({ platform: { kind: 'web', apiBase: '', apiFetch: vi.fn() } }));
 
 const { ApiError } = await import('./client');
-const { describeError, errorText, identityNotConfigured, isAbort, recentAuthRequired } = await import('./errors');
+const { describeError, errorText, fileTooLargeText, identityNotConfigured, isAbort, recentAuthRequired } = await import('./errors');
 
 const api = (code: string, status: number, field?: string): InstanceType<typeof ApiError> => new ApiError(code, 'raw english message', status, field);
 
@@ -24,6 +24,19 @@ describe('describeError', () => {
     expect(describeError(api('ERROR_CODE_RATE_LIMITED', 429)).retry).toBe(true);
     expect(describeError(api('ERROR_CODE_INTERNAL', 500)).retry).toBe(true);
     expect(describeError(api('ERROR_CODE_FORBIDDEN', 403)).retry).toBe(false);
+  });
+
+  it('a file too large: the limit when the API names it, a proxy 413 page too, never «Повторить» (CBF-191)', () => {
+    const big = (limit?: number) => new ApiError('ERROR_CODE_FILE_TOO_LARGE', 'file exceeds 1024 MB', 413, undefined, limit ? { limit } : {});
+    expect(describeError(big(1024 << 20))).toEqual({ text: 'Файл слишком большой, лимит 1 ГБ', retry: false, generic: false });
+    expect(describeError(big(50 << 20)).text).toBe('Файл слишком большой, лимит 50 МБ');
+    expect(describeError(big()).text).toBe('Файл слишком большой');
+    // nginx «413 Request Entity Too Large» HTML: toApiError gives UNSPECIFIED with the status.
+    expect(describeError(api('ERROR_CODE_UNSPECIFIED', 413))).toEqual({ text: 'Файл слишком большой', retry: false, generic: false });
+    // Not a file's size: a full storage, a JSON body.
+    expect(describeError(api('ERROR_CODE_FILE_QUOTA_EXCEEDED', 413)).text).toMatch(/место/);
+    expect(describeError(api('ERROR_CODE_PAYLOAD_TOO_LARGE', 413)).text).toBe('Слишком большой запрос');
+    expect(fileTooLargeText(4096 * 1024 * 1024, 'a.zip')).toBe('«a.zip» слишком большой, лимит 4 ГБ');
   });
 
   it('distinguishes network from a server outage', () => {

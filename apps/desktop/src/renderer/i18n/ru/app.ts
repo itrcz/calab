@@ -36,6 +36,8 @@ export const ruApp = {
   'err.conflict': 'Уже изменено кем-то другим. Обновите и повторите',
   'err.rateLimited': 'Слишком часто. Подождите немного',
   'err.fileTooLarge': 'Файл слишком большой',
+  'err.fileTooLargeLimit': 'Файл слишком большой, лимит {size}',
+  'err.fileTooLargeNamed': '«{name}» слишком большой, лимит {size}',
   'img.err.heicUnsupported': 'HEIC не поддерживается на этой платформе — сохраните фото как JPEG',
   'img.err.broken': 'Не удалось открыть картинку',
   'img.err.noEncoder': 'Не хватило памяти, чтобы обработать картинку — выберите поменьше',

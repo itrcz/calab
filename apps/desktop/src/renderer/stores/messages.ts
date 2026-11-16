@@ -18,6 +18,8 @@ export interface ChatMessage {
   status: SendStatus;
   uploads?: PendingUpload[];
   error?: string;
+  /** A failure repeating cannot fix (a file above the size limit, CBF-191): no «Повторить». */
+  final?: boolean;
 }
 
 /**

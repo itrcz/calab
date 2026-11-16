@@ -3,13 +3,14 @@ import { timestampNow } from '@bufbuild/protobuf/wkt';
 import { MessageSchema, type FileMeta, type Message, type UnfurlResponse } from '@calaba/protocol';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
-import { errorText } from '../lib/api/errors';
+import { errorText, fileTooLarge } from '../lib/api/errors';
 import { api, uploadFile, uploadPath, type UploadHandle } from '../lib/api/endpoints';
 import { sendSticker } from './stickers';
 import { voiceQuery, type VoiceMeta } from '../lib/voiceNote';
 import { attachmentFile } from '../lib/image';
 import { canToggleReaction } from '../features/chat/reactionLimit';
 import { reportPlanError } from './plan';
+import { tooLargeError } from './uploadLimit';
 import { log } from '../lib/log';
 import { findByKey, lastSentId, messageById, useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
@@ -466,10 +467,15 @@ export async function sendMessage(
     createdAt: timestampNow(),
   });
   const existing = findMessage(roomId, key);
-  if (existing) useMessages.getState().patchPending(roomId, key, { status: 'pending', uploads, error: '' });
+  if (existing) useMessages.getState().patchPending(roomId, key, { status: 'pending', uploads, error: '', final: false });
   else useMessages.getState().addPending(roomId, { key, msg, status: 'pending', uploads } satisfies ChatMessage);
 
   try {
+    // A file above the known limit is refused here, not after uploading it (CBF-191).
+    for (const f of files) {
+      const big = tooLargeError(workspaceId, f.file.size);
+      if (big) throw big;
+    }
     const metas: FileMeta[] = [];
     const handles: UploadHandle[] = [];
     for (const [i, f] of files.entries()) {
@@ -505,16 +511,28 @@ export async function sendMessage(
       useRooms.getState().setLastMessage(roomId, res.message.id);
       useRooms.getState().setRead(roomId, res.message.id);
     }
+    failedFiles.delete(key);
   } catch (e) {
     log.warn('send failed', e);
-    useMessages.getState().patchPending(roomId, key, { status: 'failed', error: errText(e) });
+    // «Повторить» uploads the same files again; a file too large for the limit cannot succeed.
+    if (files.length > 0) failedFiles.set(key, files);
+    useMessages.getState().patchPending(roomId, key, { status: 'failed', error: errText(e), final: fileTooLarge(e) });
     // 413 FILE_QUOTA_EXCEEDED: how full the storage is, and «Связаться» when the plan is the cause (ADR-0024).
     reportPlanError(e, workspaceId);
   }
 }
 
-/** Retry keeps the same nonce, so the server never creates a duplicate. */
-export function retrySend(workspaceId: string, roomId: string, c: ChatMessage, files: OutgoingFile[] = []): Promise<void> {
+/** The files of failed messages by message key, for «Повторить» (the store keeps only names and sizes). */
+const failedFiles = new Map<string, OutgoingFile[]>();
+
+/** «Удалить» on a failed message: it goes, and so do its files kept for a retry. */
+export function dropFailed(roomId: string, key: string): void {
+  failedFiles.delete(key);
+  useMessages.getState().dropPending(roomId, key);
+}
+
+/** Retry keeps the same nonce, so the server never creates a duplicate; it uploads the same files again. */
+export function retrySend(workspaceId: string, roomId: string, c: ChatMessage, files: OutgoingFile[] = failedFiles.get(c.key) ?? []): Promise<void> {
   if (c.msg.sticker) return sendSticker(workspaceId, roomId, c.msg.sticker, c.msg.replyToId || undefined, c.msg.nonce);
   return sendMessage(workspaceId, roomId, c.msg.content, files, c.msg.replyToId || undefined, c.msg.nonce);
 }

@@ -287,6 +287,7 @@ export function applyDispatch(ev: DispatchEvent): void {
         emailVerificationOptional: r.emailVerificationOptional,
         emailInvitePending: r.emailInvitePending,
         billingSelfServe: r.billingSelfServe,
+        maxFileMb: r.maxFileMb,
         ready: true,
       });
       if (r.me?.settings) applyUserSettings(r.me.settings);

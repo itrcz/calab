@@ -39,6 +39,8 @@ export const esApp: DictShape<typeof enApp> = {
   'err.conflict': 'Alguien más ya cambió esto. Actualiza e inténtalo de nuevo',
   'err.rateLimited': 'Demasiadas solicitudes. Espera un momento',
   'err.fileTooLarge': 'El archivo es demasiado grande',
+  'err.fileTooLargeLimit': 'El archivo es demasiado grande, el límite es {size}',
+  'err.fileTooLargeNamed': '«{name}» es demasiado grande, el límite es {size}',
   'img.err.heicUnsupported': 'HEIC no es compatible en esta plataforma: guarda la foto como JPEG',
   'img.err.broken': 'No se pudo abrir la imagen',
   'img.err.noEncoder': 'No hay memoria suficiente para procesar la imagen: elige una más pequeña',

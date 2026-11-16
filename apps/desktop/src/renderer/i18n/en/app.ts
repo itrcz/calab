@@ -39,6 +39,8 @@ export const enApp: DictShape<typeof ruApp> = {
   'err.conflict': 'Someone else already changed this. Refresh and try again',
   'err.rateLimited': 'Too many requests. Wait a moment',
   'err.fileTooLarge': 'The file is too large',
+  'err.fileTooLargeLimit': 'The file is too large, the limit is {size}',
+  'err.fileTooLargeNamed': '“{name}” is too large, the limit is {size}',
   'img.err.heicUnsupported': 'HEIC isn’t supported on this platform — save the photo as JPEG',
   'img.err.broken': 'Couldn’t open the picture',
   'img.err.noEncoder': 'Not enough memory to process the picture — pick a smaller one',

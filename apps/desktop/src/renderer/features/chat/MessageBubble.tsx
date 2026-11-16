@@ -19,7 +19,7 @@ import { chatGallery, type LightboxImage } from '../../lib/lightbox';
 import { AttachmentImg } from '../../components/AttachmentImg';
 import { downloadFile, openAttachment } from '../../services/files';
 import { can } from '../../lib/permissions';
-import { retrySend, setEmbedsHidden, toggleReaction } from '../../services/chat';
+import { dropFailed, retrySend, setEmbedsHidden, toggleReaction } from '../../services/chat';
 import { messageById, useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
 import { Ticks } from './ReadReceipts';
 import { useSession } from '../../stores/session';
@@ -1059,10 +1059,12 @@ function FailedLine({ c, workspaceId, roomId }: { c: ChatMessage; workspaceId: s
         {t('chat.failed')}
         {c.error ? `: ${c.error}` : ''}
       </span>
-      <button type="button" className="inline-flex items-center gap-0.5 font-semibold hover:underline" onClick={() => void retrySend(workspaceId, roomId, c)}>
-        <RotateCw className="size-3" aria-hidden /> {t('common.retry')}
-      </button>
-      <button type="button" className="hover:underline" onClick={() => useMessages.getState().dropPending(roomId, c.key)}>
+      {c.final ? null : (
+        <button type="button" className="inline-flex items-center gap-0.5 font-semibold hover:underline" onClick={() => void retrySend(workspaceId, roomId, c)}>
+          <RotateCw className="size-3" aria-hidden /> {t('common.retry')}
+        </button>
+      )}
+      <button type="button" className="hover:underline" onClick={() => dropFailed(roomId, c.key)}>
         {t('common.delete')}
       </button>
     </div>

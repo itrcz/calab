@@ -8,6 +8,7 @@ import {
   roomScope,
   WorkspaceRole,
   has,
+  holdsOwnerRole,
   workspacePermissions,
   type PermissionBits,
   type PermissionName,
@@ -273,6 +274,14 @@ export function mayInviteToRoom(roles: readonly RoleBits[] | undefined, userId: 
 function roomInviteAllowed(roles: readonly RoleBits[] | undefined, userId: string, room: Room | undefined, bit: PermissionName): boolean {
   if (!room || room.type === RoomType.DM || room.type === RoomType.NOTES || room.type === RoomType.TASK) return false;
   return !isGuestOnly(roles) && can(roomPerms(roles, userId, room), bit);
+}
+
+/**
+ * ADR-0164: the owner and holders of ADMINISTRATOR (never a guest) upload files above the
+ * workspace's limit, up to the server's hard cap — the server's files.maxFileFor.
+ */
+export function uploadsAboveFileLimit(roles: readonly RoleBits[] | undefined): boolean {
+  return !isGuestOnly(roles) && (holdsOwnerRole(roles ?? []) || can(workspacePerms(roles), 'ADMINISTRATOR'));
 }
 
 /** The member is a guest of the workspace (highest built-in role GUEST: no member / admin role). */

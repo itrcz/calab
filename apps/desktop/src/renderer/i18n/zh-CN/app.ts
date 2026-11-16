@@ -39,6 +39,8 @@ export const zhApp: DictShape<typeof enApp> = {
   'err.conflict': '内容已被他人修改，请刷新后重试',
   'err.rateLimited': '请求过于频繁，请稍候',
   'err.fileTooLarge': '文件过大',
+  'err.fileTooLargeLimit': '文件过大，限制为 {size}',
+  'err.fileTooLargeNamed': '“{name}” 过大，限制为 {size}',
   'img.err.heicUnsupported': '此平台不支持 HEIC — 请将照片另存为 JPEG',
   'img.err.broken': '无法打开图片',
   'img.err.noEncoder': '内存不足，无法处理图片 — 请选择较小的图片',
