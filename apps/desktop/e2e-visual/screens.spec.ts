@@ -4,7 +4,7 @@ import { create } from '@bufbuild/protobuf';
 import { AiState, FormerMemberReason, PERMISSION_BITS, PermissionTargetType, Plan, RecordingStatus, ReportReason, RoomPermissionOverrideSchema, UserReportSchema, UserSchema, WorkspaceBanSchema, WorkspacePlanSchema, WorkspaceRole, WorkspaceSuspensionSchema } from '@calaba/protocol';
 import type { Locator, Page } from '@playwright/test';
 import { FREE_PLAN_LIMITS, UNFURLS, defaultSettings, mockPdf, ts } from '../e2e-support/fixtures';
-import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
+import { CODE_FIXTURE, IDS, MOCK_GPTUNNEL_CODE, MOCK_GPTUNNEL_WEB, MOCK_UPLOAD_PROXY_413, PASSWORD, RECORDING_FIXTURE, slowWebpAnimation, type MockServer } from '../e2e-support/mock-server';
 import { encodePng } from '../e2e-support/png';
 import { expect, test } from './app';
 import { NOW, checkpoint, expectAssigneeStacks, expectToolbarHeights, joinVoice, login, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedRecentNotices, seedReleases, seedRichComments, seedViaMcp, settle } from './harness';
@@ -1424,6 +1424,14 @@ test('chat-hover-actions', async ({ open, win, mock, shot }) => {
   await mainWindow(win, mock);
   await focusDoneBubble(win);
   await checkpoint(shot, 'chat-hover-actions');
+  // CBF-191: the HTML 413 of the proxy on an attachment — «Файл слишком большой», no «Повторить».
+  const composer = win.getByTestId('composer');
+  await composer.locator('input[type=file]:not([accept])').setInputFiles({ name: `${MOCK_UPLOAD_PROXY_413}-архив.zip`, mimeType: 'application/zip', buffer: Buffer.alloc(2048, 1) });
+  await composer.getByRole('textbox').press('Enter');
+  await expect(win.getByText('Не отправлено: Файл слишком большой')).toBeVisible();
+  await expect(win.getByRole('button', { name: 'Повторить' })).toHaveCount(0);
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'chat-send-too-large');
 });
 
 /**

@@ -1210,6 +1210,9 @@ const MOCK_MAX_FILE_MB = 1024;
 const MOCK_MAX_FILE_CAP_MB = 4096;
 /** A Disk upload whose name starts with this answers 429 (Retry-After 600 s). */
 export const MOCK_UPLOAD_RATE_LIMITED = 'rate-limited';
+/** A chat attachment named «proxy-413…» gets the HTML 413 of nginx in front of the API (CBF-191). */
+export const MOCK_UPLOAD_PROXY_413 = 'proxy-413';
+const NGINX_413 = '<html><head><title>413 Request Entity Too Large</title></head><body><center><h1>413 Request Entity Too Large</h1></center><hr><center>nginx</center></body></html>';
 
 /** 429 with Retry-After (seconds), like the server's limits. */
 const tooMany = (what: string, seconds: number): HttpError =>
@@ -2103,6 +2106,7 @@ class MockImpl {
           sessionId: conn.gatewaySessionId,
           me: this.me(u),
           planContact: MOCK_PLAN_CONTACT,
+          maxFileMb: MOCK_MAX_FILE_MB,
           workspaces: wsIds.map((w) => this.withAdmissions(this.snapshot(w, u.user.id), u.user.id)),
           pendingAdmissions: this.ownAdmissions(u.user.id),
           // Every visible room (server contract): never read → empty marker.
@@ -5036,6 +5040,10 @@ class MockImpl {
       const me = this.uid(c);
       const { ws } = this.workspaceFor(c.params[0] ?? '', me);
       const f = await parseMultipartFile(c);
+      if (f.name.startsWith(MOCK_UPLOAD_PROXY_413)) {
+        send(c.res, 413, NGINX_413, 'text/html');
+        return;
+      }
       if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
       // Quota = min(workspace quota, plan storage_mb) (ADR-0024).
       const planBytes = this.planLimits(ws.id).storageMb * 1024n * 1024n;
