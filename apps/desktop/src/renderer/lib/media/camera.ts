@@ -43,9 +43,16 @@ export function cameraSource(track: LocalVideoTrack): MediaStreamTrack {
 /**
  * Opens the camera (preview sheet or straight publish). `motion`: faces and gestures, keep fps.
  * Walks the open ladder (nextCameraStep, issue #322): the exact device at the quality's size
- * first, then other / looser tries while the failure is one they can fix.
+ * first, then other / looser tries while the failure is one they can fix. `abandoned`: the caller
+ * no longer wants the camera (sheet closed, device switched) — no further tries, which would hold
+ * a device the next open may need and keep the light on.
  */
-export async function captureCamera(deviceId: string | null, q: CameraQuality = CAMERA_DEFAULT_QUALITY, facing: CameraFacing | null = null): Promise<LocalVideoTrack> {
+export async function captureCamera(
+  deviceId: string | null,
+  q: CameraQuality = CAMERA_DEFAULT_QUALITY,
+  facing: CameraFacing | null = null,
+  abandoned: () => boolean = () => false,
+): Promise<LocalVideoTrack> {
   const c = cameraCapture(q);
   let first: unknown = undefined;
   let step: CameraStep = 'exact';
@@ -64,7 +71,7 @@ export async function captureCamera(deviceId: string | null, q: CameraQuality = 
     } catch (err) {
       log.warn('[camera] getUserMedia failed', { ...mediaErrorDetail(err), ms: Math.round(performance.now() - t0), ...ask });
       first ??= err;
-      const next = nextCameraStep(step, err, deviceId);
+      const next: CameraStep | null = abandoned() ? null : nextCameraStep(step, err, deviceId);
       if (next) {
         step = next;
         continue;

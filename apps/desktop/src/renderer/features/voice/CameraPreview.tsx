@@ -56,7 +56,7 @@ export function CameraPreview({ onClose }: { onClose: () => void }): ReactNode {
   useEffect(() => {
     let alive = true;
     let got: LocalVideoTrack | null = null;
-    voice.camera.capture().then(
+    voice.camera.capture(() => !alive).then(
       (tr) => {
         if (!alive) {
           tr.stop();

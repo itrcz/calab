@@ -71,11 +71,11 @@ export class CameraController {
   /**
    * Opens the camera for the «Проверьте камеру» sheet (or a direct start). The chosen device, or
    * — when it is gone or does not start — another one (captureCamera's ladder, issue #322). The
-   * caller owns the track until it hands it to start().
+   * caller owns the track until it hands it to start(). `abandoned`: stop the ladder early.
    */
-  async capture(): Promise<LocalVideoTrack> {
+  async capture(abandoned?: () => boolean): Promise<LocalVideoTrack> {
     const want = prefs().cameraDeviceId;
-    const track = await captureCamera(want, this.wanted().quality, useVoice.getState().cameraFacing);
+    const track = await captureCamera(want, this.wanted().quality, useVoice.getState().cameraFacing, abandoned);
     if (want && track.mediaStreamTrack.getSettings().deviceId !== want) {
       log.warn('chosen camera unavailable, using another one', { label: track.mediaStreamTrack.label });
       toast.info(t('video.fallback'));
@@ -117,7 +117,7 @@ export class CameraController {
     let step: 'capture' | 'request' | 'publish' = 'capture';
     try {
       // 1) Capture first: a denied OS permission must not cost a camera slot.
-      track ??= await this.capture();
+      track ??= await this.capture(stale);
       if (stale()) return;
       // The background (ADR-0035): the preview's track has it already (a no-op then); a direct
       // start gets it here, before publishing — frames pass through until the model is loaded.
