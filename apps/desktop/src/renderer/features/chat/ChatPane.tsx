@@ -3,10 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { can, restrictedPerms, roomPerms } from '../../lib/permissions';
-import { fileTooLargeText } from '../../lib/api/errors';
 import { openRoom, type OutgoingFile } from '../../services/chat';
-import { fileLimitBytes } from '../../services/uploadLimit';
-import { toast } from '../../stores/toasts';
+import { fittingFiles } from '../../services/uploadLimit';
 import { subscribeRooms } from '../../services/gateway';
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
@@ -87,11 +85,7 @@ export function ChatPane({ workspaceId, roomId }: { workspaceId: string; roomId:
   const addFiles = useCallback(
     (list: File[]) => {
       if (!canAttach) return;
-      // A file above the known limit is refused when attached, not after a doomed upload (CBF-191).
-      const limit = fileLimitBytes(workspaceId);
-      const big = limit === undefined ? [] : list.filter((f) => f.size > limit);
-      if (big.length > 0) toast.error(fileTooLargeText(limit, big.length === 1 ? big[0]?.name : undefined));
-      const fit = big.length > 0 ? list.filter((f) => !big.includes(f)) : list;
+      const fit = fittingFiles(workspaceId, list);
       if (fit.length > 0) setFiles((cur) => [...cur, ...fit.map(toOutgoing)].slice(0, 20));
     },
     [canAttach, workspaceId],

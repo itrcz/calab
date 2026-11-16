@@ -1,6 +1,8 @@
 import { ApiError } from '../lib/api/client';
+import { fileTooLargeText } from '../lib/api/errors';
 import { uploadsAboveFileLimit } from '../lib/permissions';
 import { myUserId, useSession } from '../stores/session';
+import { toast } from '../stores/toasts';
 import { rolesOf, useWorkspaces } from '../stores/workspaces';
 
 const MB = 1 << 20;
@@ -29,4 +31,17 @@ export function tooLargeError(workspaceId: string, size: number): ApiError | nul
   const limit = fileLimitBytes(workspaceId);
   if (limit === undefined || size <= limit) return null;
   return new ApiError('ERROR_CODE_FILE_TOO_LARGE', 'file exceeds the limit', 413, undefined, { limit });
+}
+
+/**
+ * The files of `list` that fit the known limit; the rest are refused with a toast when attached
+ * (chat and task comments), not after a doomed upload (CBF-191).
+ */
+export function fittingFiles(workspaceId: string, list: File[]): File[] {
+  const limit = fileLimitBytes(workspaceId);
+  if (limit === undefined) return list;
+  const big = list.filter((f) => f.size > limit);
+  if (big.length === 0) return list;
+  toast.error(fileTooLargeText(limit, big.length === 1 ? big[0]?.name : undefined));
+  return list.filter((f) => f.size <= limit);
 }

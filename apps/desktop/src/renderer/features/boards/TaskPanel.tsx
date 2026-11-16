@@ -92,6 +92,7 @@ import { linkChoices, taskChoices } from './taskChoices';
 import { doneType, editLockKey, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
+import { fittingFiles } from '../../services/uploadLimit';
 import { PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
 const TITLE_MAX = 200;
@@ -1358,7 +1359,14 @@ export function CommentBox({ task, room, perms, commentsOff, className, autoFocu
   const roomPerms = useMemo(() => taskRoomPermissions(perms ?? 0n, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
   const [files, setFiles] = useState<OutgoingFile[]>([]);
   const canAttach = (roomPerms & BigInt(Permission.ATTACH_FILES)) !== 0n;
-  const addFiles = useCallback((list: File[]) => canAttach && setFiles((cur) => [...cur, ...list.map(toOutgoing)].slice(0, 20)), [canAttach]);
+  const addFiles = useCallback(
+    (list: File[]) => {
+      if (!canAttach) return;
+      const fit = fittingFiles(task.workspaceId, list);
+      if (fit.length > 0) setFiles((cur) => [...cur, ...fit.map(toOutgoing)].slice(0, 20));
+    },
+    [canAttach, task.workspaceId],
+  );
   const [dragging, drop] = useFileDrop(canAttach, addFiles);
   if (!(roomPerms & BigInt(Permission.SEND_MESSAGES))) return null;
   return (
