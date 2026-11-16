@@ -31,12 +31,23 @@ func uploadWithHeaders(t *testing.T, u *user, wsID string, size int) (int, strin
 // = none, e.g. Calab-On-Behalf) and returns the status, Retry-After and the error body.
 func uploadSized(t *testing.T, token string, header http.Header, path string, size int) (int, string, *v1.ApiError) {
 	t.Helper()
+	return uploadBody(t, token, header, path, size, false)
+}
+
+// uploadBody is uploadSized; chunked = without Content-Length (as the desktop client streams an
+// upload), so the server finds the size only while reading the body.
+func uploadBody(t *testing.T, token string, header http.Header, path string, size int, chunked bool) (int, string, *v1.ApiError) {
+	t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
 	fw, _ := mw.CreateFormFile("file", "blob.bin")
 	_, _ = fw.Write(bytes.Repeat([]byte{'x'}, size))
 	_ = mw.Close()
-	req, _ := http.NewRequestWithContext(context.Background(), "POST", srv.URL+path, &body)
+	var rd io.Reader = &body
+	if chunked {
+		rd = io.MultiReader(&body) // not a *bytes.Buffer: no Content-Length, chunked
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", srv.URL+path, rd)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+token)
 	for k, v := range header {
@@ -94,9 +105,19 @@ func TestWorkspaceUploadLimits(t *testing.T) {
 	admin := superadminUser(t)
 	path := "/api/admin/workspaces/" + wid + "/upload-limits"
 
-	// Defaults: 1 MB per file, 413 FILE_TOO_LARGE with the limit in bytes.
+	// Defaults: 1 MB per file, 413 FILE_TOO_LARGE with the limit in bytes — early by
+	// Content-Length, and while reading a body streamed without one (CBF-191).
 	if st, _, e := uploadWithHeaders(t, m, wid, 3<<19); st != 413 || e.GetCode() != v1.ErrorCode_ERROR_CODE_FILE_TOO_LARGE || e.GetLimit() != 1<<20 {
 		t.Fatalf("default limit: %d %v", st, e)
+	}
+	if st, _, e := uploadBody(t, m.token, nil, "/api/workspaces/"+wid+"/files", 3<<20, true); st != 413 || e.GetCode() != v1.ErrorCode_ERROR_CODE_FILE_TOO_LARGE || e.GetLimit() != 1<<20 {
+		t.Fatalf("default limit, chunked: %d %v", st, e)
+	}
+	// Workspace.max_file_mb: 0 = the server's (Ready.max_file_mb).
+	var gw v1.GetWorkspaceResponse
+	m.must(200, "GET", "/api/workspaces/"+wid, nil, &gw)
+	if n := gw.GetWorkspace().GetMaxFileMb(); n != 0 {
+		t.Fatalf("Workspace.max_file_mb by default: %d", n)
 	}
 	var got v1.AdminGetWorkspaceResponse
 	admin.must(200, "GET", "/api/admin/workspaces/"+wid, nil, &got)
@@ -116,6 +137,10 @@ func TestWorkspaceUploadLimits(t *testing.T) {
 		Burst: proto.Uint32(2), PerHour: proto.Uint32(1), MaxFileMb: proto.Uint32(2)}}, &set)
 	if l := set.GetWorkspace().GetUploadLimits(); l.GetBurst() != 2 || l.GetPerHour() != 1 || l.GetMaxFileMb() != 2 {
 		t.Fatalf("set: %v", l)
+	}
+	m.must(200, "GET", "/api/workspaces/"+wid, nil, &gw)
+	if n := gw.GetWorkspace().GetMaxFileMb(); n != 2 {
+		t.Fatalf("Workspace.max_file_mb after the override: %d", n)
 	}
 	if st, _, e := uploadWithHeaders(t, m, wid, 3<<19); st != 201 {
 		t.Fatalf("1.5 MB under a 2 MB override: %d %v", st, e)

@@ -3831,8 +3831,11 @@ type Ready struct {
 	// session resync. The client keeps such a workspace selected and shows it as connecting
 	// meanwhile; empty from servers before #145.
 	PendingWorkspaceIds []string `protobuf:"bytes,20,rep,name=pending_workspace_ids,json=pendingWorkspaceIds,proto3" json:"pending_workspace_ids,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// The server's size limit of one file, MB (MAX_FILE_SIZE_MB, ADR-0155): DMs, notes and the
+	// workspaces without Workspace.max_file_mb. 0 = unknown (servers before CBF-191): no client check.
+	MaxFileMb     uint32 `protobuf:"varint,21,opt,name=max_file_mb,json=maxFileMb,proto3" json:"max_file_mb,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Ready) Reset() {
@@ -4003,6 +4006,13 @@ func (x *Ready) GetPendingWorkspaceIds() []string {
 		return x.PendingWorkspaceIds
 	}
 	return nil
+}
+
+func (x *Ready) GetMaxFileMb() uint32 {
+	if x != nil {
+		return x.MaxFileMb
+	}
+	return 0
 }
 
 // A guest knocks on a room (ADR-0040); to the room's deciders.
@@ -7818,7 +7828,7 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1a]\n" +
 	"\x15RoomLastMessagesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12.\n" +
-	"\x05value\x18\x02 \x01(\v2\x18.calaba.v1.DmLastMessageR\x05value:\x028\x01\"\xbe\b\n" +
+	"\x05value\x18\x02 \x01(\v2\x18.calaba.v1.DmLastMessageR\x05value:\x028\x01\"\xde\b\n" +
 	"\x05Ready\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -7846,7 +7856,8 @@ const file_calaba_v1_gateway_proto_rawDesc = "" +
 	"\x12read_receipts_from\x18\x12 \x01(\tR\x10readReceiptsFrom\x12\x1c\n" +
 	"\n" +
 	"my_bot_ids\x18\x13 \x03(\tR\bmyBotIds\x122\n" +
-	"\x15pending_workspace_ids\x18\x14 \x03(\tR\x13pendingWorkspaceIds\"N\n" +
+	"\x15pending_workspace_ids\x18\x14 \x03(\tR\x13pendingWorkspaceIds\x12\x1e\n" +
+	"\vmax_file_mb\x18\x15 \x01(\rR\tmaxFileMb\"N\n" +
 	"\x14RoomAdmissionRequest\x126\n" +
 	"\tadmission\x18\x01 \x01(\v2\x18.calaba.v1.RoomAdmissionR\tadmission\"N\n" +
 	"\x14RoomAdmissionDecided\x126\n" +

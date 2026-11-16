@@ -404,6 +404,7 @@ func New(d Deps) *App {
 		Plans:              planSvc,
 		PlanContact:        d.Config.PlanContact(),
 		BillingSelfServe:   d.Config.Billing.Enabled && d.Config.Billing.SelfServe,
+		MaxFileMB:          uint32(d.Config.MaxFileSizeMB), //nolint:gosec // config validates 1..MaxFileSizeCapMB
 		// One grace for every undecided identity check: calls (rtc) and gateway leases (ADR-0166).
 		IdentityTransientGrace: d.Config.IdentityTransientGrace,
 	}, d.DB, d.Redis, authSvc, pub)

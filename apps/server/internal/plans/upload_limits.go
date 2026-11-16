@@ -11,6 +11,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/pbconv"
 )
 
 // Ranges of the upload limits a superadmin sets per workspace (ADR-0155); the migration's CHECKs
@@ -93,8 +94,9 @@ func (a *Admin) setUploadLimits(w http.ResponseWriter, r *http.Request) error {
 	}
 	actor := auth.MustFromContext(r.Context()).UserID
 	logged := fmt.Sprintf("burst=%s per_hour=%s max_file_mb=%s", logValue(p.Burst), logValue(p.PerHour), logValue(p.MaxFileMb))
+	var ws sqlc.Workspace
 	err = a.db.Tx(r.Context(), func(q *sqlc.Queries) error {
-		if _, err := q.SetWorkspaceUploadLimits(r.Context(), p); err != nil {
+		if ws, err = q.SetWorkspaceUploadLimits(r.Context(), p); err != nil {
 			if db.IsNotFound(err) {
 				return httpx.NotFound("workspace")
 			}
@@ -106,6 +108,12 @@ func (a *Admin) setUploadLimits(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	slog.InfoContext(r.Context(), "admin: workspace upload limits", "workspace", id, "by", actor, "limits", logged)
+	// Members' clients check a file against Workspace.max_file_mb before uploading (CBF-191).
+	pw := pbconv.Workspace(ws)
+	if err := a.plans.Fill(r.Context(), pw); err != nil {
+		return err
+	}
+	a.events.Workspace(r.Context(), id, &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceUpdate{WorkspaceUpdate: &v1.WorkspaceUpdate{Workspace: pw}}})
 	aw, err := a.one(r.Context(), id)
 	if err != nil {
 		return err

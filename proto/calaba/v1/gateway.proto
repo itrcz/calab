@@ -539,6 +539,9 @@ message Ready {
   // session resync. The client keeps such a workspace selected and shows it as connecting
   // meanwhile; empty from servers before #145.
   repeated string pending_workspace_ids = 20;
+  // The server's size limit of one file, MB (MAX_FILE_SIZE_MB, ADR-0155): DMs, notes and the
+  // workspaces without Workspace.max_file_mb. 0 = unknown (servers before CBF-191): no client check.
+  uint32 max_file_mb = 21;
 }
 
 // A guest knocks on a room (ADR-0040); to the room's deciders.

@@ -357,7 +357,16 @@ func Workspace(w sqlc.Workspace) *v1.Workspace {
 		SipEnabled:        w.SipEnabled,
 		TempArchiveDays:   uint32(w.TempArchiveDays), //nolint:gosec // DB CHECK bounds it
 		OwnerSeesPrivate:  w.OwnerSeesPrivate,
+		MaxFileMb:         maxFileMB(w.MaxFileMb),
 	}
+}
+
+// maxFileMB is Workspace.max_file_mb: the superadmin's override (ADR-0155), 0 = the server's.
+func maxFileMB(v *int32) uint32 {
+	if v == nil || *v < 0 {
+		return 0
+	}
+	return uint32(*v) //nolint:gosec // non-negative, DB CHECK bounds it
 }
 
 // SeesSuspensionReason reports whether a role sees why the workspace is suspended (owner, admins).

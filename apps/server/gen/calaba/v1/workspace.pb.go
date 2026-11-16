@@ -281,8 +281,13 @@ type Workspace struct {
 	// boards, Disk items and Wiki pages (to manage what a former member left behind). Off by
 	// default; only the owner changes it (UpdateWorkspaceRequest.owner_sees_private).
 	OwnerSeesPrivate bool `protobuf:"varint,19,opt,name=owner_sees_private,json=ownerSeesPrivate,proto3" json:"owner_sees_private,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The superadmin's size limit of one file in this workspace, MB (workspaces.max_file_mb,
+	// ADR-0155); 0 = the server's (Ready.max_file_mb). Administrators upload up to the hard cap
+	// above it (ADR-0164). The client checks a file against it before uploading (CBF-191); the
+	// server decides (413 FILE_TOO_LARGE with limit).
+	MaxFileMb     uint32 `protobuf:"varint,20,opt,name=max_file_mb,json=maxFileMb,proto3" json:"max_file_mb,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Workspace) Reset() {
@@ -446,6 +451,13 @@ func (x *Workspace) GetOwnerSeesPrivate() bool {
 		return x.OwnerSeesPrivate
 	}
 	return false
+}
+
+func (x *Workspace) GetMaxFileMb() uint32 {
+	if x != nil {
+		return x.MaxFileMb
+	}
+	return 0
 }
 
 type WorkspaceSuspension struct {
@@ -4501,7 +4513,7 @@ var File_calaba_v1_workspace_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x17calaba/v1/billing.proto\x1a\x18calaba/v1/identity.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\xf9\x06\n" +
+	"\x19calaba/v1/workspace.proto\x12\tcalaba.v1\x1a\x17calaba/v1/billing.proto\x1a\x18calaba/v1/identity.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16calaba/v1/boards.proto\x1a\x15calaba/v1/media.proto\x1a\x1bcalaba/v1/permissions.proto\x1a\x14calaba/v1/plan.proto\x1a\x14calaba/v1/user.proto\"\x99\a\n" +
 	"\tWorkspace\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x12\n" +
@@ -4530,7 +4542,8 @@ const file_calaba_v1_workspace_proto_rawDesc = "" +
 	"sipEnabled\x12;\n" +
 	"\abilling\x18\x11 \x01(\v2!.calaba.v1.WorkspaceBillingStatusR\abilling\x12*\n" +
 	"\x11temp_archive_days\x18\x12 \x01(\rR\x0ftempArchiveDays\x12,\n" +
-	"\x12owner_sees_private\x18\x13 \x01(\bR\x10ownerSeesPrivate\"Y\n" +
+	"\x12owner_sees_private\x18\x13 \x01(\bR\x10ownerSeesPrivate\x12\x1e\n" +
+	"\vmax_file_mb\x18\x14 \x01(\rR\tmaxFileMb\"Y\n" +
 	"\x13WorkspaceSuspension\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xdc\x01\n" +

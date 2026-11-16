@@ -62,6 +62,11 @@ message Workspace {
   // boards, Disk items and Wiki pages (to manage what a former member left behind). Off by
   // default; only the owner changes it (UpdateWorkspaceRequest.owner_sees_private).
   bool owner_sees_private = 19;
+  // The superadmin's size limit of one file in this workspace, MB (workspaces.max_file_mb,
+  // ADR-0155); 0 = the server's (Ready.max_file_mb). Administrators upload up to the hard cap
+  // above it (ADR-0164). The client checks a file against it before uploading (CBF-191); the
+  // server decides (413 FILE_TOO_LARGE with limit).
+  uint32 max_file_mb = 20;
 }
 
 message WorkspaceSuspension {

@@ -44,6 +44,7 @@ type Config struct {
 	Plans              *plans.Service // Workspace.plan in snapshots (ADR-0024); nil = unset
 	PlanContact        string         // Ready.plan_contact
 	BillingSelfServe   bool           // Ready.billing_self_serve (BILLING_ENABLED && BILLING_SELF_SERVE)
+	MaxFileMB          uint32         // Ready.max_file_mb (MAX_FILE_SIZE_MB)
 	// IdentityTransientGrace: how long a session keeps the access it last had while its identity
 	// checks stay undecided (a database stall), ADR-0166; 0 = identityTransientGrace. The same
 	// knob as the RTC sweep's (RTC_IDENTITY_TRANSIENT_GRACE).
