@@ -318,7 +318,8 @@ export class CameraController {
 /** The server updates the LiveKit grant after /camera/request; wait (≤ 4 s) until it arrives. */
 async function waitForGrant(room: Room, source: number): Promise<void> {
   const ok = (): boolean => {
-    const sources = room.localParticipant.permissions?.canPublishSources ?? [];
+    // Widened to number: livekit-client ships its own @livekit/protocol copy, so its TrackSource is not ours.
+    const sources: readonly number[] = room.localParticipant.permissions?.canPublishSources ?? [];
     return sources.length === 0 || sources.includes(source);
   };
   if (ok()) return;

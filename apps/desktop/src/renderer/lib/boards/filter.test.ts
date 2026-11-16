@@ -51,7 +51,7 @@ describe('TaskFilter round trip', () => {
     const f = addCond(EMPTY_FILTER, TaskField.STATUS);
     expect(complete(f.conds[0] as never)).toBe(false);
     expect(toTaskFilter(f).conditions).toHaveLength(0);
-    const unknown = create(TaskFilterSchema, { conditions: [{ field: 99 as TaskField, op: TaskOp.IS, values: ['x'] }] });
+    const unknown = create(TaskFilterSchema, { conditions: [{ field: 99 as unknown as TaskField, op: TaskOp.IS, values: ['x'] }] });
     expect(fromTaskFilter(unknown).conds).toHaveLength(0);
   });
 

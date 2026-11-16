@@ -1,3 +1,4 @@
+import { BoardStatusType } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { Archive, ArchiveRestore, ArrowLeft, Search } from 'lucide-react';
 import { memo, useCallback, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
@@ -138,7 +139,7 @@ const ArchiveRow = memo(function ArchiveRow({ id, boardId, onOpen }: { id: strin
     >
       <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
       <span className="grid size-6 shrink-0 place-items-center" title={status?.name}>
-        <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
+        <StatusIcon type={status?.type ?? BoardStatusType.UNSPECIFIED} color={status?.color ?? 0} icon={status?.icon} />
       </span>
       <span className="min-w-0 flex-1 truncate text-muted mobile:line-clamp-2 mobile:whitespace-normal mobile:text-body mobile:text-fg mobile:[overflow-wrap:anywhere]">{task.title}</span>
       <span className="hidden max-w-[140px] shrink-0 truncate text-caption text-muted min-[900px]:block" data-testid="archive-status">

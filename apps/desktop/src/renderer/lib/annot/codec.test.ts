@@ -46,7 +46,7 @@ describe('annot codec', () => {
     expect(decodeAnnot(new Uint8Array(MAX_BYTES + 1))).toBeNull();
     const raw = (m: Parameters<typeof create<typeof AnnotMessageSchema>>[1]): Uint8Array => toBinary(AnnotMessageSchema, create(AnnotMessageSchema, m));
     expect(decodeAnnot(raw({ streamSid: 'TR_1', kind: AnnotKind.UNSPECIFIED }))).toBeNull();
-    expect(decodeAnnot(raw({ streamSid: 'TR_1', kind: 99 as AnnotKind }))).toBeNull();
+    expect(decodeAnnot(raw({ streamSid: 'TR_1', kind: 99 as unknown as AnnotKind }))).toBeNull();
     expect(decodeAnnot(raw({ streamSid: 'TR_1', kind: AnnotKind.STROKE, points: [0.1, -0.2] }))).toBeNull();
     expect(decodeAnnot(raw({ streamSid: 'TR_1', kind: AnnotKind.STROKE, points: [0.1, 0.2, 0.3] }))).toBeNull();
     expect(decodeAnnot(raw({ streamSid: 'TR_1', kind: AnnotKind.POINTER, points: [] }))).toBeNull();

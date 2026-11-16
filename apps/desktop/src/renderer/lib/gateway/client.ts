@@ -17,6 +17,7 @@ import {
 } from '@calaba/protocol';
 import type { LogoutReason } from '../../../shared/ipc';
 import { logoutReasonFromClose } from '../../../shared/logoutReason';
+import { asEnum } from '../enums';
 
 /**
  * WS gateway client (docs/05-realtime-protocol.md). Pure logic with injected
@@ -589,7 +590,7 @@ export class GatewayClient {
     this.log(`closed ${code}`);
     if (this.stopped) return;
 
-    const closeCode: GatewayCloseCode = code;
+    const closeCode = asEnum(GatewayCloseCode, code);
     switch (closeCode) {
       case GatewayCloseCode.AUTHENTICATION_FAILED:
         this.authFailures++;

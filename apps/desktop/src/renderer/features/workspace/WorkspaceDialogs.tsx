@@ -14,6 +14,7 @@ import { joinPlaceholder, parseInviteCode, parseRoomInviteCode } from '../../ser
 import { RoomLinkPreview } from '../people/RoomLinkPreview';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
+import { asEnum } from '../../lib/enums';
 
 const TRANSLIT: Record<string, string> = {
   а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n',
@@ -139,7 +140,7 @@ export function CreateWorkspaceDialog({ onClose }: { onClose: () => void }): Rea
           />
         </Field>
         <Field label={t('ws.visibility')}>
-          <Select value={visibility} onChange={(e) => setVisibility(Number(e.target.value))}>
+          <Select value={visibility} onChange={(e) => setVisibility(asEnum(WorkspaceVisibility, Number(e.target.value)))}>
             <option value={WorkspaceVisibility.PRIVATE}>{t('ws.private')}</option>
             <option value={WorkspaceVisibility.OPEN}>{t('ws.open')}</option>
           </Select>

@@ -25,6 +25,7 @@ import { useIdentity } from '../../stores/identity';
 import { localAuthority } from './model';
 import { LocalReauth, SsoButton } from './SignIn';
 import { consentWorkspaceCandidates } from './consentWorkspaces';
+import { asEnum } from '../../lib/enums';
 
 export function OAuthClients({ workspaceId }: { workspaceId: string }): ReactNode {
   const clients = useQuery({
@@ -247,7 +248,7 @@ function ClientForm({
             disabled={!!client}
             value={type}
             onChange={(e) => {
-              setType(Number(e.target.value));
+              setType(asEnum(OAuthClientType, Number(e.target.value)));
               setErrors({});
             }}
           >

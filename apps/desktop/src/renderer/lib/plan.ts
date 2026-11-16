@@ -1,6 +1,7 @@
-import { Plan, ScreenSharePreset, SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type PlanLimits, type WorkspacePlan } from '@calaba/protocol';
+import { Plan, ScreenSharePreset, SCREEN_SHARE_PRESETS, ConcreteScreenSharePreset, type PlanLimits, type WorkspacePlan } from '@calaba/protocol';
 import { plural, t, type MessageKey, type PluralKey } from '../i18n';
 import { fmt } from './format';
+import { asEnum } from './enums';
 
 /**
  * Workspace plans on the client (ADR-0024, docs/08 «Тариф»). Pure: no stores, no platform — the
@@ -148,7 +149,7 @@ export function cameraPresetLock(p: ScreenSharePreset, planMax: ScreenSharePrese
 /** The highest preset ≤ `wanted` that neither the room nor the plan locks (ECONOMY at worst). */
 export function allowedStreamPreset(wanted: ConcreteScreenSharePreset, roomMax: ScreenSharePreset, planMax: ScreenSharePreset | undefined): ConcreteScreenSharePreset {
   let p = wanted;
-  while (p > ScreenSharePreset.ECONOMY && streamPresetLock(p, roomMax, planMax)) p = (p - 1);
+  while (p > ScreenSharePreset.ECONOMY && streamPresetLock(p, roomMax, planMax)) p = asEnum(ScreenSharePreset, p - 1) as ConcreteScreenSharePreset;
   return p;
 }
 

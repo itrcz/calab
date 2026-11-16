@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { t, type MessageKey } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { menuItem, menuLabel, menuSeparator } from '../shell/menu';
+import { asEnum } from '../../lib/enums';
 
 /** «До утра»: the next 08:00 local time (today before 8, else tomorrow). */
 export function untilMorning(now = new Date()): number {
@@ -67,7 +68,7 @@ export function NotifyMenuItems({
   return (
     <>
       <M.Label className={menuLabel}>{title}</M.Label>
-      <M.RadioGroup value={String(value)} onValueChange={(v) => onChange(Number(v), mutedUntil)}>
+      <M.RadioGroup value={String(value)} onValueChange={(v) => onChange(asEnum(NotificationLevel, Number(v)), mutedUntil)}>
         {options.map((o) => (
           <M.RadioItem key={o.level} value={String(o.level)} className={menuItem}>
             <span className="grid w-4 place-items-center">

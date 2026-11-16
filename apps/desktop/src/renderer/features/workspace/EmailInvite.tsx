@@ -20,6 +20,7 @@ import { workspacePlan } from '../../services/plan';
 import { toast } from '../../stores/toasts';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { EmailLookup, type LookupState } from './emailLookup';
+import { asEnum } from '../../lib/enums';
 
 /** A failed add / invitation: 429 of «the same address < 24 h ago» names the wait; the plan's members limit its own text. */
 function sendError(e: unknown, workspaceId: string): string {
@@ -167,7 +168,7 @@ export function EmailInviteCard({ workspaceId, full = false }: { workspaceId: st
             <div className="flex flex-wrap items-center gap-2" data-testid="invite-email-none">
               <p className="min-w-0 flex-1 basis-48 text-caption text-muted">{t('mail.invite.none', { email: state.email })}</p>
               {owner ? (
-                <Select aria-label={t('mail.invite.role')} className="w-40" value={role} onChange={(e) => setRole(Number(e.target.value))}>
+                <Select aria-label={t('mail.invite.role')} className="w-40" value={role} onChange={(e) => setRole(asEnum(WorkspaceRole, Number(e.target.value)))}>
                   <option value={WorkspaceRole.MEMBER}>{t('role.member')}</option>
                   <option value={WorkspaceRole.ADMIN}>{t('role.admin')}</option>
                 </Select>

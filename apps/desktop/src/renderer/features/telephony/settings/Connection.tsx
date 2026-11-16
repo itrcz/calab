@@ -20,6 +20,7 @@ import { api } from '../../../lib/api/endpoints';
 import { normalizePrefix } from '../../../lib/sip';
 import { toast } from '../../../stores/toasts';
 import { FormShell, usePhoneSettings } from './ui';
+import { asEnum } from '../../../lib/enums';
 
 /*
  * «Телефония → Настройки → Подключение» (ADR-0046, ADR-0137 §5; MANAGE_INTEGRATIONS): the SIP
@@ -275,7 +276,7 @@ function SettingsForm({ workspaceId, settings, lead, children }: { workspaceId: 
         </Row>
         <Row label={t('sip.transport')} htmlFor={f('transport')}>
           <span className={box}>
-            <Select id={f('transport')} value={String(d.transport)} onChange={(e) => set('transport', Number(e.target.value))}>
+            <Select id={f('transport')} value={String(d.transport)} onChange={(e) => set('transport', asEnum(SipTransport, Number(e.target.value)))}>
               {TRANSPORTS.map((o) => (
                 <option key={o.value} value={String(o.value)}>
                   {o.label}

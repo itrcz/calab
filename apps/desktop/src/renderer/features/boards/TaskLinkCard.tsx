@@ -1,3 +1,4 @@
+import { BoardStatusType } from '@calaba/protocol';
 import type { UnfurlResponse } from '@calaba/protocol';
 import { SquareKanban } from 'lucide-react';
 import { memo, useMemo, type MouseEvent, type ReactNode } from 'react';
@@ -9,6 +10,7 @@ import { openTaskOrTab } from '../../services/taskTab';
 import { useBoards } from '../../stores/boards';
 import { MemberAvatar, useToday } from './menus';
 import { StatusIcon, colorCss, formatDue, isOverdue } from './visuals';
+import { asEnum } from '../../lib/enums';
 
 /**
  * A `/t/<KEY-N>` or `/b/<id>` link in a message (ADR-0042 §5 «Ссылки»): a card instead of the
@@ -46,7 +48,7 @@ export const TaskLinkCard = memo(function TaskLinkCard({ res, href }: { res: Unf
   return (
     <a href={href} onClick={open} className={box} style={{ borderLeftColor: colorCss(card.statusColor) }} data-testid="task-link-card">
       <span className="flex min-w-0 items-start gap-1.5">
-        <StatusIcon type={card.statusType} color={card.statusColor} icon={card.statusIcon} className="mt-[3px]" />
+        <StatusIcon type={asEnum(BoardStatusType, card.statusType)} color={card.statusColor} icon={card.statusIcon} className="mt-[3px]" />
         <span className="line-clamp-2 min-w-0 text-body font-semibold leading-5 text-fg">
           <span className="mr-1.5 font-normal tabular-nums text-[color:var(--bubble-meta)]">{card.key}</span>
           {card.title}

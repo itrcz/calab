@@ -8,8 +8,7 @@ import {
   RoomType,
   WorkspaceRole,
   type PermissionName,
-  type Role,
-} from '@calaba/protocol';
+  type Role, ScreenSharePreset } from '@calaba/protocol';
 import { useMutation } from '@tanstack/react-query';
 import { AudioLines, Check, ChevronRight, Hash, Link2, Minus, Plus, Settings2, ShieldCheck, Volume2, X } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
@@ -60,6 +59,7 @@ import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { capAudioKbps } from '../../lib/plan';
 import { joinLeaveSoundMax } from '../../lib/media/joinLeaveSound';
 import { reportPlanError } from '../../services/plan';
+import { asEnum } from '../../lib/enums';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -292,7 +292,7 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
     void patchRoom(roomId, {
       mediaOverride: create(RoomMediaOverrideSchema, {
         ...(bitrate !== '' ? { audioBitrateKbps: bitrate } : {}),
-        ...(preset !== '' ? { maxStreamPreset: preset } : {}),
+        ...(preset !== '' ? { maxStreamPreset: asEnum(ScreenSharePreset, preset) } : {}),
         ...(streams !== '' ? { maxStreams: streams } : {}),
         ...(cameras !== '' ? { cameraLimit: cameras } : {}),
         ...(joinLeave !== '' ? { joinLeaveSoundMax: joinLeave } : {}),
@@ -320,11 +320,11 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
         hint={
           ov?.maxStreamPreset
             ? presetDetail(ov.maxStreamPreset)
-            : t('media.inheritHint', { v: presetDetail(wsDefaults?.maxStreamPreset || 3) })
+            : t('media.inheritHint', { v: presetDetail(wsDefaults?.maxStreamPreset || ScreenSharePreset.H1080) })
         }
       >
         <Select aria-label={t('media.maxPreset')} className="w-60" value={ov?.maxStreamPreset ?? ''} onChange={(e) => apply({ preset: num(e.target.value) })}>
-          <option value="" title={presetDetail(wsDefaults?.maxStreamPreset || 3)}>
+          <option value="" title={presetDetail(wsDefaults?.maxStreamPreset || ScreenSharePreset.H1080)}>
             {t('media.inherit')}
           </option>
           {PRESETS.map((p) => (

@@ -21,6 +21,7 @@ import { errorText } from '../../lib/api/errors';
 import { identityApi } from './api';
 import { lines, reasonKey } from './model';
 import { LocalReauth, SsoButton } from './SignIn';
+import { asEnum } from '../../lib/enums';
 
 export const identityDate = (value?: Timestamp): string =>
   value ? new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(timestampDate(value)) : '—';
@@ -190,7 +191,7 @@ export function IdentitySettings({ workspaceId, owner }: { workspaceId: string; 
                       : 'identity.optional',
                 )}
               </p>
-              <Select aria-label={t('identity.policy')} value={mode} onChange={(e) => setMode(Number(e.target.value))}>
+              <Select aria-label={t('identity.policy')} value={mode} onChange={(e) => setMode(asEnum(IdentityPolicyMode, Number(e.target.value)))}>
                 <option value={IdentityPolicyMode.OFF}>{t('identity.off')}</option>
                 <option value={IdentityPolicyMode.OPTIONAL}>{t('identity.optional')}</option>
                 <option value={IdentityPolicyMode.ENFORCED}>{t('identity.enforced')}</option>
@@ -305,7 +306,7 @@ function ConnectionForm({
           <Input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label={t('identity.provider')}>
-          <Select value={provider} onChange={(e) => setProvider(Number(e.target.value))}>
+          <Select value={provider} onChange={(e) => setProvider(asEnum(IdentityProvider, Number(e.target.value)))}>
             <option value={IdentityProvider.GENERIC}>OpenID Connect</option>
             <option value={IdentityProvider.ENTRA}>Microsoft Entra ID</option>
             <option value={IdentityProvider.ADFS}>AD FS 2019+</option>

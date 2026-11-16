@@ -53,6 +53,7 @@ import { AvailabilityStrip } from './AvailabilityStrip';
 import { ZoneSpan } from './ZoneAxis';
 import { FindTimeDialog } from './FindTime';
 import { askSeriesScope } from './actions';
+import { asEnum } from '../../lib/enums';
 
 const REPEATS = [EventRepeat.UNSPECIFIED, EventRepeat.DAILY, EventRepeat.WORKDAYS, EventRepeat.WEEKLY, EventRepeat.BIWEEKLY, EventRepeat.MONTHLY] as const;
 /** 00:00 … 23:45. */
@@ -325,7 +326,7 @@ export function EventDialog({ workspaceId, eventKey, draft: init, onClose }: { w
               <Select
                 value={d.repeat}
                 onChange={(e) => {
-                  const repeat: EventRepeat = Number(e.target.value);
+                  const repeat = asEnum(EventRepeat, Number(e.target.value));
                   // A series has no own temporary room (ADR-0112): a room made already stays as an ordinary one.
                   set(repeat === EventRepeat.UNSPECIFIED ? { repeat } : { repeat, tempRoom: false });
                 }}

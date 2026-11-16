@@ -56,7 +56,7 @@ describe('in-window shortcuts', () => {
     expect(comboAccelerator({ code: 'IntlRo', shift: false, alt: false }, true)).toBe('');
   });
 
-  it('the menu-only accelerators (⌘N, ⌘,, ⌘1…⌘9) cannot be taken by a rebindable shortcut', () => {
+  it('the menu-only accelerators (⌘N, ⌘, ⌘1…⌘9) cannot be taken by a rebindable shortcut', () => {
     const all = effectiveHotkeys({}, true);
     const fixed = [MENU_ACCELERATORS.newMessage, MENU_ACCELERATORS.settings, ...[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => MENU_ACCELERATORS.workspace(i) ?? '')];
     expect(MENU_ACCELERATORS.workspace(9)).toBeUndefined();

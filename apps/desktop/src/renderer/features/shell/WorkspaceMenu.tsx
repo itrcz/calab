@@ -18,6 +18,7 @@ import { useUi } from '../../stores/ui';
 import { useMemberRoles } from '../../stores/workspaces';
 import { LEVEL_LABEL, NotifyMenuItems, type LevelOption } from '../chat/NotifyMenu';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
+import { asEnum } from '../../lib/enums';
 
 /**
  * The workspace menu items (docs/09 #140), the tail of the workspace switcher (ADR-0074 §2; the
@@ -134,7 +135,7 @@ function TaskNotifyItems({ workspaceId }: { workspaceId: string }): ReactNode {
     <>
       <Dropdown.Separator className={menuSeparator} />
       <Dropdown.Label className={menuLabel}>{t('boards.notifyTasks')}</Dropdown.Label>
-      <Dropdown.RadioGroup value={String(level)} onValueChange={(v) => void setWorkspaceTaskLevel(workspaceId, Number(v))}>
+      <Dropdown.RadioGroup value={String(level)} onValueChange={(v) => void setWorkspaceTaskLevel(workspaceId, asEnum(NotificationLevel, Number(v)))}>
         {TASK_LEVELS.map((o) => (
           <Dropdown.RadioItem key={o.level} value={String(o.level)} className={menuItem} data-testid={`task-level-${o.level}`}>
             <span className="grid w-4 place-items-center">

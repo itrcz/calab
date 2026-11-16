@@ -1,5 +1,6 @@
 import { TaskNoticeKind } from '@calaba/protocol';
 import type { MessageKey } from '../../i18n';
+import { asEnum } from '../enums';
 
 /**
  * Settings → Уведомления → «Задачи» (ADR-0089 §5): the task notification triggers in two groups,
@@ -65,7 +66,7 @@ export function rowOn(off: readonly number[], row: Pick<TaskNotifyRow, 'kinds' |
  */
 export function withRow(off: readonly number[], row: Pick<TaskNotifyRow, 'kinds' | 'locked'>, on: boolean): number[] {
   if (row.locked) return [...off];
-  const rest = off.filter((k) => !row.kinds.includes(k));
+  const rest = off.filter((k) => !row.kinds.includes(asEnum(TaskNoticeKind, k)));
   return (on ? rest : [...rest, ...row.kinds]).sort((a, b) => a - b);
 }
 

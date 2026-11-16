@@ -89,7 +89,7 @@ import {
   type Task,
   type TaskActivity,
   type TaskFilter,
-  type TaskRelationKind,
+  TaskRelationKind,
 } from '@calaba/protocol';
 import { BoardError, BoardsMock, CREATE_TASKS as CREATE_TASKS_BIT, MANAGE_BOARD } from './mock-boards';
 import { DiskError, DiskMock } from './mock-disk';
@@ -622,6 +622,7 @@ import {
 } from './mock-pbx';
 import { advanceCall, listJournal, mayReadCall, missedCount, seedJournal, type JournalRow } from './mock-journal';
 import { checkContact, exportCsv, importCsv, listContacts, makeContact, numberOwner } from './mock-contacts';
+import { asEnum } from '../src/renderer/lib/enums';
 import { normalizeContactNumber } from '../src/renderer/lib/phoneNumber';
 import { MOCK_SIP_RATE_NUMBER, MOCK_SIP_REFUSED_HOST, MOCK_SIP_UNREACHABLE_HOST, defaultSipSettings, isLiveSipStatus, normalizeCallee, numberAllowed, sipSettingsError } from './mock-sip';
 import {
@@ -5766,7 +5767,7 @@ class MockImpl {
       const b = parseBody(c, RequestCameraRequestSchema);
       const pl = this.planLimits(room.workspaceId);
       const minNz = (x: number, y: number): number => (x && y ? Math.min(x, y) : x || y);
-      sendMsg(c.res, 200, RequestCameraResponseSchema, { preset: minNz(b.preset, pl.cameraMaxPreset), fps: minNz(b.fps, pl.cameraMaxFps) });
+      sendMsg(c.res, 200, RequestCameraResponseSchema, { preset: asEnum(ScreenSharePreset, minNz(b.preset, pl.cameraMaxPreset)), fps: minNz(b.fps, pl.cameraMaxFps) });
     });
     this.route('POST', '/api/rooms/:id/camera/stop', (c) => {
       const me = this.uid(c);
@@ -5783,7 +5784,7 @@ class MockImpl {
         const b = parseBody(c, RequestStreamRequestSchema);
         const preset = b.preset === ScreenSharePreset.UNSPECIFIED ? ScreenSharePreset.H1080 : Math.min(b.preset, ScreenSharePreset.H1080);
         const own = Object.entries(SCREEN_SHARE_PRESETS).find(([k]) => Number(k) === preset)?.[1].fps ?? 0;
-        sendMsg(c.res, 200, RequestStreamResponseSchema, { preset, fps: b.fps > 0 ? Math.min(b.fps, own) : own });
+        sendMsg(c.res, 200, RequestStreamResponseSchema, { preset: asEnum(ScreenSharePreset, preset), fps: b.fps > 0 ? Math.min(b.fps, own) : own });
         return;
       }
       this.requireRoomPerm(room, me, STREAM);
@@ -5795,7 +5796,7 @@ class MockImpl {
       const own = Object.entries(SCREEN_SHARE_PRESETS).find(([k]) => Number(k) === preset)?.[1].fps ?? 0;
       const planFps = this.planLimits(room.workspaceId).streamMaxFps;
       const fps = [b.fps, planFps].filter((x) => x > 0).reduce((a, x) => Math.min(a, x), own);
-      sendMsg(c.res, 200, RequestStreamResponseSchema, { preset, fps });
+      sendMsg(c.res, 200, RequestStreamResponseSchema, { preset: asEnum(ScreenSharePreset, preset), fps });
     });
 
     this.route('PATCH', '/api/voice/self', (c) => {
@@ -8929,7 +8930,7 @@ class MockImpl {
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, r.relatedId, r.kind, true).task.id, me, true));
     });
     this.boardRoute('DELETE', '/api/tasks/:id/relations', (c, me) => {
-      const kind: TaskRelationKind = Number(q(c, 'kind'));
+      const kind = asEnum(TaskRelationKind, Number(q(c, 'kind')));
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
     });
     // ADR-0076: watchers.

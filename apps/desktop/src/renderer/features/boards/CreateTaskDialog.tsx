@@ -1,4 +1,4 @@
-import { BoardFeature, TaskPriority } from '@calaba/protocol';
+import { BoardFeature, TaskPriority, BoardStatusType } from '@calaba/protocol';
 import * as Dropdown from '../../components/radix/dropdown-menu';
 import { BadgeCheck, CalendarClock, CalendarPlus, Check, Diamond, Paperclip, SquareKanban, Tag, Triangle, UserRound } from 'lucide-react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -339,7 +339,7 @@ function Dialog({
           ) : null}
           <StatusMenu boardId={boardId} value={status} onPick={setStatus}>
             <button type="button" className={chip}>
-              <StatusIcon type={st?.type ?? 0} color={st?.color ?? 0} icon={st?.icon} /> {st?.name ?? ''}
+              <StatusIcon type={st?.type ?? BoardStatusType.UNSPECIFIED} color={st?.color ?? 0} icon={st?.icon} /> {st?.name ?? ''}
             </button>
           </StatusMenu>
           {on(BoardFeature.PRIORITY) ? (

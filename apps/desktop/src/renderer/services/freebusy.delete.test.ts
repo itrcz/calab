@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AttendeeStatus } from '@calaba/protocol';
 import type { ExternalEvent } from '../lib/calendar/freebusyApi';
 
 /** «Удалить из календаря» (ADR-0045 amendment 1): optimistic, rolled back on a refusal, a toast by the reason. */
@@ -18,7 +19,7 @@ const { useToasts } = await import('../stores/toasts');
 
 const ev = (start: number, extra: Partial<ExternalEvent> = {}): ExternalEvent => ({
   uid: 'u1', start, end: start + 3_600_000, allDay: false, summary: 'Планёрка', location: '', attendees: [], organizer: '',
-  url: '', href: 'https://dav.example/cal/u1.ics', recurring: true, webUrl: '', myStatus: 0, ...extra,
+  url: '', href: 'https://dav.example/cal/u1.ics', recurring: true, webUrl: '', myStatus: AttendeeStatus.UNSPECIFIED, ...extra,
 });
 const d15 = ev(Date.parse('2026-01-15T09:00:00Z'));
 const d16 = ev(Date.parse('2026-01-16T09:00:00Z'));

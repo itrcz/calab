@@ -19,6 +19,7 @@ import { useBoards } from '../../stores/boards';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { FieldV2, pruneOptions, retype, RoutesEditor } from './FormEditorV2';
 import { FormFields, formError } from './FormFields';
+import { asEnum } from '../../lib/enums';
 
 const TYPES: [Kind, MessageKey][] = [
   [Kind.TEXT, 'forms.text'],
@@ -362,7 +363,7 @@ function FormEditor({
           </Select>
         </Field>
         <Field label={t('forms.priority')}>
-          <Select aria-label={t('forms.priority')} value={draft.priority} onChange={(e) => change({ priority: Number(e.target.value) })}>
+          <Select aria-label={t('forms.priority')} value={draft.priority} onChange={(e) => change({ priority: asEnum(TaskPriority, Number(e.target.value)) })}>
             {[TaskPriority.NONE, TaskPriority.LOW, TaskPriority.MEDIUM, TaskPriority.HIGH, TaskPriority.URGENT].map((p) => (
               <option key={p} value={p}>
                 {t((['boards.prio.none', 'boards.prio.low', 'boards.prio.medium', 'boards.prio.high', 'boards.prio.urgent'] as const)[p])}

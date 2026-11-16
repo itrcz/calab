@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { VoiceDisconnectReason } from '@calaba/protocol';
+import { ScreenSharePreset, VoiceDisconnectReason } from '@calaba/protocol';
 import type { HostCallAudioCapability, HostAudioConnect, HostAudioState } from '../../shared/hostCallAudio';
 import type { HostRoomAudioCapability, HostRoomAudioConnect, HostRoomAudioCue, HostRoomAudioState, HostRoomAudioStatus } from '../../shared/hostRoomAudio';
 
@@ -2772,7 +2772,7 @@ describe('stream codec (ADR-0032)', () => {
       usePrefs.setState({ streamCodec: pref });
       startScreenShare.mockClear();
       pickPublishCodec.mockClear();
-      await voice.startStream({ source, preset: 2, contentHint: 'detail', systemAudio: false });
+      await voice.startStream({ source, preset: ScreenSharePreset.H720, contentHint: 'detail', systemAudio: false });
       expect(pickPublishCodec).toHaveBeenCalledWith('screen', pref);
       expect(startScreenShare).toHaveBeenCalledTimes(1);
       expect(startScreenShare.mock.calls[0]?.[1]).toMatchObject({ codec, preset: 2, contentHint: 'detail' });

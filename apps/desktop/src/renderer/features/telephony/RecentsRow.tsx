@@ -1,5 +1,5 @@
 import * as ContextMenu from '../../components/radix/context-menu';
-import { SipCallStatus, type SipJournalEntry } from '@calaba/protocol';
+import { SipCallStatus, type SipJournalEntry, SipActiveStep } from '@calaba/protocol';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, Copy, Info, MessageCircle, Phone, PhoneMissed, Play, UserRound, UserRoundPlus } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
@@ -25,6 +25,7 @@ import { toggleRecording } from './RecordingPlayer';
 import { journalEntryKey } from '../../services/sipJournal';
 import { liveText, outcomeText, partyName, rowTime } from './texts';
 import { directionOf, isLiveCall, numberOf, outcomeOf, startOf } from './timeline';
+import { asEnum } from '../../lib/enums';
 
 /**
  * A row of «Недавние» (ADR-0137 §6 desktop 52 px, §7 phone 64 px): the party's circle with the
@@ -185,7 +186,7 @@ function LiveStep({ e, ws }: { e: SipJournalEntry; ws: string }): ReactNode {
     },
   });
   const [step, name = ''] = (q.data ?? '').split('|');
-  return <>{liveText(ws, e, step ? { step: Number(step), name } : null)}</>;
+  return <>{liveText(ws, e, step ? { step: asEnum(SipActiveStep, Number(step)), name } : null)}</>;
 }
 
 /** The party's circle: the employee's avatar, the contact's initials, or a handset; the direction badge at the corner. */

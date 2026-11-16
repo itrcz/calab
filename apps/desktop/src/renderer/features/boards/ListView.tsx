@@ -1,5 +1,5 @@
 import { statusShown } from '../../lib/boards/completion';
-import { BoardFeature, TaskPriority, type Board, type Task } from '@calaba/protocol';
+import { BoardFeature, TaskPriority, type Board, type Task, BoardStatusType } from '@calaba/protocol';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { Archive, CalendarClock, Check, ChevronDown, CircleSlash, Rocket, Tag, UserRound, X } from 'lucide-react';
 import { memo, useCallback, useMemo, type MouseEvent, type ReactNode } from 'react';
@@ -346,7 +346,7 @@ export const ListRow = memo(function ListRow({ id, boardId, boardLabel, workspac
         <span className="w-[64px] shrink-0 truncate text-caption tabular-nums text-muted mobile:hidden">{task.key}</span>
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} overridable={manage} onPick={(s) => void pickStatus(id, s, manage)} {...req('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} className={cx(cell, 'size-6')} aria-label={t('boards.f.status')} data-testid="row-status">
-            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
+            <StatusIcon type={status?.type ?? BoardStatusType.UNSPECIFIED} color={status?.color ?? 0} icon={status?.icon} />
           </button>
         </StatusMenu>
         <UnreadDot id={id} />
@@ -435,7 +435,7 @@ function BulkBar({ boardId, workspaceId }: { boardId: string; workspaceId: strin
             {t('boards.f.status')} <ChevronDown className="size-3.5" aria-hidden />
           </button>
         </StatusMenu>
-        <PriorityMenu value={-1 as TaskPriority} onPick={(priority) => void bulkUpdate(sel, { priority })}>
+        <PriorityMenu value={-1 as unknown as TaskPriority} onPick={(priority) => void bulkUpdate(sel, { priority })}>
           <button type="button" className={btn}>
             {t('boards.f.priority')} <ChevronDown className="size-3.5" aria-hidden />
           </button>

@@ -13,6 +13,7 @@ import { deleteGit, loadGit, saveBacklink, saveGit } from '../../services/automa
 import { copyText } from '../../services/boards';
 import { useSession } from '../../stores/session';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
+import { asEnum } from '../../lib/enums';
 
 /**
  * Board settings → «Git» (ADR-0060 §4): the provider (GitHub / GitLab / Gitea-Forgejo), the
@@ -73,7 +74,7 @@ export function GitTab({ board }: { board: Board }): ReactNode {
   const form = (
     <Card title={t('git.card')} footer={t('git.footer', { key: board.key })}>
       <Row label={t('git.provider')}>
-        <Select className="w-56" value={String(provider)} onChange={(e) => setProvider(Number(e.target.value))} aria-label={t('git.provider')} data-testid="git-provider">
+        <Select className="w-56" value={String(provider)} onChange={(e) => setProvider(asEnum(GitProvider, Number(e.target.value)))} aria-label={t('git.provider')} data-testid="git-provider">
           {GIT_PROVIDERS.map((p) => (
             <option key={p.v} value={p.v}>
               {t(p.label)}

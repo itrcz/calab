@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, ChevronRight } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { BoardFeature, type BoardMilestone, type TaskMilestone } from '@calaba/protocol';
+import { BoardFeature, type BoardMilestone, type TaskMilestone, BoardStatusType } from '@calaba/protocol';
 import { Button, Segmented, cx } from '../../components/ui';
 import { Choice } from '../../components/Choice';
 import { t, useLocale } from '../../i18n';
@@ -640,7 +640,7 @@ const TimelineRow = memo(function TimelineRow({
         className={cx('sticky left-0 z-[1] flex h-full items-center gap-2 border-r border-line px-3 text-left text-control hover:bg-hover', open ? 'bg-active' : 'bg-[var(--color-bg)]')}
         style={{ width: left }}
       >
-        <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
+        <StatusIcon type={status?.type ?? BoardStatusType.UNSPECIFIED} color={status?.color ?? 0} icon={status?.icon} />
         <span className="shrink-0 text-caption tabular-nums text-muted">{task.key}</span>
         <span className="min-w-0 truncate text-fg">{task.title}</span>
       </button>
@@ -776,7 +776,7 @@ const UndatedChip = memo(function UndatedChip({ id, boardId, readOnly, dragging,
       className={cx('inline-flex h-7 max-w-64 items-center gap-1.5 rounded-full border border-line px-2.5 text-control hover:bg-hover', editable && 'cursor-grab', dragging && 'opacity-40')}
       data-testid="undated-task"
     >
-      <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
+      <StatusIcon type={status?.type ?? BoardStatusType.UNSPECIFIED} color={status?.color ?? 0} icon={status?.icon} />
       <span className="shrink-0 text-caption tabular-nums text-muted">{task.key}</span>
       <span className="min-w-0 truncate">{task.title}</span>
     </button>

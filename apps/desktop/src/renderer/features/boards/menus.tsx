@@ -1,5 +1,5 @@
 import * as Popover from '../../components/radix/popover';
-import { type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
+import { type BoardStatus, type EstimateScale, TaskPriority } from '@calaba/protocol';
 import { Check, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -26,6 +26,7 @@ import { MonthPicker } from '../calendar/MonthPicker';
 import { useToday } from '../calendar/MiniCalendar';
 import { doneType } from './model';
 import { Dot, PALETTE, PRIORITIES, PRIORITY_LABEL, PriorityIcon, StatusIcon, colorCss, formatDue } from './visuals';
+import { asEnum } from '../../lib/enums';
 
 /**
  * Property menus of a task (ADR-0042 §5, as in Linear): status, priority, assignees, labels,
@@ -224,7 +225,7 @@ export function PriorityMenu({ value, onPick, ...shell }: MenuShell & { value: T
     ],
     [value],
   );
-  return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(Number(c.id))} placeholder={t('boards.menu.priority')} label={t('boards.f.priority')} digits testId="priority-menu" />;
+  return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(asEnum(TaskPriority, Number(c.id)))} placeholder={t('boards.menu.priority')} label={t('boards.f.priority')} digits testId="priority-menu" />;
 }
 
 // ------------------------------------------------------------------ assignees

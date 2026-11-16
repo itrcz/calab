@@ -4,6 +4,7 @@ import { Input, Row, Select, Toggle } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { audioTierLabel } from '../../lib/audioTierLabel';
 import { AUDIO_CAP_OPTIONS, type LimitsField, type LimitsForm } from '../../lib/plan';
+import { asEnum } from '../../lib/enums';
 
 /**
  * The limits of a plan as a superadmin edits them (ADR-0024): the manual plan form of a workspace
@@ -59,7 +60,7 @@ function NumberField({ field, form, onChange }: { field: LimitsField; form: Limi
 function PresetField({ label, value, options, onChange }: { label: string; value: ScreenSharePreset; options: ScreenSharePreset[]; onChange: (p: ScreenSharePreset) => void }): ReactNode {
   return (
     <Row label={label}>
-      <Select aria-label={label} className="w-44" value={value} onChange={(e) => onChange(Number(e.target.value))}>
+      <Select aria-label={label} className="w-44" value={value} onChange={(e) => onChange(asEnum(ScreenSharePreset, Number(e.target.value)))}>
         {options.map((p) => (
           <option key={p} value={p}>
             {t(PRESET_NAME[p])}

@@ -1,5 +1,5 @@
 import * as ContextMenu from '../../components/radix/context-menu';
-import { BoardFeature, type Task } from '@calaba/protocol';
+import { BoardFeature, type Task, BoardStatusType, TaskApprovalState } from '@calaba/protocol';
 import { AppWindow, CalendarClock, ChevronRight, Copy, CopyPlus, Diamond, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
@@ -26,6 +26,7 @@ import { IS_MAC } from '../../services/hotkeys';
 import { useDisabledFeatures, useFeatureOn } from './useBoardView';
 import { UnreadDot } from './UnreadDot';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
+import { asEnum } from '../../lib/enums';
 
 /** A label dragged onto a card (from the panel / settings): the card gets it. */
 export const DRAG_LABEL = 'application/x-calab-label';
@@ -177,7 +178,7 @@ export const TaskCard = memo(function TaskCard({
       <div className="flex min-w-0 items-start gap-2">
         <StatusMenu boardId={boardId} value={task.statusId} blocked={blocked} overridable={manage} onPick={(s) => void pickStatus(id, s, manage)} {...menuOpen('status')}>
           <button type="button" onClick={stop} disabled={!canEdit} aria-label={t('boards.f.status')} className="mt-[3px] shrink-0 rounded-full disabled:cursor-default" data-testid="card-status">
-            <StatusIcon type={statusType ?? 0} color={statusColor} icon={statusIcon} />
+            <StatusIcon type={statusType ?? BoardStatusType.UNSPECIFIED} color={statusColor} icon={statusIcon} />
           </button>
         </StatusMenu>
         <span className={cx('line-clamp-2 min-w-0 flex-1 break-words text-control font-medium', done ? 'text-muted' : 'text-fg')} data-testid="card-title">
@@ -271,7 +272,7 @@ export function useBlockedStatuses(task: Task | undefined, boardId: string): Rea
   const gate = useBoards((s) => s.boards[boardId]?.approvalGate);
   const state = task?.approvalState ?? 0;
   const statusId = task?.statusId ?? '';
-  return useMemo(() => (statuses ? blockedStatusIds({ approvalState: state, statusId }, statuses, gate) : undefined), [statuses, state, statusId, gate]);
+  return useMemo(() => (statuses ? blockedStatusIds({ approvalState: asEnum(TaskApprovalState, state), statusId }, statuses, gate) : undefined), [statuses, state, statusId, gate]);
 }
 
 function CardLabels({ task, boardId, canEdit, canCreate, req }: { task: Task; boardId: string; canEdit: boolean; canCreate: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void } }): ReactNode {
@@ -325,7 +326,7 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
               <ContextMenu.Separator className={menuSeparator} />
               <ContextMenu.Sub>
                 <ContextMenu.SubTrigger className={sub}>
-                  <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? 0} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} icon={statuses?.find((s) => s.id === task.statusId)?.icon} /> {t('boards.f.status')}
+                  <StatusIcon type={statuses?.find((s) => s.id === task.statusId)?.type ?? BoardStatusType.UNSPECIFIED} color={statuses?.find((s) => s.id === task.statusId)?.color ?? 0} icon={statuses?.find((s) => s.id === task.statusId)?.icon} /> {t('boards.f.status')}
                   <span className="ml-auto pl-4 text-caption text-muted group-data-[highlighted]:text-inherit mobile:hidden">{keyOf('status')}</span>
                   <ChevronRight className="size-4 mobile:ml-auto" aria-hidden />
                 </ContextMenu.SubTrigger>

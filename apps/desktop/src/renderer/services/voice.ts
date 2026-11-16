@@ -125,6 +125,8 @@ function planAudio(workspaceId: string, kbps: number): number {
  */
 
 /** livekit-client's reliable data channel (DataChannelKind.RELIABLE; the enum is exported as a type only). */
+// DataChannelKind is exported as a type only, so the member cannot be referenced by name.
+// eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment
 const RELIABLE = 0 as DataChannelKind.RELIABLE;
 const METER_UI_INTERVAL_MS = 50;
 const STATS_INTERVAL_MS = ECHO.statsMs;
@@ -3805,6 +3807,8 @@ class VoiceEngine {
     if (!room || room.state !== ConnectionState.Connected) return false;
     const packet = dtmfPacket(key, line);
     if (!packet) return false;
+    // livekit-client bundles its own @livekit/protocol copy, so its DataPacket enums are distinct types from ours.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment
     room.engine.sendDataPacket(packet, RELIABLE).catch((err: unknown) => log.warn('voice: dtmf failed', err));
     return true;
   }
@@ -4065,8 +4069,8 @@ class VoiceEngine {
   /** The server updates our LiveKit grant after /stream/request; wait until it arrives. */
   private async waitForScreenGrant(room: Room): Promise<void> {
     const ok = (): boolean => {
-      const sources = room.localParticipant.permissions?.canPublishSources ?? [];
-      return sources.length === 0 || sources.includes(3 /* SCREEN_SHARE */);
+      const sources: readonly number[] = room.localParticipant.permissions?.canPublishSources ?? [];
+      return sources.length === 0 || sources.includes(3 /* TrackSource.SCREEN_SHARE */);
     };
     if (ok()) return;
     await new Promise<void>((resolve) => {

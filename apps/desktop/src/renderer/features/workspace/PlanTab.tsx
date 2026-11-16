@@ -1,4 +1,4 @@
-import { BILLING_BITS, Plan, WorkspaceRole, type PlanLimits, type WorkspaceMember } from '@calaba/protocol';
+import { BILLING_BITS, Plan, WorkspaceRole, type PlanLimits, type WorkspaceMember, ScreenSharePreset } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { ExternalLink, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -115,8 +115,8 @@ function limitRows(limits: PlanLimits | undefined, usage: ReturnType<typeof plan
     counted(t('plan.limit.members'), usage.members, l?.members ?? 0),
     { label: t('plan.limit.audio'), used: '—', max: l?.audioTierMaxKbps ? audioTierLabel(l.audioTierMaxKbps) : t('plan.unlimited') },
     { label: t('plan.limit.streams'), used: fmt.number(usage.streamPeak), max: countText(l?.streamsPerRoom ?? 0) },
-    { label: t('plan.limit.stream'), used: '—', max: videoLimitText(l?.streamMaxPreset ?? 0, l?.streamMaxFps ?? 0) },
-    { label: t('plan.limit.camera'), used: '—', max: videoLimitText(l?.cameraMaxPreset ?? 0, l?.cameraMaxFps ?? 0) },
+    { label: t('plan.limit.stream'), used: '—', max: videoLimitText(l?.streamMaxPreset ?? ScreenSharePreset.UNSPECIFIED, l?.streamMaxFps ?? 0) },
+    { label: t('plan.limit.camera'), used: '—', max: videoLimitText(l?.cameraMaxPreset ?? ScreenSharePreset.UNSPECIFIED, l?.cameraMaxFps ?? 0) },
     counted(t('plan.limit.bots'), usage.bots, l?.bots ?? 0),
     { label: t('plan.limit.boards'), used: '—', max: countText(l?.boards ?? 0) },
     // ADR-0126 addendum (owner, 23.10): live canvases, folders and the trash not counted.

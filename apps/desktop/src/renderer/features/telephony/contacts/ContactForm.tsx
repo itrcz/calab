@@ -13,6 +13,7 @@ import { useMayDeleteContact } from '../access';
 import { confirmDelete } from './ContactsList';
 import { formToContact, saveContact, saveErrorOf, useContact, type ContactDraft, type SaveError } from './data';
 import { PHONE_LABELS, labelKey } from './model';
+import { asEnum } from '../../../lib/enums';
 
 /**
  * A contact's form (ADR-0137 §6 desktop — a Modal; §7 phone — a screen: several fields): name,
@@ -148,7 +149,7 @@ function FormBody({ ws, id, contact, prefill, phone, onDone }: { ws: string; id:
                 <Choice
                   value={String(r.label)}
                   options={PHONE_LABELS.map((l) => ({ value: String(l), label: t(labelKey(l)) }))}
-                  onChange={(v) => setRow(r.key, { label: Number(v) })}
+                  onChange={(v) => setRow(r.key, { label: asEnum(SipPhoneLabel, Number(v)) })}
                   label={`${t('telc.f.label')}: ${t(labelKey(r.label))}`}
                   phone="picker"
                 />
@@ -158,7 +159,7 @@ function FormBody({ ws, id, contact, prefill, phone, onDone }: { ws: string; id:
             </div>
           ) : (
             <div key={r.key} className="flex min-w-0 items-center gap-2" data-testid="telc-f-phone">
-              <Select value={String(r.label)} onChange={(e) => setRow(r.key, { label: Number(e.target.value) })} aria-label={t('telc.f.label')} className="w-[128px] shrink-0">
+              <Select value={String(r.label)} onChange={(e) => setRow(r.key, { label: asEnum(SipPhoneLabel, Number(e.target.value)) })} aria-label={t('telc.f.label')} className="w-[128px] shrink-0">
                 {PHONE_LABELS.map((l) => (
                   <option key={l} value={String(l)}>
                     {t(labelKey(l))}

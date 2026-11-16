@@ -13,6 +13,7 @@ import { localAuthority, lockTitleKey, reasonKey } from './model';
 import { identityApi } from './api';
 import { LocalReauth, SsoButton } from './SignIn';
 import { useIdentityAction } from './IdentitySettings';
+import { asEnum } from '../../lib/enums';
 export function WorkspaceLock({ workspaceId }: { workspaceId: string }): ReactNode {
   const access = useIdentity((s) => s.access[workspaceId]);
   const local = useSession((s) => localAuthority(s.authority));
@@ -142,7 +143,7 @@ export function LockedWorkspacePicker(): ReactNode {
         const [id = '', reason] = entry.split(':');
         return (
           <Button key={id} variant="secondary" onClick={() => useUi.getState().setWorkspace(id)}>
-            {t(lockTitleKey(Number(reason)))} · {id.slice(0, 8)}
+            {t(lockTitleKey(asEnum(IdentityAccessReason, Number(reason))))} · {id.slice(0, 8)}
           </Button>
         );
       })}

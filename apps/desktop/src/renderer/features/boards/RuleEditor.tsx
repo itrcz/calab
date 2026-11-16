@@ -9,8 +9,7 @@ import {
   type BoardRule,
   type RuleAction,
   type RuleTestResponse,
-  type RuleTrigger,
-} from '@calaba/protocol';
+  type RuleTrigger, RuleGitEvent, RuleRecipients, RuleSpecialUser, TaskPriority } from '@calaba/protocol';
 import {
   Archive,
   Bell,
@@ -71,6 +70,7 @@ import { ConditionChips, FilterPopover } from './FilterBar';
 import { ApproverMenu, ChoiceMenu, LabelMenu, type Choice } from './menus';
 import { LabelsOverflow } from './LabelsOverflow';
 import { Dot, PRIORITIES, PRIORITY_LABEL, STATUS_TYPES, STATUS_TYPE_LABEL, StatusIcon } from './visuals';
+import { asEnum } from '../../lib/enums';
 
 /**
  * The rule editor (ADR-0060 §6, docs/08 «Доски»): a 560 px sheet with three blocks — **Когда**
@@ -388,7 +388,7 @@ function TriggerParams({ board, trigger, onChange }: { board: Board; trigger: Ru
             <StatusPick board={board} any value={k.value.toStatusId} onPick={(id) => onChange(withTrigger(trigger, 'statusChanged', { toStatusId: id }))} testId="rule-to-status" />
           </Labeled>
           <Labeled label={t('rules.toType')}>
-            <Select className="w-48" value={String(k.value.toType)} onChange={(e) => onChange(withTrigger(trigger, 'statusChanged', { toType: Number(e.target.value) }))} aria-label={t('rules.toType')}>
+            <Select className="w-48" value={String(k.value.toType)} onChange={(e) => onChange(withTrigger(trigger, 'statusChanged', { toType: asEnum(BoardStatusType, Number(e.target.value)) }))} aria-label={t('rules.toType')}>
               <option value={BoardStatusType.UNSPECIFIED}>{t('rules.anyType')}</option>
               {STATUS_TYPES.map((ty) => (
                 <option key={ty} value={ty}>
@@ -401,7 +401,7 @@ function TriggerParams({ board, trigger, onChange }: { board: Board; trigger: Ru
       );
     case 'approvalChanged':
       return (
-        <Select className="w-56" value={String(k.value.state)} onChange={(e) => onChange(withTrigger(trigger, 'approvalChanged', { state: Number(e.target.value) }))} aria-label={t('rules.k.approvalChanged')}>
+        <Select className="w-56" value={String(k.value.state)} onChange={(e) => onChange(withTrigger(trigger, 'approvalChanged', { state: asEnum(TaskApprovalState, Number(e.target.value)) }))} aria-label={t('rules.k.approvalChanged')}>
           <option value={TaskApprovalState.APPROVED}>{t('rules.stateApproved')}</option>
           <option value={TaskApprovalState.REJECTED}>{t('rules.stateRejected')}</option>
           <option value={TaskApprovalState.UNSPECIFIED}>{t('rules.stateAny')}</option>
@@ -440,7 +440,7 @@ function TriggerParams({ board, trigger, onChange }: { board: Board; trigger: Ru
           value={k.value.toPriority === undefined ? '' : String(k.value.toPriority)}
           onChange={(e) => {
             const v = e.target.value;
-            const value = v === '' ? {} : { toPriority: Number(v) };
+            const value = v === '' ? {} : { toPriority: asEnum(TaskPriority, Number(v)) };
             onChange({ ...trigger, kind: { case: 'priorityChanged', value: { ...k.value, ...value, ...(v === '' ? { toPriority: undefined } : {}) } } });
           }}
           aria-label={t('boards.f.priority')}
@@ -460,7 +460,7 @@ function TriggerParams({ board, trigger, onChange }: { board: Board; trigger: Ru
             className="w-56"
             value={String(k.value.event)}
             onChange={(e) => {
-              const event = Number(e.target.value);
+              const event = asEnum(RuleGitEvent, Number(e.target.value));
               // A push or a new branch has no target branch: a filter would never match.
               onChange(withTrigger(trigger, 'git', { event, ...(gitHasTarget(event) ? {} : { targetBranches: [] }) }));
             }}
@@ -688,7 +688,7 @@ function ActionParams({ board, action, vars, onChange }: { board: Board; action:
       return (
         <>
           <Labeled label={t('rules.a.setAssignees')}>
-            <Select className="w-40" value={String(k.value.mode)} onChange={(e) => onChange(withAction(action, 'setAssignees', { mode: Number(e.target.value) }))} aria-label={t('rules.a.setAssignees')}>
+            <Select className="w-40" value={String(k.value.mode)} onChange={(e) => onChange(withAction(action, 'setAssignees', { mode: asEnum(RuleAssigneesMode, Number(e.target.value)) }))} aria-label={t('rules.a.setAssignees')}>
               {ASSIGNEE_MODES.map((m) => (
                 <option key={m.v} value={m.v}>
                   {t(m.label)}
@@ -702,7 +702,7 @@ function ActionParams({ board, action, vars, onChange }: { board: Board; action:
                 <PeoplePick boardId={board.id} workspaceId={ws} value={k.value.userIds} onChange={(ids) => onChange(withAction(action, 'setAssignees', { userIds: ids, leadUserId: ids.includes(k.value.leadUserId) ? k.value.leadUserId : '' }))} />
               </Labeled>
               <Labeled label={t('rules.special')}>
-                <Select className="w-48" value={String(k.value.special)} onChange={(e) => onChange(withAction(action, 'setAssignees', { special: Number(e.target.value) }))} aria-label={t('rules.special')}>
+                <Select className="w-48" value={String(k.value.special)} onChange={(e) => onChange(withAction(action, 'setAssignees', { special: asEnum(RuleSpecialUser, Number(e.target.value)) }))} aria-label={t('rules.special')}>
                   {SPECIAL_USERS.map((u) => (
                     <option key={u.v} value={u.v}>
                       {t(u.label)}
@@ -728,7 +728,7 @@ function ActionParams({ board, action, vars, onChange }: { board: Board; action:
     case 'setPriority':
       return (
         <Labeled label={t('boards.f.priority')}>
-          <Select className="w-48" value={String(k.value.priority)} onChange={(e) => onChange(withAction(action, 'setPriority', { priority: Number(e.target.value) }))} aria-label={t('boards.f.priority')}>
+          <Select className="w-48" value={String(k.value.priority)} onChange={(e) => onChange(withAction(action, 'setPriority', { priority: asEnum(TaskPriority, Number(e.target.value)) }))} aria-label={t('boards.f.priority')}>
             {PRIORITIES.map((p) => (
               <option key={p} value={p}>
                 {t(PRIORITY_LABEL[p] ?? 'boards.prio.none')}
@@ -789,7 +789,7 @@ function ActionParams({ board, action, vars, onChange }: { board: Board; action:
       return (
         <>
           <Labeled label={t('rules.recipients')}>
-            <Select className="w-48" value={String(k.value.to)} onChange={(e) => onChange(withAction(action, 'notifyDm', { to: Number(e.target.value) }))} aria-label={t('rules.recipients')}>
+            <Select className="w-48" value={String(k.value.to)} onChange={(e) => onChange(withAction(action, 'notifyDm', { to: asEnum(RuleRecipients, Number(e.target.value)) }))} aria-label={t('rules.recipients')}>
               {RECIPIENTS.map((r) => (
                 <option key={r.v} value={r.v}>
                   {t(r.label)}

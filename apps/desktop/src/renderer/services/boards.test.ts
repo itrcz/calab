@@ -257,7 +257,7 @@ describe('noticeText (ADR-0089 triggers)', () => {
 
   it('status keeps its text; an unknown kind is «Задача обновлена»', () => {
     expect(text({ kind: TaskNoticeKind.STATUS, actorId: 'u1' })).toBe(t('boards.notice.status', { name: who }));
-    expect(text({ kind: 99 as TaskNoticeKind })).toBe(t('boards.notice.updated'));
+    expect(text({ kind: 99 as unknown as TaskNoticeKind })).toBe(t('boards.notice.updated'));
   });
 });
 

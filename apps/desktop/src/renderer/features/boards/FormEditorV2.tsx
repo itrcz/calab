@@ -15,6 +15,7 @@ import { Button, Field, Input, Select, Switch } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { useBoards, workspaceBoards } from '../../stores/boards';
 import { useWorkspaces } from '../../stores/workspaces';
+import { asEnum } from '../../lib/enums';
 
 /** Forms v2 settings of the editor (ADR-0064 «v2»): per-field limits, roles and task mapping, routes. */
 
@@ -155,7 +156,7 @@ export const FieldV2 = memo(function FieldV2({
               onTitle(f.id, true);
               return;
             }
-            const target: Target = Number(v);
+            const target = asEnum(Target, Number(v));
             onField(f.id, {
               target,
               optionPriorities: target === Target.PRIORITY ? f.optionPriorities : {},
@@ -185,7 +186,7 @@ export const FieldV2 = memo(function FieldV2({
                   className="w-44"
                   value={f.optionPriorities[o] ?? TaskPriority.NONE}
                   onChange={(e) => {
-                    const p: TaskPriority = Number(e.target.value);
+                    const p = asEnum(TaskPriority, Number(e.target.value));
                     const next = { ...f.optionPriorities };
                     if (p === TaskPriority.NONE) delete next[o];
                     else next[o] = p;

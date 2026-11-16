@@ -7,7 +7,7 @@ import { PlanLock } from '../../components/PlanLock';
 import { DiskSettingsTab } from '../disk/DiskSettings';
 import { WikiSettingsTab } from '../wiki/WikiSettings';
 import { CanvasSettingsTab } from '../canvas/CanvasSettings';
-import { audioTierKbps, type ConcreteScreenSharePreset, CANVAS_BITS, canvasPermissions, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
+import { audioTierKbps, ConcreteScreenSharePreset, CANVAS_BITS, canvasPermissions, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite, ScreenSharePreset } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AudioLines, Ban, DoorOpen, Flag, Bot as BotIcon, Cake, Copy, Gem, HardDrive, KeyRound, BookOpen, Shapes, AppWindow, Library, Lock, Search, Settings2, Shield, Sparkles, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
@@ -60,6 +60,7 @@ import { LIBRARY_TAB, librarySegments, resolveSettingsTab } from './library';
 import { BotsTab } from './BotsTab';
 import { UpcomingBirthdays } from './UpcomingBirthdays';
 import { Choice } from '../../components/Choice';
+import { asEnum } from '../../lib/enums';
 
 const err = (e: unknown): string => errorText(e);
 
@@ -293,7 +294,7 @@ function GeneralTab({ workspaceId }: { workspaceId: string }): ReactNode {
             className="w-60"
             value={ws.visibility}
             onChange={(e) =>
-              void patchWorkspace(workspaceId, { visibility: Number(e.target.value) }).catch((x: unknown) => toast.error(err(x)))
+              void patchWorkspace(workspaceId, { visibility: asEnum(WorkspaceVisibility, Number(e.target.value)) }).catch((x: unknown) => toast.error(err(x)))
             }
           >
             <option value={WorkspaceVisibility.PRIVATE}>{t('ws.private')}</option>
@@ -354,12 +355,12 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
           <AudioTierOptions cap={audioCap} />
         </Select>
       </Row>
-      <Row label={t('media.maxPreset')} hint={<ClampHint base={presetDetail(presetValue)} show={presetCap > 0} limit={presetCap > 0 ? presetText(presetCap as ConcreteScreenSharePreset) : ''} />}>
+      <Row label={t('media.maxPreset')} hint={<ClampHint base={presetDetail(asEnum(ScreenSharePreset, presetValue) as ConcreteScreenSharePreset)} show={presetCap > 0} limit={presetCap > 0 ? presetText(asEnum(ScreenSharePreset, presetCap) as ConcreteScreenSharePreset) : ''} />}>
         <Select
           aria-label={t('media.maxPreset')}
           className="w-60"
           value={presetValue}
-          onChange={(e) => apply({ defaultMaxStreamPreset: Number(e.target.value) })}
+          onChange={(e) => apply({ defaultMaxStreamPreset: asEnum(ScreenSharePreset, Number(e.target.value)) })}
         >
           {PRESETS.map((p) => (
             <option key={p} value={p} title={presetDetail(p)} disabled={presetCap > 0 && p > presetCap}>
@@ -517,7 +518,7 @@ function MembersTab({ workspaceId }: { workspaceId: string }): ReactNode {
                 ) : null}
                 {/* Role column: a fixed 176 px, so plain labels and pop-ups share one left edge. */}
                 {editable ? (
-                  <Select aria-label={t('ws.role', { name })} className="w-44" value={m.role} onChange={(e) => void setRole(u.id, Number(e.target.value))}>
+                  <Select aria-label={t('ws.role', { name })} className="w-44" value={m.role} onChange={(e) => void setRole(u.id, asEnum(WorkspaceRole, Number(e.target.value)))}>
                     {owner ? <option value={WorkspaceRole.ADMIN}>{t('role.admin')}</option> : null}
                     <option value={WorkspaceRole.MEMBER}>{t('role.member')}</option>
                     <option value={WorkspaceRole.GUEST}>{t('role.guest')}</option>

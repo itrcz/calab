@@ -1,5 +1,5 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { WorkspaceRole } from '@calaba/protocol';
+import { WorkspaceRole, IdentityAccessReason } from '@calaba/protocol';
 import { Check, ChevronDown, Compass, LockKeyhole, Plus, Volume2 } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
 import { MediaImg } from '../../components/MediaImg';
@@ -19,6 +19,7 @@ import { accessLocked, localAuthority, lockTitleKey } from '../identity/model';
 import { menuBox, menuItem, menuLabel, menuSeparator } from './menu';
 import { openWorkspace } from './sectionNav';
 import { WorkspaceMenuItems } from './WorkspaceMenu';
+import { asEnum } from '../../lib/enums';
 
 /**
  * The workspace switcher (ADR-0074 §2): the title bar's «Команда Calab ⌄» is the one place a
@@ -109,7 +110,7 @@ function SwitcherItems({ ws, name }: { ws: string | null; name: string | undefin
               if (known.has(id)) return null;
               return (
                 <Dropdown.Item key={id} className={menuItem} onSelect={() => useUi.getState().setWorkspace(id)}>
-                  <LockKeyhole className="size-4" aria-hidden /> <span className="min-w-0 truncate">{t(lockTitleKey(Number(reason)))}</span>
+                  <LockKeyhole className="size-4" aria-hidden /> <span className="min-w-0 truncate">{t(lockTitleKey(asEnum(IdentityAccessReason, Number(reason))))}</span>
                 </Dropdown.Item>
               );
             })
