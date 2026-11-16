@@ -24,7 +24,7 @@ files:
 # the Windows/Linux fallback pack would be deleted). Any other OS language falls back to en-US
 # (native Chromium strings); the app's own language still comes from the OS list
 # (src/main/systemLocales.ts).
-electronLanguages: [en, en-US, ru, es, es-419, es_419, zh_CN, zh-CN, zh_TW, zh-TW]
+electronLanguages: [en, en-US, ru, es, es-419, es_419, de, zh_CN, zh-CN, zh_TW, zh-TW]
 asarUnpack:
   - '**/*.node'
 # Owner artwork (scripts/gen-icons.sh). Tray + Linux window icons are loaded by main at runtime.

@@ -1,0 +1,36 @@
+import type { ruCanvasPhone } from '../ru/canvasPhone';
+import type { DictShape } from '../types';
+
+/** English UI strings — Canvas on the phone (ADR-0126 §5, editing — ADR-0127 wave 5b). Same keys and placeholders as ru/canvasPhone.ts. */
+export const deCanvasPhone: DictShape<typeof ruCanvasPhone> = {
+  'canvasPhone.note': 'Sie können diese Leinwand nur anzeigen – Schwenken und Zoomen sind verfügbar.',
+  'canvasPhone.edit': 'Bearbeiten',
+  'canvasPhone.done': 'Fertig',
+  'canvasPhone.editHint': 'Tippen Sie auf ein Objekt, um es auszuwählen. Ziehen Sie das ausgewählte Element, um es zu verschieben. Schwenken und zoomen immer mit zwei Fingern. Drücken Sie lange auf die leere Stelle, um ein Menü aufzurufen.',
+  'canvasPhone.editMode': 'Bearbeitungsmodus',
+  'canvasPhone.tools': 'Werkzeuge',
+  'canvasPhone.plus': 'Einfügen',
+  'canvasPhone.shapes': 'Formen',
+  'canvasPhone.armed.sticky': 'Tippen Sie auf die Leinwand, um einen Sticky zu platzieren',
+  'canvasPhone.armed.text': 'Tippen Sie auf die Leinwand, um Text einzugeben',
+  'canvasPhone.armed.shape': 'Tippen Sie auf die Leinwand, um die Form zu platzieren',
+  'canvasPhone.armed.connector': 'Ziehen Sie von einem Objekt zum anderen',
+  'canvasPhone.armed.comment': 'Tippen Sie auf ein Objekt oder das Feld, um einen Kommentar zu hinterlassen',
+  'canvasPhone.armed.pen': 'Zeichnen Sie mit dem Finger auf die Leinwand',
+  'canvasPhone.armed.eraser': 'Wischen Sie über eine Linie, um sie zu löschen',
+  'canvasPhone.armed.frame': 'Tippen Sie auf die Leinwand, um einen Rahmen zu platzieren',
+  'canvasPhone.multi': 'Wählen Sie mehrere aus',
+  'canvasPhone.multiHint': 'Tippen Sie auf Objekte, um sie auszuwählen',
+  'canvasPhone.selected': { one: '{n} ausgewählt', other: '{n} ausgewählt' },
+  'canvasPhone.menu': 'Canvas-Menü',
+  'canvasPhone.menuClose': 'Schließen Sie das Menü',
+  'canvasPhone.menu.paste': 'Einfügen',
+  'canvasPhone.menu.text': 'Text hier',
+  'canvasPhone.menu.templates': 'Vorlage…',
+  'canvasPhone.editText': 'Text bearbeiten',
+  'canvasPhone.textDone': 'Fertig',
+  'canvasPhone.dismiss': 'Verstanden',
+  'canvasPhone.others': { one: '{n} mehr auf der Leinwand', other: '{n} mehr auf der Leinwand' },
+  'canvasPhone.loadFailed': 'Die Leinwände konnten nicht geladen werden',
+  'canvasPhone.updated': 'bearbeitet {when}',
+};
