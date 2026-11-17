@@ -62,4 +62,15 @@ describe('recent tasks', () => {
     s.setRecent('w1', [], 1000); // a later empty answer: nothing came live since
     expect(recentIds(useBoards.getState(), 'w1')).toEqual([]);
   });
+
+  it('drops the rows of a board that is gone for me (archived, closed, access lost)', () => {
+    const s = useBoards.getState();
+    const other = (id: string, at: number): RecentEntry => ({ ...entry(id, at), ref: { workspaceId: 'w1', key: `K-${id}`, title: id, boardId: 'b2' } });
+    s.setRecent('w1', [entry('a', 300), other('b', 200), entry('c', 100)]);
+    s.dropRecentBoard('b1');
+    expect(recentIds(useBoards.getState(), 'w1')).toEqual(['b']);
+    const before = recentIds(useBoards.getState(), 'w1');
+    s.dropRecentBoard('nope'); // no change: the same list
+    expect(recentIds(useBoards.getState(), 'w1')).toBe(before);
+  });
 });

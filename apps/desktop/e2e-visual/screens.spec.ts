@@ -5147,11 +5147,15 @@ test('boards-list', async ({ open, win, mock, shot }) => {
   await expect(recent.first()).toHaveAttribute('data-unread', 'true');
   await expect(recent.nth(1)).toContainText('CAL-4');
   await expect(recent.nth(1)).not.toHaveAttribute('data-unread');
+  // Every row has the inbox cards' ✕ (CBF-179): dismissing CAL-4 drops it from the list at once.
+  await expect(win.getByTestId('recent-view').locator('[data-inbox-dismiss]')).toHaveCount(3);
   await checkpoint(shot, 'boards-my-recent');
-  mock.boards.clearNotices(IDS.users.anna);
-  await firstBoard.click();
-  await win.getByTestId('my-tasks').click();
-  await scope.getByRole('radio', { name: 'Недавние' }).click();
+  await recent.nth(1).locator('xpath=..').locator('[data-inbox-dismiss]').click();
+  await expect(recent).toHaveCount(2);
+  await expect(win.getByTestId('recent-view')).not.toContainText('CAL-4');
+  // The list is kept per session (no refetch on reopen): the other rows go the same way.
+  await win.getByTestId('recent-view').locator('[data-inbox-dismiss]').first().click();
+  await win.getByTestId('recent-view').locator('[data-inbox-dismiss]').first().click();
   await expect(win.getByTestId('recent-empty')).toBeVisible();
   await win.mouse.move(0, 0);
   await checkpoint(shot, 'boards-my-recent-empty');

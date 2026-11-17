@@ -18,16 +18,18 @@ ON CONFLICT DO NOTHING;
 -- name: ListTaskNoticeLog :many
 -- A user's task notices, newest first (one index range scan of a page).
 SELECT * FROM task_notice_log
-WHERE user_id = sqlc.arg('user_id')
+WHERE user_id = sqlc.arg('user_id') AND NOT dismissed
   AND (sqlc.narg('before')::uuid IS NULL OR id < sqlc.narg('before')::uuid)
 ORDER BY id DESC
 LIMIT sqlc.arg('lim');
 
 -- name: ListRecentTaskNoticeLog :many
 -- «Недавние» (CBF-179): a user's latest notice of each task of one workspace, newest first.
--- The per-task pick runs over the user's rows only (bounded by the 90-day retention); the
--- workspace join runs over the distinct tasks.
-SELECT r.id, r.user_id, r.task_id, r.kind, r.actor_id, r.message_id, r.text, r.rule_id, r.re_requested, r.due_on, r.days_left, r.created_at
+-- The per-task pick runs over the user's rows only (bounded by the 90-day retention, rows the
+-- inbox ✕ dismissed included: «Недавние» follows the live list); the workspace join runs over
+-- the distinct tasks. `before` pages by the notice id, so the caller can take another batch
+-- when it filtered rows out.
+SELECT r.id, r.user_id, r.task_id, r.kind, r.actor_id, r.message_id, r.text, r.rule_id, r.re_requested, r.due_on, r.days_left, r.created_at, r.dismissed
 FROM (
     SELECT DISTINCT ON (l.task_id) l.*
     FROM task_notice_log l
@@ -37,13 +39,20 @@ FROM (
 JOIN tasks t ON t.id = r.task_id
 JOIN boards b ON b.id = t.board_id
 WHERE b.workspace_id = sqlc.arg('workspace_id')
+  AND (sqlc.narg('before')::uuid IS NULL OR r.id < sqlc.narg('before')::uuid)
 ORDER BY r.id DESC
 LIMIT sqlc.arg('lim');
 
 -- name: DismissTaskNotices :exec
--- The ✕ on inbox cards (CBF-155, ADR-0163): the caller's own history rows only.
-DELETE FROM task_notice_log
+-- The ✕ on inbox cards (CBF-155, ADR-0163): the caller's own history rows only. The row stays
+-- (hidden from the inbox list) so «Недавние» still names the task (CBF-179).
+UPDATE task_notice_log SET dismissed = true
 WHERE user_id = sqlc.arg('user_id')::uuid AND id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: DismissRecentTasks :exec
+-- The ✕ on «Недавние» rows (CBF-179): every notice the caller has of those tasks.
+DELETE FROM task_notice_log
+WHERE user_id = sqlc.arg('user_id')::uuid AND task_id = ANY(sqlc.arg('task_ids')::uuid[]);
 
 -- name: PruneTaskNoticeLog :execrows
 -- Rows older than the cutoff, a bounded batch per call.

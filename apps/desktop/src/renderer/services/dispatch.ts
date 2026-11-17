@@ -13,6 +13,7 @@ import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
 import { HOME, isDm, useDms } from '../stores/dms';
+import { useBoards } from '../stores/boards';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { useArchiveView } from '../stores/archiveView';
@@ -542,6 +543,11 @@ export function applyDispatch(ev: DispatchEvent): void {
     // The inbox ✕ on any of my devices (CBF-155, ADR-0163).
     case 'inboxDismiss':
       useInbox.getState().dismiss([...e.value.messageIds, ...e.value.noticeIds]);
+      // The ✕ of a «Недавние» row: the task's notices are gone for good (CBF-179).
+      for (const id of e.value.taskIds) {
+        useInbox.getState().removeTask(id);
+        useBoards.getState().dropRecent(id);
+      }
       return;
     case 'workspaceReportCreate':
     case 'workspaceReportUpdate':

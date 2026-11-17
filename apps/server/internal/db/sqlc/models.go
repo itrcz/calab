@@ -2030,6 +2030,7 @@ type TaskNoticeLog struct {
 	DueOn       string
 	DaysLeft    int32
 	CreatedAt   time.Time
+	Dismissed   bool
 }
 
 type TaskRelation struct {

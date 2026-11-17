@@ -4875,13 +4875,14 @@ class MockImpl {
     this.route('POST', '/api/me/inbox/dismiss', (c) => {
       const me = this.uid(c);
       const b = parseBody(c, InboxDismissSchema);
-      if (!b.messageIds.length && !b.noticeIds.length) throw invalid('messageIds', 'nothing to dismiss');
+      if (!b.messageIds.length && !b.noticeIds.length && !b.taskIds.length) throw invalid('messageIds', 'nothing to dismiss');
       if (b.messageIds.length > 100 || b.noticeIds.length > 100) throw invalid('messageIds', 'too many ids');
       const set = s().dismissedMentions.get(me) ?? new Set<string>();
       for (const id of b.messageIds) set.add(id);
       s().dismissedMentions.set(me, set);
       this.boards.dismissNotices(me, b.noticeIds);
-      this.toUser(me, { event: { case: 'inboxDismiss', value: { messageIds: b.messageIds, noticeIds: b.noticeIds } } });
+      this.boards.dismissTasks(me, b.taskIds);
+      this.toUser(me, { event: { case: 'inboxDismiss', value: { messageIds: b.messageIds, noticeIds: b.noticeIds, taskIds: b.taskIds } } });
       noContent(c.res);
     });
 

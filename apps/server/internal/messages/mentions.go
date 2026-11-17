@@ -149,7 +149,8 @@ const maxDismiss = 100
 
 // dismissInbox: POST /api/me/inbox/dismiss (CBF-155, ADR-0163) — the ✕ on «Упоминания» cards.
 // Chat mentions get a dismissal row (the list skips them for good); task notices leave the
-// caller's own history. Both are the caller's own rows: an unknown or foreign id changes
+// caller's own history (hidden, «Недавние» still names the task); task_ids (the ✕ of a «Недавние»
+// row) deletes every notice of those tasks. All are the caller's own rows: an unknown or foreign id changes
 // nothing and is not reported. INBOX_DISMISS then goes to the caller's sessions.
 func (h *Handlers) dismissInbox(w http.ResponseWriter, r *http.Request) error {
 	var req v1.InboxDismiss
@@ -164,7 +165,11 @@ func (h *Handlers) dismissInbox(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if len(msgs) == 0 && len(notices) == 0 {
+	tasks, err := dismissIDs(req.GetTaskIds(), "taskIds")
+	if err != nil {
+		return err
+	}
+	if len(msgs) == 0 && len(notices) == 0 && len(tasks) == 0 {
 		return httpx.Validation("messageIds", "nothing to dismiss")
 	}
 	me := uid(r)
@@ -175,18 +180,26 @@ func (h *Handlers) dismissInbox(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 		if len(notices) > 0 {
-			return guarded.DismissTaskNotices(r.Context(), sqlc.DismissTaskNoticesParams{UserID: me, Ids: notices})
+			if err := guarded.DismissTaskNotices(r.Context(), sqlc.DismissTaskNoticesParams{UserID: me, Ids: notices}); err != nil {
+				return err
+			}
+		}
+		if len(tasks) > 0 {
+			return guarded.DismissRecentTasks(r.Context(), sqlc.DismissRecentTasksParams{UserID: me, TaskIds: tasks})
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	ev := &v1.InboxDismiss{MessageIds: make([]string, len(msgs)), NoticeIds: make([]string, len(notices))}
+	ev := &v1.InboxDismiss{MessageIds: make([]string, len(msgs)), NoticeIds: make([]string, len(notices)), TaskIds: make([]string, len(tasks))}
 	for i, id := range msgs {
 		ev.MessageIds[i] = id.String()
 	}
 	for i, id := range notices {
 		ev.NoticeIds[i] = id.String()
+	}
+	for i, id := range tasks {
+		ev.TaskIds[i] = id.String()
 	}
 	h.events.User(context.WithoutCancel(r.Context()), me, &v1.DispatchEvent{Event: &v1.DispatchEvent_InboxDismiss{InboxDismiss: ev}})
 	httpx.NoContent(w)

@@ -1,10 +1,11 @@
 import * as Popover from '../../components/radix/popover';
-import { AtSign, Hash, Inbox, SquareCheckBig, Volume2, X } from 'lucide-react';
+import { AtSign, Hash, Inbox, SquareCheckBig, Volume2 } from 'lucide-react';
 import { TaskPriority, type Message, type Task, type TaskNoticeEntry } from '@calaba/protocol';
 import { memo, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
-import { CountBadge, Empty, IconButton, Spinner, Tip, cx } from '../../components/ui';
+import { DismissButton } from '../../components/DismissButton';
+import { CountBadge, Empty, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt, toDate } from '../../lib/format';
 import { systemPreview } from '../../lib/recording';
@@ -160,18 +161,6 @@ function UnreadDot(): ReactNode {
 
 /** The card's own button: room on the right for the ✕ (44 px on the phone). */
 const ROW_BTN = 'flex w-full items-start gap-2.5 rounded-[var(--radius-row)] py-2 pl-2 pr-9 text-left hover:bg-hover mobile:pr-12';
-
-/**
- * The ✕ in the card's top-right corner (CBF-155, ADR-0163): a sibling of the card's button (a
- * button cannot nest one), outside Popover.Close so the popover stays open.
- */
-function DismissButton({ onClick }: { onClick: () => void }): ReactNode {
-  return (
-    <IconButton label={t('shell.inboxDismiss')} size="sm" data-inbox-dismiss onClick={onClick} className="absolute right-0.5 top-0.5">
-      <X className="size-4" strokeWidth={1.75} aria-hidden />
-    </IconButton>
-  );
-}
 
 const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
   const room = useRooms((s) => s.byId[m.roomId]);

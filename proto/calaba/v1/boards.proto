@@ -1393,10 +1393,13 @@ message ListTaskNoticesResponse {
 // POST /api/me/inbox/dismiss → 204 (up to 100 ids of each kind; unknown or foreign ids are
 // ignored) and the INBOX_DISMISS event to the caller's own sessions. A dismissed chat mention
 // stays out of GET /api/me/mentions for good (an edit that mentions again does not bring it
-// back); a dismissed task notice leaves the caller's notice history.
+// back); a dismissed task notice leaves the caller's notice history but not «Недавние» (CBF-179).
+// task_ids is the ✕ of a «Недавние» row: every notice of those tasks is deleted, so the task
+// leaves the inbox and «Недавние» alike (until the next notice about it).
 message InboxDismiss {
   repeated string message_ids = 1; // chat mentions: the message ids
   repeated string notice_ids = 2;  // task notices: TaskNoticeEntry.id
+  repeated string task_ids = 3;    // «Недавние» rows: the task ids
 }
 
 enum TaskNoticeKind {

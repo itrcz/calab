@@ -5,9 +5,10 @@ import { useShallow } from 'zustand/react/shallow';
 import type { Task } from '@calaba/protocol';
 import { Button, IconButton, Spinner, cx } from '../../components/ui';
 import { Choice } from '../../components/Choice';
+import { DismissButton } from '../../components/DismissButton';
 import { t } from '../../i18n';
 import { mayCreateBoards } from '../../lib/permissions';
-import { ensureBoardTasks, ensureUnreadTasks, loadBoard, loadMyTasks, loadRecent, myTasksKey, unreadReason, useTaskDetails } from '../../services/boards';
+import { ensureBoardTasks, ensureUnreadTasks, loadBoard, loadMyTasks, dismissRecentTask, loadRecent, myTasksKey, unreadReason, useTaskDetails } from '../../services/boards';
 import type { TaskScope } from '../../services/boardsApi';
 import { boardLayout } from '../../lib/boards/categories';
 import { recentIds, unreadCount, unreadOrdered, useBoards, workspaceBoards, workspaceCategories } from '../../stores/boards';
@@ -498,7 +499,7 @@ function RecentList({ workspaceId }: { workspaceId: string }): ReactNode {
           <p>{t('boards.recentEmpty')}</p>
         </div>
       ) : (
-        ids.map((id) => <NoticeRow key={id} id={id} onClick={openFromList} />)
+        ids.map((id) => <NoticeRow key={id} id={id} onClick={openFromList} onDismiss={dismissRecentTask} />)
       )}
     </div>
   );
@@ -507,8 +508,17 @@ function RecentList({ workspaceId }: { workspaceId: string }): ReactNode {
 /**
  * One task of «Непрочитанное» / «Недавние»: the unread dot, key, title, why (the last notice) and
  * the board. The task from the store, else as «Недавние» named it. Primitive selectors only.
+ * `onDismiss` (a stable callback) adds the ✕ of the inbox cards (CBF-179, «Недавние» only).
  */
-const NoticeRow = memo(function NoticeRow({ id, onClick }: { id: string; onClick: (id: string, e: MouseEvent) => void }): ReactNode {
+const NoticeRow = memo(function NoticeRow({
+  id,
+  onClick,
+  onDismiss,
+}: {
+  id: string;
+  onClick: (id: string, e: MouseEvent) => void;
+  onDismiss?: (id: string) => void;
+}): ReactNode {
   const key = useBoards((s) => s.tasks[id]?.key ?? s.recentRefs[id]?.key ?? '');
   const title = useBoards((s) => s.tasks[id]?.title ?? s.recentRefs[id]?.title ?? '');
   const boardId = useBoards((s) => s.tasks[id]?.boardId ?? s.recentRefs[id]?.boardId ?? '');
@@ -516,12 +526,13 @@ const NoticeRow = memo(function NoticeRow({ id, onClick }: { id: string; onClick
   const reason = useBoards((s) => unreadReason(s, id));
   const unread = useBoards((s) => !!s.unread[id]);
   const active = useBoardsUi((s) => s.taskId === id);
+  const dismiss = useCallback(() => onDismiss?.(id), [onDismiss, id]);
   if (!key) return null;
-  return (
+  const row = (
     <button
       type="button"
       onClick={(e) => onClick(id, e)}
-      className={cx('flex w-full min-w-0 items-start gap-3 border-b border-line px-4 py-2 text-left hover:bg-hover', active && 'bg-active')}
+      className={cx('flex w-full min-w-0 items-start gap-3 border-b border-line py-2 pl-4 text-left hover:bg-hover', onDismiss ? 'pr-10 mobile:pr-12' : 'pr-4', active && 'bg-active')}
       data-testid="unread-row"
       data-task={id}
       data-unread={unread || undefined}
@@ -541,6 +552,13 @@ const NoticeRow = memo(function NoticeRow({ id, onClick }: { id: string; onClick
         </span>
       </span>
     </button>
+  );
+  if (!onDismiss) return row;
+  return (
+    <div className="relative">
+      {row}
+      <DismissButton onClick={dismiss} />
+    </div>
   );
 });
 

@@ -42,6 +42,7 @@ import {
 } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { ApiError } from '../lib/api/client';
+import { api } from '../lib/api/endpoints';
 import { approvedCount, blockedStatusIds, quorumOf, rejecters, statusPick } from '../lib/boards/approvals';
 import { confirmAction } from '../components/Confirm';
 import { draftsOf, type AssigneeDraft } from '../lib/boards/assignees';
@@ -151,6 +152,8 @@ export function onBoardsReady(): void {
   for (const [boardId, st] of Object.entries(load)) if (st === 'ready' && useBoards.getState().boards[boardId]) void ensureBoardTasks(boardId, true);
   const open = useBoardsUi.getState().taskId;
   if (open) void loadTask(open);
+  // «Недавние» of the workspaces already loaded: notices may have come while the socket was away.
+  for (const ws of Object.keys(useBoards.getState().recent)) void loadRecent(ws, true);
   takePendingLink();
 }
 
@@ -185,6 +188,8 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       const ui = useBoardsUi.getState();
       const open = ui.taskId ? s.tasks[ui.taskId] : undefined;
       s.removeBoard(ev.value.boardId);
+      // Archived, closed, or I lost access: its tasks leave «Недавние» (the server lists none of them).
+      s.dropRecentBoard(ev.value.boardId);
       if (open?.boardId === ev.value.boardId) ui.openTask(null);
       if (ui.boardOf[ev.value.workspaceId] === ev.value.boardId) ui.openBoard(ev.value.workspaceId, MY_TASKS);
       return true;
@@ -206,8 +211,9 @@ export function applyBoardEvent(ev: DispatchEvent['event']): boolean {
       s.removeTask(ev.value.taskId);
       if (ev.value.purged || scoped) {
         useInbox.getState().removeTask(ev.value.taskId);
-        s.dropRecent(ev.value.taskId);
       }
+      // Archived too: the server's «Недавние» lists live tasks only.
+      s.dropRecent(ev.value.taskId);
       if (useBoardsUi.getState().taskId === ev.value.taskId && (ev.value.purged || scoped)) useBoardsUi.getState().openTask(null);
       return true;
     }
@@ -270,11 +276,12 @@ const recentInflight = new Set<string>();
 
 /**
  * «Недавние» (CBF-179): the latest notice of each task of the workspace from the server — the
- * tab's rows, and the reason lines of «Непрочитанное» after a reload. Once per open of «Мои
- * задачи»; live notices keep it current meanwhile (bumpRecent).
+ * tab's rows, and the reason lines of «Непрочитанное» after a reload. Once per session (until
+ * the store resets): live notices (bumpRecent), TASK_DELETE / BOARD_DELETE and INBOX_DISMISS keep
+ * it current, READY refetches it (`force`).
  */
-export async function loadRecent(workspaceId: string): Promise<void> {
-  if (recentInflight.has(workspaceId)) return;
+export async function loadRecent(workspaceId: string, force = false): Promise<void> {
+  if (recentInflight.has(workspaceId) || (!force && useBoards.getState().recent[workspaceId])) return;
   recentInflight.add(workspaceId);
   const since = Date.now();
   try {
@@ -551,6 +558,27 @@ export async function loadTask(taskId: string): Promise<Task | null> {
       if (useBoardsUi.getState().taskId === taskId) useBoardsUi.getState().openTask(null);
     } else log.warn('task failed', e);
     return null;
+  }
+}
+
+/**
+ * The ✕ on a «Недавние» row (CBF-179): the task leaves the list and, as the server deletes every
+ * notice of it, the inbox; an unread mark clears like the inbox ✕ does. Rolled back with a toast
+ * when the server refuses.
+ */
+export async function dismissRecentTask(taskId: string): Promise<void> {
+  const inbox = useInbox.getState();
+  const notices = inbox.notices.filter((e) => e.taskId === taskId);
+  markTaskReadById(taskId);
+  useBoards.getState().dropRecent(taskId);
+  inbox.removeTask(taskId);
+  try {
+    await api.me.dismissInbox({ taskIds: [taskId] });
+  } catch (e) {
+    useInbox.getState().undismiss([], notices);
+    const ws = useBoards.getState().recentRefs[taskId]?.workspaceId;
+    if (ws) void loadRecent(ws, true);
+    toast.fail(e, t('shell.inboxDismissFailed'));
   }
 }
 

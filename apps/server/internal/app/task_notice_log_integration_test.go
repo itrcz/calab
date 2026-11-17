@@ -6,6 +6,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/calaba/calaba/server/internal/redisx"
+
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 )
 
@@ -191,7 +195,80 @@ func TestRecentTasks(t *testing.T) {
 	if es := recent(wid); len(es) != 1 || es[0].GetTaskId() != a.GetId() {
 		t.Fatalf("a task bob no longer sees is listed: %v", es)
 	}
+	// The inbox ✕ hides the notice from the inbox list only: «Недавние» keeps the task, as the
+	// live list does (CBF-179).
+	var inbox v1.ListTaskNoticesResponse
+	bob.must(200, "GET", "/api/me/task-notices", nil, &inbox)
+	var latestA string
+	for _, e := range inbox.GetEntries() {
+		if e.GetTaskId() == a.GetId() {
+			latestA = e.GetId()
+			break
+		}
+	}
+	if latestA == "" {
+		t.Fatal("no inbox notice of the first task")
+	}
+	bob.must(204, "POST", "/api/me/inbox/dismiss", &v1.InboxDismiss{NoticeIds: []string{latestA}}, nil)
+	if es := recent(wid); len(es) != 1 || es[0].GetTaskId() != a.GetId() || es[0].GetId() != latestA {
+		t.Fatalf("the inbox ✕ changed «Недавние»: %v", es)
+	}
+	// The ✕ of a «Недавние» row deletes every notice of the task: gone from both lists, and the
+	// event names the task for the other devices; another user's dismissal changes nothing.
+	bob.must(204, "POST", "/api/me/inbox/dismiss", &v1.InboxDismiss{TaskIds: []string{a.GetId()}}, nil)
+	gb.wait("INBOX_DISMISS task", func(e *v1.DispatchEvent) bool {
+		d := e.GetInboxDismiss()
+		return d != nil && len(d.GetTaskIds()) == 1 && d.GetTaskIds()[0] == a.GetId()
+	})
+	if es := recent(wid); len(es) != 0 {
+		t.Fatalf("a dismissed task is still recent: %v", es)
+	}
+	inbox.Reset()
+	bob.must(200, "GET", "/api/me/task-notices", nil, &inbox)
+	for _, e := range inbox.GetEntries() {
+		if e.GetTaskId() == a.GetId() {
+			t.Fatalf("a dismissed task still has inbox notices: %v", e)
+		}
+	}
+	o.must(204, "POST", "/api/me/inbox/dismiss", &v1.InboxDismiss{TaskIds: []string{other.GetId()}}, nil)
+	if es := recent(ws2.GetId()); len(es) != 1 {
+		t.Fatalf("another user's dismissal changed bob's list: %v", es)
+	}
 	// Not a member of the workspace: 404.
 	o.must(204, "DELETE", "/api/workspaces/"+wid+"/members/"+bob.id, nil, nil)
 	bob.must(404, "GET", "/api/workspaces/"+wid+"/recent-tasks", nil, nil)
+}
+
+// TestRecentTasksHiddenBatch (CBF-179): the visibility check runs after the SQL page, so a user
+// who lost access to more tasks than one page holds still gets his visible ones — another batch
+// is read until the list is full or the rows run out.
+func TestRecentTasksHiddenBatch(t *testing.T) {
+	o, bob, ws, _ := setupTeam(t)
+	wid := ws.GetId()
+	gb := dialGW(t)
+	gb.identify(bob.token)
+	pub := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Видимая", Key: "VIS"}, 201)
+	seen := createTask(t, o, pub.GetId(), &v1.CreateTaskRequest{Title: "Моя", Assignees: []*v1.TaskAssigneeInput{{UserId: bob.id}}}, 201)
+	gb.wait("assigned", noticeOf(seen.GetId(), v1.TaskNoticeKind_TASK_NOTICE_KIND_ASSIGNED))
+	priv := createBoard(t, o, wid, &v1.CreateBoardRequest{Name: "Закрытая", Key: "HID", IsPrivate: true}, 201)
+	ctx := context.Background()
+	// More hidden tasks than the 2×50 first batch holds, each with a newer notice for bob than his visible one.
+	for i := range 2*50 + 5 {
+		// The per-user task-create limit (the test seeds more than it allows).
+		_ = testRedis.Do(ctx, testRedis.B().Del().Key(redisx.Key("rl:task-create:"+o.id)).Build()).Error()
+		task := createTask(t, o, priv.GetId(), &v1.CreateTaskRequest{Title: "Скрытая"}, 201)
+		id, err := uuid.NewV7()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := testDB.Pool.Exec(ctx, "INSERT INTO task_notice_log (id, user_id, task_id, kind) VALUES ($1, $2, $3, $4)",
+			id, bob.id, task.GetId(), int16(v1.TaskNoticeKind_TASK_NOTICE_KIND_ASSIGNED)); err != nil {
+			t.Fatalf("seed %d: %v", i, err)
+		}
+	}
+	var out v1.ListTaskNoticesResponse
+	bob.must(200, "GET", "/api/workspaces/"+wid+"/recent-tasks", nil, &out)
+	if es := out.GetEntries(); len(es) != 1 || es[0].GetTaskId() != seen.GetId() {
+		t.Fatalf("the visible task is missing behind hidden ones: %v", es)
+	}
 }

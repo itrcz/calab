@@ -12,8 +12,24 @@ import (
 	"github.com/google/uuid"
 )
 
-const dismissTaskNotices = `-- name: DismissTaskNotices :exec
+const dismissRecentTasks = `-- name: DismissRecentTasks :exec
 DELETE FROM task_notice_log
+WHERE user_id = $1::uuid AND task_id = ANY($2::uuid[])
+`
+
+type DismissRecentTasksParams struct {
+	UserID  uuid.UUID
+	TaskIds []uuid.UUID
+}
+
+// The ✕ on «Недавние» rows (CBF-179): every notice the caller has of those tasks.
+func (q *Queries) DismissRecentTasks(ctx context.Context, arg DismissRecentTasksParams) error {
+	_, err := q.db.Exec(ctx, dismissRecentTasks, arg.UserID, arg.TaskIds)
+	return err
+}
+
+const dismissTaskNotices = `-- name: DismissTaskNotices :exec
+UPDATE task_notice_log SET dismissed = true
 WHERE user_id = $1::uuid AND id = ANY($2::uuid[])
 `
 
@@ -22,7 +38,8 @@ type DismissTaskNoticesParams struct {
 	Ids    []uuid.UUID
 }
 
-// The ✕ on inbox cards (CBF-155, ADR-0163): the caller's own history rows only.
+// The ✕ on inbox cards (CBF-155, ADR-0163): the caller's own history rows only. The row stays
+// (hidden from the inbox list) so «Недавние» still names the task (CBF-179).
 func (q *Queries) DismissTaskNotices(ctx context.Context, arg DismissTaskNoticesParams) error {
 	_, err := q.db.Exec(ctx, dismissTaskNotices, arg.UserID, arg.Ids)
 	return err
@@ -78,9 +95,9 @@ func (q *Queries) InsertTaskNotices(ctx context.Context, arg InsertTaskNoticesPa
 }
 
 const listRecentTaskNoticeLog = `-- name: ListRecentTaskNoticeLog :many
-SELECT r.id, r.user_id, r.task_id, r.kind, r.actor_id, r.message_id, r.text, r.rule_id, r.re_requested, r.due_on, r.days_left, r.created_at
+SELECT r.id, r.user_id, r.task_id, r.kind, r.actor_id, r.message_id, r.text, r.rule_id, r.re_requested, r.due_on, r.days_left, r.created_at, r.dismissed
 FROM (
-    SELECT DISTINCT ON (l.task_id) l.id, l.user_id, l.task_id, l.kind, l.actor_id, l.message_id, l.text, l.rule_id, l.re_requested, l.due_on, l.days_left, l.created_at
+    SELECT DISTINCT ON (l.task_id) l.id, l.user_id, l.task_id, l.kind, l.actor_id, l.message_id, l.text, l.rule_id, l.re_requested, l.due_on, l.days_left, l.created_at, l.dismissed
     FROM task_notice_log l
     WHERE l.user_id = $1
     ORDER BY l.task_id, l.id DESC
@@ -88,21 +105,30 @@ FROM (
 JOIN tasks t ON t.id = r.task_id
 JOIN boards b ON b.id = t.board_id
 WHERE b.workspace_id = $2
+  AND ($3::uuid IS NULL OR r.id < $3::uuid)
 ORDER BY r.id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListRecentTaskNoticeLogParams struct {
 	UserID      uuid.UUID
 	WorkspaceID uuid.UUID
+	Before      *uuid.UUID
 	Lim         int32
 }
 
 // «Недавние» (CBF-179): a user's latest notice of each task of one workspace, newest first.
-// The per-task pick runs over the user's rows only (bounded by the 90-day retention); the
-// workspace join runs over the distinct tasks.
+// The per-task pick runs over the user's rows only (bounded by the 90-day retention, rows the
+// inbox ✕ dismissed included: «Недавние» follows the live list); the workspace join runs over
+// the distinct tasks. `before` pages by the notice id, so the caller can take another batch
+// when it filtered rows out.
 func (q *Queries) ListRecentTaskNoticeLog(ctx context.Context, arg ListRecentTaskNoticeLogParams) ([]TaskNoticeLog, error) {
-	rows, err := q.db.Query(ctx, listRecentTaskNoticeLog, arg.UserID, arg.WorkspaceID, arg.Lim)
+	rows, err := q.db.Query(ctx, listRecentTaskNoticeLog,
+		arg.UserID,
+		arg.WorkspaceID,
+		arg.Before,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +149,7 @@ func (q *Queries) ListRecentTaskNoticeLog(ctx context.Context, arg ListRecentTas
 			&i.DueOn,
 			&i.DaysLeft,
 			&i.CreatedAt,
+			&i.Dismissed,
 		); err != nil {
 			return nil, err
 		}
@@ -135,8 +162,8 @@ func (q *Queries) ListRecentTaskNoticeLog(ctx context.Context, arg ListRecentTas
 }
 
 const listTaskNoticeLog = `-- name: ListTaskNoticeLog :many
-SELECT id, user_id, task_id, kind, actor_id, message_id, text, rule_id, re_requested, due_on, days_left, created_at FROM task_notice_log
-WHERE user_id = $1
+SELECT id, user_id, task_id, kind, actor_id, message_id, text, rule_id, re_requested, due_on, days_left, created_at, dismissed FROM task_notice_log
+WHERE user_id = $1 AND NOT dismissed
   AND ($2::uuid IS NULL OR id < $2::uuid)
 ORDER BY id DESC
 LIMIT $3
@@ -171,6 +198,7 @@ func (q *Queries) ListTaskNoticeLog(ctx context.Context, arg ListTaskNoticeLogPa
 			&i.DueOn,
 			&i.DaysLeft,
 			&i.CreatedAt,
+			&i.Dismissed,
 		); err != nil {
 			return nil, err
 		}

@@ -124,36 +124,50 @@ func (s *Service) listRecentTasks(w http.ResponseWriter, r *http.Request) error 
 	}
 	ctx := r.Context()
 	me := uid(r)
-	// Twice the limit: room for tasks the caller no longer sees without a second round trip.
-	rows, err := s.db.Q.ListRecentTaskNoticeLog(ctx, sqlc.ListRecentTaskNoticeLogParams{UserID: me, WorkspaceID: wsID, Lim: 2 * RecentTasksLimit})
-	if err != nil {
-		return err
-	}
 	out := &v1.ListTaskNoticesResponse{Entries: []*v1.TaskNoticeEntry{}}
-	ids := make([]uuid.UUID, len(rows))
-	for i, l := range rows {
-		ids[i] = l.TaskID
-	}
-	visible := map[uuid.UUID]taskRow{}
-	if len(ids) > 0 {
-		visible, err = s.visibleTasks(ctx, me, ids)
+	// Visibility is checked after the SQL page, so a user who lost access to many tasks would get
+	// a short list from one page: take further batches (by the notice id) until the list is full
+	// or the rows run out. Bounded: a page of 100 rows × recentMaxBatches.
+	var before *uuid.UUID
+	for range recentMaxBatches {
+		rows, err := s.db.Q.ListRecentTaskNoticeLog(ctx, sqlc.ListRecentTaskNoticeLogParams{UserID: me, WorkspaceID: wsID, Before: before, Lim: recentBatch})
 		if err != nil {
 			return err
 		}
-	}
-	for _, l := range rows {
-		t, ok := visible[l.TaskID]
-		if !ok || t.WorkspaceID != wsID {
-			continue
-		}
-		out.Entries = append(out.Entries, entryOf(l, t))
-		if len(out.Entries) == RecentTasksLimit {
+		if len(rows) == 0 {
 			break
 		}
+		ids := make([]uuid.UUID, len(rows))
+		for i, l := range rows {
+			ids[i] = l.TaskID
+		}
+		visible, err := s.visibleTasks(ctx, me, ids)
+		if err != nil {
+			return err
+		}
+		for _, l := range rows {
+			if t, ok := visible[l.TaskID]; ok && t.WorkspaceID == wsID {
+				out.Entries = append(out.Entries, entryOf(l, t))
+				if len(out.Entries) == RecentTasksLimit {
+					break
+				}
+			}
+		}
+		if len(out.Entries) == RecentTasksLimit || len(rows) < recentBatch {
+			break
+		}
+		last := rows[len(rows)-1].ID
+		before = &last
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
 }
+
+// recentBatch rows per SQL page of «Недавние»; recentMaxBatches bounds the loop.
+const (
+	recentBatch      = 2 * RecentTasksLimit
+	recentMaxBatches = 10
+)
 
 // visibleTasks: of the tasks ids, those the caller may see now, by id — the workspace is open to
 // them (suspension, identity policy) and the task is visible (sees: board access, task scope,

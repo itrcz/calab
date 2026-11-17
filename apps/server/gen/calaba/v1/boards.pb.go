@@ -8470,11 +8470,14 @@ func (x *ListTaskNoticesResponse) GetNextBefore() string {
 // POST /api/me/inbox/dismiss → 204 (up to 100 ids of each kind; unknown or foreign ids are
 // ignored) and the INBOX_DISMISS event to the caller's own sessions. A dismissed chat mention
 // stays out of GET /api/me/mentions for good (an edit that mentions again does not bring it
-// back); a dismissed task notice leaves the caller's notice history.
+// back); a dismissed task notice leaves the caller's notice history but not «Недавние» (CBF-179).
+// task_ids is the ✕ of a «Недавние» row: every notice of those tasks is deleted, so the task
+// leaves the inbox and «Недавние» alike (until the next notice about it).
 type InboxDismiss struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MessageIds    []string               `protobuf:"bytes,1,rep,name=message_ids,json=messageIds,proto3" json:"message_ids,omitempty"` // chat mentions: the message ids
 	NoticeIds     []string               `protobuf:"bytes,2,rep,name=notice_ids,json=noticeIds,proto3" json:"notice_ids,omitempty"`    // task notices: TaskNoticeEntry.id
+	TaskIds       []string               `protobuf:"bytes,3,rep,name=task_ids,json=taskIds,proto3" json:"task_ids,omitempty"`          // «Недавние» rows: the task ids
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8519,6 +8522,13 @@ func (x *InboxDismiss) GetMessageIds() []string {
 func (x *InboxDismiss) GetNoticeIds() []string {
 	if x != nil {
 		return x.NoticeIds
+	}
+	return nil
+}
+
+func (x *InboxDismiss) GetTaskIds() []string {
+	if x != nil {
+		return x.TaskIds
 	}
 	return nil
 }
@@ -10527,12 +10537,13 @@ const file_calaba_v1_boards_proto_rawDesc = "" +
 	"\aentries\x18\x01 \x03(\v2\x1a.calaba.v1.TaskNoticeEntryR\aentries\x12\x19\n" +
 	"\bhas_more\x18\x02 \x01(\bR\ahasMore\x12\x1f\n" +
 	"\vnext_before\x18\x03 \x01(\tR\n" +
-	"nextBefore\"N\n" +
+	"nextBefore\"i\n" +
 	"\fInboxDismiss\x12\x1f\n" +
 	"\vmessage_ids\x18\x01 \x03(\tR\n" +
 	"messageIds\x12\x1d\n" +
 	"\n" +
-	"notice_ids\x18\x02 \x03(\tR\tnoticeIds\"{\n" +
+	"notice_ids\x18\x02 \x03(\tR\tnoticeIds\x12\x19\n" +
+	"\btask_ids\x18\x03 \x03(\tR\ataskIds\"{\n" +
 	"\n" +
 	"TaskDelete\x12!\n" +
 	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x19\n" +
