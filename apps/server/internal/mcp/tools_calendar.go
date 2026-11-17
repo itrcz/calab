@@ -531,12 +531,12 @@ func createEvent(ctx context.Context, c *api, a args, me whoAmI) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	end, err := endOf(a, start, a.AllDay, me.loc)
+	end, err := endOf(a, start, a.AllDay != nil && *a.AllDay, me.loc)
 	if err != nil {
 		return nil, err
 	}
 	req := &v1.CreateCalendarEventRequest{RoomId: roomID, Title: a.Title, Description: deref(a.Description), StartsAt: timestamppb.New(start),
-		EndsAt: timestamppb.New(end), AllDay: a.AllDay, Tz: me.tz}
+		EndsAt: timestamppb.New(end), AllDay: a.AllDay != nil && *a.AllDay, Tz: me.tz}
 	if a.Repeat != "" {
 		if req.Repeat, err = repeatOf(a.Repeat); err != nil {
 			return nil, err
@@ -598,9 +598,7 @@ func updateEvent(ctx context.Context, c *api, a args, me whoAmI) (any, error) {
 		req.Title = &a.Title
 	}
 	req.Description = a.Description
-	if a.AllDay {
-		req.AllDay = &a.AllDay
-	}
+	req.AllDay = a.AllDay // nil = unchanged; an explicit false switches the all-day flag off
 	// The current times: of the occurrence changed, else of the event.
 	start, end := e.GetStartsAt().AsTime(), e.GetEndsAt().AsTime()
 	if occ != nil {
@@ -619,7 +617,7 @@ func updateEvent(ctx context.Context, c *api, a args, me whoAmI) (any, error) {
 		start, end, moved = ns, ns.Add(end.Sub(start)), true // the length is kept
 	}
 	if (a.End != nil && strings.TrimSpace(*a.End) != "") || a.Duration > 0 {
-		if end, err = endOf(a, start, a.AllDay || e.GetAllDay(), me.loc); err != nil {
+		if end, err = endOf(a, start, a.allDayOr(e.GetAllDay()), me.loc); err != nil {
 			return nil, err
 		}
 		moved = true

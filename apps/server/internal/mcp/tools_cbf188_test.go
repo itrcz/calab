@@ -155,6 +155,22 @@ func TestEventTool(t *testing.T) {
 		!ur.GetSetAttendees() || len(ur.GetAttendees()) != 4 || ur.GetAttendees()[1].GetRequired() || ur.GetAttendees()[2].GetEmail() != "x@example.com" {
 		t.Fatalf("update: %v %v", isErr, &ur)
 	}
+	// all_day: not passed = unchanged (nil), an explicit false is sent, true likewise.
+	for i, c := range []struct {
+		args string
+		want *bool
+	}{{`{"action":"update","event":"e1","title":"x"}`, nil}, {`{"action":"update","event":"e1","all_day":false}`, ptr(false)}, {`{"action":"update","event":"e1","all_day":true}`, ptr(true)}} {
+		n := len(bodies)
+		if _, isErr = call(t, h, "event", c.args); isErr || len(bodies) != n+1 {
+			t.Fatalf("all_day %d: %v", i, isErr)
+		}
+		var ar v1.UpdateCalendarEventRequest
+		_ = unmarshal.Unmarshal([]byte(bodies[n]), &ar)
+		if (ar.AllDay == nil) != (c.want == nil) || (c.want != nil && ar.GetAllDay() != *c.want) {
+			t.Fatalf("all_day %d: %v", i, &ar)
+		}
+	}
+	bodies = bodies[:2]
 	_, _ = call(t, h, "event", `{"action":"update","event":"e1","users":["ann"],"mode":"remove","room":"none"}`)
 	ur.Reset()
 	_ = unmarshal.Unmarshal([]byte(bodies[2]), &ur)
@@ -429,5 +445,17 @@ func TestTaskApprovalChecklistLinks(t *testing.T) {
 	}
 	if text, isErr = call(t, h, "link_tasks", `{"task":"DEV-7","related":"DEV-8","kind":"parent"}`); !isErr || !strings.Contains(text, "kind must be") {
 		t.Fatalf("bad kind: %s", text)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func TestInboxClip(t *testing.T) {
+	long := strings.Repeat("я", inboxClip+50)
+	if got := clip(long); len([]rune(got)) != inboxClip+1 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("clip: %d runes", len([]rune(got)))
+	}
+	if clip("коротко") != "коротко" {
+		t.Fatal("short text changed")
 	}
 }

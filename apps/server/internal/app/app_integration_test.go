@@ -363,6 +363,8 @@ func owner(t *testing.T) *user {
 	// its upload bucket (30 at once, 120/h) so the order and number of tests never turn a valid
 	// upload into a 429 (2026-09-29: TestVoiceMessages after the guest-admission tests).
 	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:upload:"+bootstrapUser.id)).Build()).Error()
+	// And its DM creation (10 at once, 30/h): push, reaction and receipt tests open many DMs.
+	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:dm-create:"+bootstrapUser.id)).Build()).Error()
 	// Same for its meeting writes (30 at once, 120/h): calendar and identity tests share it.
 	_ = testRedis.Do(context.Background(), testRedis.B().Del().Key(redisx.Key("rl:event-write:"+bootstrapUser.id)).Build()).Error()
 	// And its task creation (60 at once): the boards feature and checklist tests create many.

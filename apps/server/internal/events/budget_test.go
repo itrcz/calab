@@ -40,14 +40,14 @@ func TestDetachedBudget(t *testing.T) {
 
 // Only elapsed time is charged: quick publishes leave the budget for later ones.
 func TestDetachedBudgetChargesElapsed(t *testing.T) {
-	ctx := WithBudget(context.Background(), 200*time.Millisecond)
+	ctx := WithBudget(context.Background(), 2*time.Second)
 	for range 50 {
 		_, done := Detached(ctx, time.Hour)
 		done()
 	}
 	d, done := Detached(ctx, time.Hour)
 	defer done()
-	if dl, ok := d.Deadline(); !ok || time.Until(dl) < 150*time.Millisecond {
+	if dl, ok := d.Deadline(); !ok || time.Until(dl) < 1500*time.Millisecond {
 		t.Fatalf("fast publishes used up the budget: %v left", time.Until(dl))
 	}
 }

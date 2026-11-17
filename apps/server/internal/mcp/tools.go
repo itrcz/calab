@@ -67,7 +67,7 @@ type args struct {
 	To         string   `json:"to"` // calendar: the window's end; send_message: the person
 	End        *string  `json:"end"`
 	Duration   int      `json:"duration"`
-	AllDay     bool     `json:"all_day"`
+	AllDay     *bool    `json:"all_day"`
 	All        bool     `json:"all"`
 	WorkHours  *bool    `json:"work_hours"`
 	Repeat     string   `json:"repeat"`
@@ -158,7 +158,7 @@ var toolDefs = []tool{
 		"files":     filesArg,
 	})), sendMessage},
 	// ADR-0156: the tools a developer's agent needs on a task besides the ones above.
-	{def("list_tasks", "List tasks of a board or of all boards of a workspace by filters, newest update first; mine=true: my tasks (without board/workspace: my open tasks everywhere).", schema(nil, map[string]any{
+	{def("list_tasks", "List tasks of a board or workspace by filters; mine=true: my tasks (no board/workspace: my open tasks everywhere).", schema(nil, map[string]any{
 		"board":     str("board id or key (DEV)"),
 		"workspace": str("workspace id (when no board)"),
 		"q":         str("words or a key; empty = filters only"),
@@ -166,21 +166,21 @@ var toolDefs = []tool{
 		"assignee":  str("me, a user id, a name or a nickname"),
 		"labels":    strs("label names (any of them)"),
 		"state":     map[string]any{"type": "string", "enum": []string{"open", "done", "all"}, "description": "default open"},
-		"sort":      str("default newest update first (relevance with q); updated | created | key | priority | due, -updated etc. for descending"),
-		"mine":      map[string]any{"type": "boolean", "description": "assignee me; without board/workspace: my open tasks on every board, other filters ignored"},
+		"sort":      str("default newest update first (relevance with q); updated|created|key|priority|due, -x = descending"),
+		"mine":      map[string]any{"type": "boolean", "description": "assignee me; no board/workspace: my open tasks everywhere, other filters ignored"},
 		"limit":     map[string]any{"type": "integer", "description": "1-50, default 20"},
 		"cursor":    str("next page"),
 	})), listTasks},
-	{def("update_task", "Change fields of a task; only given fields change.", schema([]string{"task"}, map[string]any{
+	{def("update_task", "Change the given fields of a task.", schema([]string{"task"}, map[string]any{
 		"task":          taskArg,
 		"workspace":     wsArg,
 		"title":         str("1-200 chars"),
-		"description":   str("markdown; replaces the description"),
+		"description":   str("markdown; replaces it"),
 		"priority":      map[string]any{"type": "string", "enum": []string{"none", "low", "medium", "high", "urgent"}},
 		"due":           str("YYYY-MM-DD, empty = none"),
 		"start":         str("YYYY-MM-DD, empty = none"),
 		"estimate":      map[string]any{"type": "integer", "description": "0 = none"},
-		"parent":        str("parent task id or key, empty = none"),
+		"parent":        str("parent task, empty = none"),
 		"labels":        strs("label names: the whole set"),
 		"add_labels":    strs("label names to add"),
 		"remove_labels": strs("label names to remove"),
@@ -190,7 +190,7 @@ var toolDefs = []tool{
 		"workspace": wsArg,
 		"users":     strs("me, user ids, names or nicknames"),
 		"mode":      map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "default add"},
-		"lead":      str("the lead among the assignees (me, id, name); default: kept, else the first"),
+		"lead":      str("lead among assignees; default: kept, else first"),
 	})), assign},
 	// CBF-182: a task's files for the agent; fixing its own comment instead of posting another.
 	{def("get_task_attachment", "A file of a task or its comment: metadata (sha256) and download_url, a signed URL for 10 min: fetch it with curl in a shell, never paste the bytes into the chat. Text (256 KiB) and images (up to 3 MiB, else a preview) also inline. Limits 3 MiB, images 5 MiB; text, xlsx, docx, pptx, pdf, zip, ogg, mp3, wav, m4a, png, jpeg, webp, gif.", schema([]string{"task", "file"}, map[string]any{
@@ -878,4 +878,22 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// allDayOr is the all-day flag the caller passed, else def (nil = not passed).
+func (a args) allDayOr(def bool) bool {
+	if a.AllDay != nil {
+		return *a.AllDay
+	}
+	return def
+}
+
+// inboxClip caps the text of a DM preview in the inbox (runes).
+const inboxClip = 300
+
+func clip(s string) string {
+	if r := []rune(s); len(r) > inboxClip {
+		return string(r[:inboxClip]) + "…"
+	}
+	return s
 }

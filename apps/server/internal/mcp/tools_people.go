@@ -203,7 +203,7 @@ func inbox(ctx context.Context, c *api, a args) (any, error) {
 		for _, d := range list[:min(len(list), limit)] {
 			p := d.GetPeer()
 			unread = append(unread, compact(map[string]any{"room": d.GetRoom().GetId(), "from": compact(map[string]any{"id": p.GetId(), "name": p.GetDisplayName()}),
-				"unread": d.GetReadState().GetUnreadCount(), "last": d.GetLastMessage().GetContent(), "at": ts(d.GetLastMessageAt())}))
+				"unread": d.GetReadState().GetUnreadCount(), "last": clip(d.GetLastMessage().GetContent()), "at": ts(d.GetLastMessageAt())}))
 		}
 		if unread != nil {
 			out["dms"] = unread
