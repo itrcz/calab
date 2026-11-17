@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"time"
 
@@ -239,49 +240,60 @@ func newCode() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// hashLinkPassword is auth.HashPassword; a variable so that a test can count the argon2 runs.
-var hashLinkPassword = auth.HashPassword
+// hashLinkPassword and verifyLinkPassword are auth.HashPassword / auth.VerifyPassword; variables
+// so that a test can count the argon2 runs and act between the pre-check and the tx.
+var (
+	hashLinkPassword   = auth.HashPassword
+	verifyLinkPassword = auth.VerifyPassword
+)
+
+// errLinkMoved: the live link whose password the request repeated was switched off or got another
+// password between the check outside the tx and the tx; createLink hashes the password and retries.
+var errLinkMoved = errors.New("disk: link changed since the password check")
 
 // linkPassword validates a requested link password and hashes it (argon2id) only after a cheap
 // rights pre-check outside the tx, so a member without the right to change the link cannot spend
 // argon2 slots on any item id (review CBF-168); the tx checks the rights again. reuse (POST on a
 // live link): a password the live link already has is not hashed again and changes nothing,
-// so a repeated POST keeps the visitors' unlocks. An empty password returns nil.
-func (s *Service) linkPassword(r *http.Request, id uuid.UUID, pw string, reuse bool) (*string, error) {
+// so a repeated POST keeps the visitors' unlocks — then same is the stored hash it matched, and
+// the tx must find the live link still holding exactly that hash (errLinkMoved otherwise: a link
+// switched off meanwhile would be turned on again without the password asked for). An empty
+// password returns nil, nil.
+func (s *Service) linkPassword(r *http.Request, id uuid.UUID, pw string, reuse bool) (hash, same *string, err error) {
 	if pw == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err := validPassword(pw); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ctx := r.Context()
 	a, err := resolve(r, s.db.Q, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !a.mayChange() {
-		return nil, errNotSharer
+		return nil, nil, errNotSharer
 	}
 	if reuse {
 		l, err := s.db.Q.GetDiskLinkByItem(ctx, id)
 		if err != nil && !db.IsNotFound(err) {
-			return nil, err
+			return nil, nil, err
 		}
 		if err == nil && l.PasswordHash != nil {
-			ok, err := auth.VerifyPassword(ctx, pw, *l.PasswordHash)
+			ok, err := verifyLinkPassword(ctx, pw, *l.PasswordHash)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if ok {
-				return nil, nil
+				return nil, l.PasswordHash, nil
 			}
 		}
 	}
 	h, err := hashLinkPassword(ctx, pw)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &h, nil
+	return &h, nil, nil
 }
 
 // protection is a change of a live link's password and «Без скачивания» (ADR-0167).
@@ -354,7 +366,7 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 		}
 		expires = &t
 	}
-	hash, err := s.linkPassword(r, id, req.GetPassword(), true)
+	hash, same, err := s.linkPassword(r, id, req.GetPassword(), true)
 	if err != nil {
 		return err
 	}
@@ -366,7 +378,7 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 	var link sqlc.DiskLink
 	var a access
 	fresh, changed := false, false
-	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+	apply := func(q *sqlc.Queries) error {
 		if a, err = resolve(r, q, id); err != nil {
 			return err
 		}
@@ -380,6 +392,12 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		link, err = q.GetDiskLinkByItem(ctx, id)
+		if same != nil && (err != nil || link.PasswordHash == nil || *link.PasswordHash != *same) {
+			if err != nil && !db.IsNotFound(err) {
+				return err
+			}
+			return errLinkMoved
+		}
 		if err == nil {
 			p := protection{setPassword: hash != nil, hash: hash}
 			if req.GetViewOnly() {
@@ -408,7 +426,15 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 			after["view_only"] = true
 		}
 		return s.journal(ctx, q, a.item, &a.c.uid, "link_on", nil, after)
-	})
+	}
+	err = s.db.Tx(ctx, apply)
+	if errors.Is(err, errLinkMoved) {
+		// The link the password was compared with is gone or has another one: hash it and apply.
+		if hash, same, err = s.linkPassword(r, id, req.GetPassword(), false); err != nil {
+			return err
+		}
+		err = s.db.Tx(ctx, apply)
+	}
 	if err != nil {
 		return err
 	}
@@ -434,7 +460,7 @@ func (s *Service) updateLink(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeStrict(w, r, &req); err != nil {
 		return err
 	}
-	hash, err := s.linkPassword(r, id, req.GetPassword(), false)
+	hash, _, err := s.linkPassword(r, id, req.GetPassword(), false)
 	if err != nil {
 		return err
 	}

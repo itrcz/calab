@@ -367,3 +367,36 @@ func TestDiskLinkCreateOnLive(t *testing.T) {
 		t.Fatalf("history: %d protection entries, want 3", n)
 	}
 }
+
+// TestDiskLinkCreateOnLiveRace (review of the CBF-168 follow-up): a POST repeating the live link's
+// password is not hashed outside the tx; when the link is switched off before the tx, the link
+// turned on again must still carry the password of the request.
+func TestDiskLinkCreateOnLiveRace(t *testing.T) {
+	e := newEnv(t)
+	e.svc.UnlockKey = DeriveUnlockKey([]byte("test-secret-test-secret-test-secret"))
+	f := e.upload(e.alice, "", "plan.txt", 8)
+	var link v1.DiskLinkResponse
+	e.must(201, e.alice, "POST", item(f.GetId())+"/link", &v1.CreateDiskLinkRequest{Password: "letmein-1"}, &link)
+
+	orig := verifyLinkPassword
+	verifyLinkPassword = func(ctx context.Context, pw, encoded string) (bool, error) {
+		ok, err := orig(ctx, pw, encoded)
+		verifyLinkPassword = orig
+		e.must(204, e.alice, "DELETE", item(f.GetId())+"/link", nil, nil)
+		return ok, err
+	}
+	t.Cleanup(func() { verifyLinkPassword = orig })
+
+	var got v1.DiskLinkResponse
+	e.must(201, e.alice, "POST", item(f.GetId())+"/link", &v1.CreateDiskLinkRequest{Password: "letmein-1"}, &got)
+	l := got.GetLink()
+	if !l.GetHasPassword() || l.GetCode() == link.GetLink().GetCode() {
+		t.Fatalf("the link turned on again lost its password: %v", l)
+	}
+	var meta v1.PublicDiskFile
+	e.pub(200, l.GetCode(), &meta)
+	if !meta.GetLocked() {
+		t.Fatal("the new link opens without the password")
+	}
+	e.unlock(l.GetCode(), "letmein-1", http.StatusNoContent)
+}
