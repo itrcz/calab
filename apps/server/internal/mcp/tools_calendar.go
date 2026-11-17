@@ -531,12 +531,12 @@ func createEvent(ctx context.Context, c *api, a args, me whoAmI) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	end, err := endOf(a, start, a.AllDay != nil && *a.AllDay, me.loc)
+	end, err := endOf(a, start, a.allDayOr(false), me.loc)
 	if err != nil {
 		return nil, err
 	}
 	req := &v1.CreateCalendarEventRequest{RoomId: roomID, Title: a.Title, Description: deref(a.Description), StartsAt: timestamppb.New(start),
-		EndsAt: timestamppb.New(end), AllDay: a.AllDay != nil && *a.AllDay, Tz: me.tz}
+		EndsAt: timestamppb.New(end), AllDay: a.allDayOr(false), Tz: me.tz}
 	if a.Repeat != "" {
 		if req.Repeat, err = repeatOf(a.Repeat); err != nil {
 			return nil, err

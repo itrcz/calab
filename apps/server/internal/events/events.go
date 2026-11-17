@@ -88,8 +88,10 @@ func Detached(ctx context.Context, fallback time.Duration) (context.Context, fun
 		d = b.left
 		b.mu.Unlock()
 	}
-	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), max(d, 0))
+	// The clock starts before the deadline is set: a context that expires on its deadline is
+	// charged at least d, so the budget is used up for sure and later calls fail at once.
 	start := time.Now()
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), max(d, 0))
 	return dctx, func() {
 		cancel()
 		if b != nil {
