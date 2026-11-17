@@ -5,7 +5,7 @@ import * as DialogP from '../../components/radix/dialog';
 import { ArrowLeft, ChevronRight, Download, EyeOff, Folder, Link2Off, Lock } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { MediaImg } from '../../components/MediaImg';
-import { Button, IconButton, Input, Spinner, cx } from '../../components/ui';
+import { Button, IconButton, PasswordInput, Spinner, cx } from '../../components/ui';
 import { getLocale, t, useLocale } from '../../i18n';
 import { ApiError } from '../../lib/api/client';
 import { textKind } from '../../lib/diskPreview';
@@ -82,6 +82,10 @@ export function DiskPublicPage({ code }: { code: string }): ReactNode {
     setOpen(null);
     setMeta({ kind: 'locked' });
   }, []);
+  const gone = useCallback(() => {
+    setOpen(null);
+    setMeta({ kind: 'gone' });
+  }, []);
   const unlocked = useCallback(() => setRound((n) => n + 1), []);
   if (meta.kind === 'gone') return <Gone />;
   if (meta.kind === 'locked') return <PasswordGate code={code} onUnlocked={unlocked} />;
@@ -92,9 +96,9 @@ export function DiskPublicPage({ code }: { code: string }): ReactNode {
           {meta.kind === 'loading' ? (
             <Loading />
           ) : meta.meta.kind === DiskItemKind.FOLDER ? (
-            <FolderView code={code} meta={meta.meta} onOpen={setOpen} onGone={() => setMeta({ kind: 'gone' })} onLocked={relock} />
+            <FolderView code={code} meta={meta.meta} onOpen={setOpen} onGone={gone} onLocked={relock} />
           ) : (
-            <FileView code={code} meta={meta.meta} onOpen={setOpen} />
+            <FileView code={code} meta={meta.meta} onOpen={setOpen} onGone={gone} onLocked={relock} />
           )}
         </main>
         <footer className="shrink-0 pb-[calc(var(--safe-bottom,0px)+24px)] pt-2 text-center text-caption text-muted" data-testid="disk-public-footer">
@@ -155,8 +159,7 @@ function PasswordGate({ code, onUnlocked }: { code: string; onUnlocked: () => vo
         <h1 className="text-title font-semibold">{t('disk.pub.locked')}</h1>
         <p className="text-body text-muted">{t('disk.pub.lockedText')}</p>
         <div className="mt-2 flex w-full flex-col gap-2">
-          <Input
-            type="password"
+          <PasswordInput
             autoFocus
             autoComplete="current-password"
             value={pw}
@@ -198,11 +201,49 @@ const until = (m: { expiresAt?: PublicDiskFile['expiresAt'] }): string => (m.exp
 
 // ---------------------------------------------------------------- a file link
 
-function FileView({ code, meta, onOpen }: { code: string; meta: PublicDiskFile; onOpen: (f: PublicFile) => void }): ReactNode {
+/**
+ * A file link. The page itself fetches nothing after the meta (the viewer and «Скачать» load bytes
+ * by URL, where a 403 is silent), so «Открыть» and «Скачать» ask the meta again first: an unlock
+ * that expired or a changed password returns to the password form (ADR-0167), a link switched off
+ * meanwhile reads «gone». A network failure goes on with the action as before.
+ */
+function FileView({
+  code,
+  meta,
+  onOpen,
+  onGone,
+  onLocked,
+}: {
+  code: string;
+  meta: PublicDiskFile;
+  onOpen: (f: PublicFile) => void;
+  onGone: () => void;
+  onLocked: () => void;
+}): ReactNode {
   const phone = useUi((s) => s.phone.on);
+  const [busy, setBusy] = useState<'' | 'open' | 'download'>('');
   const f = fromLinkedFile(meta);
   const view = publicView(f, phone);
   const exp = until(meta);
+  const checked = (what: 'open' | 'download', run: () => void) => (): void => {
+    if (busy) return;
+    setBusy(what);
+    diskPublic.meta(code).then(
+      (m) => {
+        setBusy('');
+        if (m.locked) onLocked();
+        else run();
+      },
+      (e: unknown) => {
+        setBusy('');
+        if (isLocked(e)) onLocked();
+        else if (e instanceof ApiError && e.status === 404) onGone();
+        else run();
+      },
+    );
+  };
+  const open = checked('open', () => onOpen(f));
+  const download = checked('download', () => downloadUrl(diskPublic.contentUrl(code, '')));
   return (
     <section className="mx-auto flex max-w-[560px] flex-col items-center gap-4 text-center" data-testid="disk-public-file">
       <div className="grid size-40 place-items-center overflow-hidden rounded-[var(--radius-card)] border border-line bg-elev">
@@ -224,7 +265,7 @@ function FileView({ code, meta, onOpen }: { code: string; meta: PublicDiskFile; 
       {meta.viewOnly ? <ViewOnlyNote /> : null}
       <div className="flex flex-wrap justify-center gap-2">
         {view !== 'card' ? (
-          <Button variant={meta.viewOnly ? 'primary' : 'secondary'} onClick={() => onOpen(f)} data-testid="disk-public-open">
+          <Button variant={meta.viewOnly ? 'primary' : 'secondary'} busy={busy === 'open'} onClick={open} data-testid="disk-public-open">
             {t('disk.open')}
           </Button>
         ) : meta.viewOnly ? (
@@ -233,7 +274,7 @@ function FileView({ code, meta, onOpen }: { code: string; meta: PublicDiskFile; 
           </p>
         ) : null}
         {meta.viewOnly ? null : (
-          <Button variant="primary" onClick={() => downloadUrl(diskPublic.contentUrl(code, ''))} data-testid="disk-public-download">
+          <Button variant="primary" busy={busy === 'download'} onClick={download} data-testid="disk-public-download">
             <Download className="size-4" aria-hidden />
             {t('disk.download')}
           </Button>
@@ -312,7 +353,8 @@ function FolderView({
     // instead of downloading an error.
     setZipNote('');
     void diskPublic.archiveCheck(code, folderId).then((r) => {
-      if (r === 'large') setZipNote(t('disk.pub.tooLarge'));
+      if (r === 'locked') onLocked();
+      else if (r === 'large') setZipNote(t('disk.pub.tooLarge'));
       else if (r === 'busy') setZipNote(t('disk.pub.busy'));
       else if (r === 'gone') setZipNote(t('disk.pub.failed'));
       else downloadUrl(diskPublic.archiveUrl(code, folderId));

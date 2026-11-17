@@ -3305,6 +3305,10 @@ test('m-disk-public', async ({ page }) => {
     await expect(page.getByTestId('disk-public-locked')).toBeVisible();
     await checkpoint(page, 'm-disk-public-locked');
     await page.getByTestId('disk-public-password').fill('сезам-2026');
+    // CBF-168 follow-up: «Показать пароль» (the shared PasswordInput's eye, a 44 px target).
+    await page.getByTestId('password-toggle').tap();
+    await expect(page.getByTestId('disk-public-password')).toHaveAttribute('type', 'text');
+    await checkpoint(page, 'm-disk-public-password-shown');
     await page.getByTestId('disk-public-unlock').tap();
     await page.getByTestId('disk-public-row-open').filter({ hasText: 'Q4' }).tap();
     await expect(page.getByTestId('disk-public-row')).toHaveCount(4);
@@ -3312,6 +3316,21 @@ test('m-disk-public', async ({ page }) => {
     await checkpoint(page, 'm-disk-public-view-only');
   } finally {
     mock.disk.updateLink(it?.id ?? '', IDS.users.anna, { password: '', viewOnly: false });
+  }
+  // CBF-168 follow-up: a file link whose password changed after the unlock — «Скачать» returns to the password form.
+  const demo = [...mock.disk.links.values()].find((l) => l.code.startsWith('mockLinkDemo'))?.itemId ?? '';
+  mock.disk.updateLink(demo, IDS.users.anna, { password: 'ключ-2026' });
+  try {
+    await open(page, `/d/${'mockLinkDemo'.padEnd(43, 'x')}`);
+    await page.getByTestId('disk-public-password').fill('ключ-2026');
+    await page.getByTestId('disk-public-unlock').tap();
+    await expect(page.getByTestId('disk-public-file')).toBeVisible();
+    mock.disk.updateLink(demo, IDS.users.anna, { password: 'ключ-2027' });
+    await page.getByTestId('disk-public-download').tap();
+    await expect(page.getByTestId('disk-public-locked')).toBeVisible();
+    await checkpoint(page, 'm-disk-public-file-relocked');
+  } finally {
+    mock.disk.updateLink(demo, IDS.users.anna, { password: '' });
   }
 });
 

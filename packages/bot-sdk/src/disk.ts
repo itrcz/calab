@@ -132,8 +132,8 @@ export function createDiskApi(rest: Rest) {
       }),
     /**
      * The public link of a file or a folder (anyone with the URL reads it without signing in).
-     * `password` (4..128 characters) and `viewOnly` («Без скачивания») apply to a new link only;
-     * `update` changes them on the live one (ADR-0167).
+     * `password` (4..128 characters) and `viewOnly` («Без скачивания») are set on a new link and
+     * applied to a live one (the same password changes nothing); `update` also removes them (ADR-0167).
      */
     link: {
       on: (itemId: string, expiresAt?: Date, opts: { password?: string; viewOnly?: boolean } = {}): Promise<DiskLinkResponse> =>

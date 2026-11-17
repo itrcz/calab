@@ -16,7 +16,9 @@
    символов.
 2. **Управление** — `PATCH /api/disk/items/{id}/link` (`UpdateDiskLinkRequest {optional password,
    optional view_only}`; `password = ""` снимает пароль) и поля `password` / `view_only` в
-   `POST …/link` для новой ссылки (живая ссылка на `POST` не меняется). Права те же, что у самой
+   `POST …/link` (новая ссылка создаётся с ними; к живой они применяются как `PATCH`, но только
+   включают: непустой пароль ставит или заменяет его — тот же пароль ничего не меняет, —
+   `view_only = true` включает «Без скачивания»; снять их можно только `PATCH`; дополнено 17.11). Права те же, что у самой
    ссылки: владелец элемента, «Управление» (ADR-0161) или `DISK_MANAGE`; «Правка» — 403. Боты —
    теми же маршрутами (`bot-sdk`: `disk.link.on(…, {password, viewOnly})`, `disk.link.update`).
    История: `link_password_on` (`after.changed` — пароль заменён), `link_password_off`,

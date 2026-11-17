@@ -30,11 +30,18 @@ export const diskPublic = {
   /** Absolute URLs (a download link, a <video>/<audio> source). */
   contentUrl: (code: string, itemId: string): string => `${platform.apiBase}${of(code, itemId)}/content`,
   archiveUrl: (code: string, parent: string): string => `${platform.apiBase}${base(code)}/archive${qs({ parent })}`,
-  /** Whether «Скачать всё» fits (`ok`), is over the ceiling (`large`) or asked too often (`busy`); a network failure says ok. */
-  archiveCheck: async (code: string, parent: string): Promise<'ok' | 'large' | 'busy' | 'gone'> => {
+  /**
+   * Whether «Скачать всё» fits (`ok`), is over the ceiling (`large`), asked too often (`busy`) or
+   * needs the password again (`locked`, ADR-0167); a network failure says ok.
+   */
+  archiveCheck: async (code: string, parent: string): Promise<'ok' | 'large' | 'busy' | 'gone' | 'locked'> => {
     try {
       // same-origin: the unlock cookie of a protected link goes along (ADR-0167).
       const res = await fetch(`${platform.apiBase}${base(code)}/archive${qs({ parent, check: 1 })}`, { cache: 'no-store', credentials: 'same-origin' });
+      if (res.status === 403) {
+        const err = (await res.json().catch(() => null)) as { code?: string } | null;
+        if (err?.code === 'ERROR_CODE_LINK_PASSWORD_REQUIRED') return 'locked';
+      }
       return res.status === 413 ? 'large' : res.status === 429 ? 'busy' : res.status === 404 ? 'gone' : 'ok';
     } catch {
       return 'ok';

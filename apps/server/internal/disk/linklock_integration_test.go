@@ -294,3 +294,76 @@ func TestDiskLinkViewOnly(t *testing.T) {
 		t.Fatalf("history %v", kinds)
 	}
 }
+
+// TestDiskLinkCreateOnLive (review CBF-168): POST on a live link applies its password and
+// view_only like PATCH would; the same password again changes nothing (the unlock survives),
+// an empty request leaves the link as it is; a member without the right to change the link
+// gets 403 before any argon2 hashing, on POST and PATCH alike.
+func TestDiskLinkCreateOnLive(t *testing.T) {
+	e := newEnv(t)
+	e.svc.UnlockKey = DeriveUnlockKey([]byte("test-secret-test-secret-test-secret"))
+	f := e.upload(e.alice, "", "plan.txt", 8)
+	e.must(200, e.alice, "PUT", item(f.GetId())+"/permissions", &v1.UpdateDiskPermissionsRequest{Entries: []*v1.DiskPermissionEntry{{
+		TargetType: v1.PermissionTargetType_PERMISSION_TARGET_TYPE_USER, TargetId: e.bob.String(), Allow: uint64(perm.DiskView | perm.DiskWrite),
+	}}}, nil)
+	var link v1.DiskLinkResponse
+	e.must(201, e.alice, "POST", item(f.GetId())+"/link", &v1.CreateDiskLinkRequest{}, &link)
+	code := link.GetLink().GetCode()
+
+	hashes := 0
+	orig := hashLinkPassword
+	hashLinkPassword = func(ctx context.Context, pw string) (string, error) {
+		hashes++
+		return orig(ctx, pw)
+	}
+	t.Cleanup(func() { hashLinkPassword = orig })
+
+	// «Правка» only: 403 on POST and PATCH, without hashing.
+	e.must(403, e.bob, "POST", item(f.GetId())+"/link", &v1.CreateDiskLinkRequest{Password: "letmein-1"}, nil)
+	e.patchLink(e.bob, f.GetId(), http.StatusForbidden, &v1.UpdateDiskLinkRequest{Password: proto.String("letmein-1")})
+	if hashes != 0 {
+		t.Fatalf("%d argon2 runs for requests without the right", hashes)
+	}
+
+	// The live link takes the password and view_only of a POST.
+	var got v1.DiskLinkResponse
+	e.must(200, e.alice, "POST", item(f.GetId())+"/link", &v1.CreateDiskLinkRequest{Password: "letmein-1", ViewOnly: true}, &got)
+	if l := got.GetLink(); !l.GetHasPassword() || !l.GetViewOnly() || l.GetCode() != code || hashes != 1 {
+		t.Fatalf("live link after POST %v (hashes %d)", l, hashes)
+	}
+	ck := e.unlock(code, "letmein-1", http.StatusNoContent)
+
+	// The same request again, then an empty one: nothing changes, the unlock still opens it.
+	e.must(200, e.alice, "POST", item(f.GetId())+"/link", &v1.CreateDiskLinkRequest{Password: "letmein-1", ViewOnly: true}, &got)
+	if hashes != 1 {
+		t.Fatalf("the same password hashed again (%d)", hashes)
+	}
+	e.must(200, e.alice, "POST", item(f.GetId())+"/link", &v1.CreateDiskLinkRequest{}, &got)
+	if l := got.GetLink(); !l.GetHasPassword() || !l.GetViewOnly() || l.GetCode() != code {
+		t.Fatalf("an empty POST changed the link %v", l)
+	}
+	var meta v1.PublicDiskFile
+	e.pubAs(ck, 200, code, &meta)
+	if meta.GetLocked() {
+		t.Fatal("a repeated POST ended the unlock")
+	}
+
+	// Another password replaces it and ends the unlock.
+	e.must(200, e.alice, "POST", item(f.GetId())+"/link", &v1.CreateDiskLinkRequest{Password: "letmein-2"}, &got)
+	e.pubAs(ck, http.StatusForbidden, code+"/content", nil)
+	e.unlock(code, "letmein-2", http.StatusNoContent)
+
+	// History: password on, view-only on, password changed; nothing for the repeats.
+	var page v1.DiskActivityPage
+	e.must(200, e.alice, "GET", item(f.GetId())+"/activity", nil, &page)
+	n := 0
+	for _, a := range page.GetActivities() {
+		switch a.GetKind() {
+		case v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_PASSWORD_ON, v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_ON:
+			n++
+		}
+	}
+	if n != 3 {
+		t.Fatalf("history: %d protection entries, want 3", n)
+	}
+}

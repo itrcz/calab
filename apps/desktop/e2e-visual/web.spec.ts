@@ -496,6 +496,11 @@ test('disk-public', async ({ page }) => {
     await page.getByTestId('disk-public-password').fill('не тот');
     await page.getByTestId('disk-public-unlock').click();
     await expect(page.getByTestId('disk-public-password-error')).toHaveText('Неверный пароль');
+    // CBF-168 follow-up: «Показать пароль» — the shared PasswordInput's eye.
+    await page.getByTestId('disk-public-locked').getByTestId('password-toggle').click();
+    await expect(page.getByTestId('disk-public-password')).toHaveAttribute('type', 'text');
+    await expect(page.getByTestId('password-toggle')).toHaveAttribute('aria-label', 'Скрыть пароль');
+    await checkpoint({ page, theme: 'light', viewport }, 'disk-public-password-shown');
     await page.getByTestId('disk-public-password').fill('сезам-2026');
     await page.getByTestId('disk-public-unlock').click();
     await expect(page.getByTestId('disk-public-name')).toHaveText('Проекты');
@@ -505,6 +510,20 @@ test('disk-public', async ({ page }) => {
     await expect(page.getByTestId('disk-public-download-all')).toHaveCount(0);
     await expect(page.getByTestId('disk-public-row-download')).toHaveCount(0);
     await checkpoint({ page, theme: 'light', viewport }, 'disk-public-view-only');
+    // CBF-168 follow-up: a file link whose password changes after the unlock — «Открыть» returns
+    // to the password form instead of a silent 403 (dark).
+    const demo = [...mock.disk.links.values()].find((l) => l.code.startsWith('mockLinkDemo'))?.itemId ?? '';
+    mock.disk.updateLink(demo, IDS.users.anna, { password: 'ключ-2026' });
+    await page.evaluate(() => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: 'dark', onboarded: true, locale: 'ru' }, version: 1 })));
+    await page.goto(`${mock.url}/d/${'mockLinkDemo'.padEnd(43, 'x')}?visual-test`);
+    await page.getByTestId('disk-public-password').fill('ключ-2026');
+    await page.getByTestId('disk-public-unlock').click();
+    await expect(page.getByTestId('disk-public-file')).toBeVisible();
+    mock.disk.updateLink(demo, IDS.users.anna, { password: 'ключ-2027' });
+    await page.getByTestId('disk-public-open').click();
+    await expect(page.getByTestId('disk-public-locked')).toBeVisible();
+    await expect(page.getByTestId('disk-public-viewer')).toHaveCount(0);
+    await checkpoint({ page, theme: 'dark', viewport }, 'disk-public-file-relocked');
   } finally {
     await mock?.close();
   }

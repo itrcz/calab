@@ -401,6 +401,12 @@ export class DiskMock {
       this.links.set(id, link);
       this.log(it, uid, DiskActivityKind.LINK_ON);
       this.emit(it);
+    } else if ((opts.password && opts.password !== this.linkPasswords.get(id)) || (opts.viewOnly && !link.viewOnly)) {
+      // A live link takes the request's password and «Без скачивания» like PATCH (only on; the same password changes nothing).
+      return this.updateLink(id, uid, {
+        password: opts.password && opts.password !== this.linkPasswords.get(id) ? opts.password : undefined,
+        viewOnly: opts.viewOnly ? true : undefined,
+      });
     }
     return { link, url: `https://calab.test/d/${link.code}` };
   }

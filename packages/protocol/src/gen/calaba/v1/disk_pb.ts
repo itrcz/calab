@@ -636,8 +636,10 @@ export const UpdateDiskPermissionsRequestSchema: GenMessage<UpdateDiskPermission
 
 /**
  * POST /api/disk/items/{id}/link (a file or a folder, ADR-0165; the item's owner or MANAGE on
- * it). A live link is returned as is (password and view_only are then ignored: PATCH changes
- * them); expires_at unset = never.
+ * it). expires_at unset = never; it applies to a new link only. A live link answers 200 with
+ * password and view_only applied like PATCH: a non-empty password sets or replaces it (the same
+ * password changes nothing), view_only = true switches it on; an empty password and view_only =
+ * false leave the link as it is (PATCH removes them). A repeated call changes nothing.
  *
  * @generated from message calaba.v1.CreateDiskLinkRequest
  */
@@ -648,14 +650,14 @@ export type CreateDiskLinkRequest = Message<"calaba.v1.CreateDiskLinkRequest"> &
   expiresAt?: Timestamp | undefined;
 
   /**
-   * a new link's password (4..128 characters); empty = none (ADR-0167)
+   * the link's password (4..128 characters); empty = none / unchanged (ADR-0167)
    *
    * @generated from field: string password = 2;
    */
   password: string;
 
   /**
-   * a new link's «Без скачивания»
+   * «Без скачивания»; false = off for a new link, unchanged for a live one
    *
    * @generated from field: bool view_only = 3;
    */

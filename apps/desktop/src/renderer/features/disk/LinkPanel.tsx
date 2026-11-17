@@ -2,7 +2,7 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import type { DiskItem } from '@calaba/protocol';
 import { Copy } from 'lucide-react';
 import { useEffect, useState, type ReactNode, type SyntheticEvent } from 'react';
-import { Button, Input, Select, Switch } from '../../components/ui';
+import { Button, Input, PasswordInput, Select, Switch } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { isFolder } from '../../lib/disk';
@@ -178,8 +178,7 @@ function LinkProtection({ item }: { item: DiskItem }): ReactNode {
         </div>
         {editing ? (
           <form className="flex items-center gap-2" onSubmit={save}>
-            <Input
-              type="password"
+            <PasswordInput
               autoFocus
               autoComplete="new-password"
               value={pw}

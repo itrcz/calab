@@ -201,6 +201,10 @@ test('disk-share', async ({ open, win, shot }) => {
   // CBF-168 (ADR-0167): a password (only «set / not set» is shown) and «Без скачивания».
   await link.getByTestId('disk-link-password-edit').click();
   await link.getByTestId('disk-link-password-input').fill('сезам-2026');
+  // CBF-168 follow-up: «Показать пароль» in the field (the shared PasswordInput).
+  await link.getByTestId('password-toggle').click();
+  await expect(link.getByTestId('disk-link-password-input')).toHaveAttribute('type', 'text');
+  await checkpoint(shot, 'disk-link-password');
   await link.getByTestId('disk-link-password-save').click();
   await expect(link.getByTestId('disk-link-password-state')).toHaveText('Задан — посетитель вводит его перед открытием');
   await link.getByRole('switch', { name: 'Без скачивания' }).click();

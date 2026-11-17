@@ -1244,13 +1244,15 @@ func (x *UpdateDiskPermissionsRequest) GetRestricted() bool {
 }
 
 // POST /api/disk/items/{id}/link (a file or a folder, ADR-0165; the item's owner or MANAGE on
-// it). A live link is returned as is (password and view_only are then ignored: PATCH changes
-// them); expires_at unset = never.
+// it). expires_at unset = never; it applies to a new link only. A live link answers 200 with
+// password and view_only applied like PATCH: a non-empty password sets or replaces it (the same
+// password changes nothing), view_only = true switches it on; an empty password and view_only =
+// false leave the link as it is (PATCH removes them). A repeated call changes nothing.
 type CreateDiskLinkRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`                  // a new link's password (4..128 characters); empty = none (ADR-0167)
-	ViewOnly      bool                   `protobuf:"varint,3,opt,name=view_only,json=viewOnly,proto3" json:"view_only,omitempty"` // a new link's «Без скачивания»
+	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`                  // the link's password (4..128 characters); empty = none / unchanged (ADR-0167)
+	ViewOnly      bool                   `protobuf:"varint,3,opt,name=view_only,json=viewOnly,proto3" json:"view_only,omitempty"` // «Без скачивания»; false = off for a new link, unchanged for a live one
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
