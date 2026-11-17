@@ -481,6 +481,9 @@ function UnreadList({ workspaceId }: { workspaceId: string }): ReactNode {
   );
 }
 
+/** The ✕ of a «Недавние» row; module-level, so the memoised rows get the same callback each render. */
+const dismissRecentRow = (id: string): void => void dismissRecentTask(id);
+
 /**
  * «Недавние» (CBF-179): the last tasks I got a notice about, latest notice first, one row per task;
  * read ones stay (without the dot). The server's list (loadRecent), kept current by live notices.
@@ -499,7 +502,7 @@ function RecentList({ workspaceId }: { workspaceId: string }): ReactNode {
           <p>{t('boards.recentEmpty')}</p>
         </div>
       ) : (
-        ids.map((id) => <NoticeRow key={id} id={id} onClick={openFromList} onDismiss={dismissRecentTask} />)
+        ids.map((id) => <NoticeRow key={id} id={id} onClick={openFromList} onDismiss={dismissRecentRow} />)
       )}
     </div>
   );
