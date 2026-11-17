@@ -255,7 +255,7 @@ export function setRecent(d: RecentData, workspaceId: string, entries: readonly 
   return { recent: { ...d.recent, [workspaceId]: [...live, ...ids].slice(0, RECENT_LIMIT) }, recentRefs, notices };
 }
 
-/** A live notice of a task: on top of a loaded list, once. A list not loaded yet stays so (the load brings it). */
+/** The tasks `gone` matches leave every workspace's «Недавние»; the same object when none was listed. */
 function dropRecent(d: Pick<BoardsState, 'recent'>, gone: (taskId: string) => boolean): Partial<Pick<BoardsState, 'recent'>> {
   let changed = false;
   const recent: Record<string, readonly string[]> = {};
@@ -268,6 +268,7 @@ function dropRecent(d: Pick<BoardsState, 'recent'>, gone: (taskId: string) => bo
   return changed ? { recent } : {};
 }
 
+/** A live notice of a task: on top of a loaded list, once. A list not loaded yet stays so (the load brings it). */
 export function bumpRecent(d: RecentData, workspaceId: string, taskId: string, ref: RecentRef): Partial<RecentData> {
   const ids = d.recent[workspaceId];
   if (!ids) return {};
