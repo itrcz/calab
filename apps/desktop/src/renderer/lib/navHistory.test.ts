@@ -117,6 +117,9 @@ describe('locOf: the place on screen', () => {
     const mail = { box: { scope: 'all', folder: 'inbox' as const }, boxKey: 'k', thread: null, message: null, row: null };
     expect(locOf({ ...SNAP, home: true, mail })?.kind).toBe('mail');
     expect(locOf({ ...SNAP, mail, fileTab: 'f1' })).toEqual({ kind: 'file', ws: 'w', tab: 'f1' });
+    // CBF-195: a file opened from a DM or a guest room is a place of its own, so «back» returns to the chat.
+    expect(locOf({ ...SNAP, home: true, ws: '@me', room: 'dm', fileTab: 'f1' })).toEqual({ kind: 'file', ws: '@me', tab: 'f1' });
+    expect(locOf({ ...SNAP, guest: true, fileTab: 'f1' })).toEqual({ kind: 'file', ws: 'w', tab: 'f1' });
   });
 
   it('a guest has no sections: the room', () => {

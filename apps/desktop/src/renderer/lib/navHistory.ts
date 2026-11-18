@@ -122,7 +122,8 @@ export interface NavSnapshot {
 /** The place on screen, in the order AppShell picks what fills the window (file, mail, «Личные», app, sections, day, room). */
 export function locOf(s: NavSnapshot): Loc | null {
   const ws = s.ws;
-  if (s.fileTab && ws && !s.home && !s.guest) return { kind: 'file', ws, tab: s.fileTab };
+  // In «Личные» and a guest workspace too (CBF-195): the file view covers the chat there as well.
+  if (s.fileTab && ws) return { kind: 'file', ws, tab: s.fileTab };
   if (s.mail) return { kind: 'mail', ...s.mail };
   if (!ws) return null;
   if (s.home) return { kind: 'room', ws, room: s.room };
