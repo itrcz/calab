@@ -143,11 +143,7 @@ type Expiry = (typeof EXPIRY_DAYS)[number];
 /** The page's public address `/w/{code}` on the server's origin (the answer's `url` when known). */
 const publicUrl = (code: string): string => new URL(`/w/${code}`, useSession.getState().serverUrl || window.location.origin).toString();
 
-/**
- * «Ссылка» (ADR-0096 §6): «Доступ по ссылке» (anyone with it reads the page without signing in),
- * «Вместе с подстраницами» (the public page lists the branch), the address with «Скопировать»,
- * the term (chosen before switching on), views. A live link is updated in place, keeping its code.
- */
+/** A read-only address with «Скопировать» (the org link copies through `onCopy`, the public one as is). */
 function AddressRow({ address, onCopy, testId }: { address: string; onCopy?: () => void; testId: string }): ReactNode {
   return (
     <div className="flex items-center gap-2">
@@ -173,6 +169,12 @@ function AddressRow({ address, onCopy, testId }: { address: string; onCopy?: () 
   );
 }
 
+/**
+ * «Ссылка» (ADR-0096 §6, CBF-194): the organization-only page address first (as «Скопировать ссылку»),
+ * then «Доступ по ссылке» (anyone with it reads the page without signing in),
+ * «Вместе с подстраницами» (the public page lists the branch), the address with «Скопировать»,
+ * the term (chosen before switching on), views. A live link is updated in place, keeping its code.
+ */
 function LinkPanel({ pageId }: { pageId: string }): ReactNode {
   const link = useWiki((s) => s.pages[pageId]?.link);
   const on = !!link;
