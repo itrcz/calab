@@ -12,7 +12,7 @@ class FakeAudio {
   sinkId = '';
   resetOnSink = false;
   pushes = 0;
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Map<string, Set<() => void>>();
 
   get muted(): boolean {
     return this.m;
@@ -40,14 +40,17 @@ class FakeAudio {
     }
     return Promise.resolve(undefined);
   }
-  addEventListener(_t: string, fn: () => void): void {
-    this.listeners.add(fn);
+  addEventListener(t: string, fn: () => void): void {
+    const set = this.listeners.get(t) ?? new Set();
+    set.add(fn);
+    this.listeners.set(t, set);
   }
-  removeEventListener(_t: string, fn: () => void): void {
-    this.listeners.delete(fn);
+  removeEventListener(t: string, fn: () => void): void {
+    this.listeners.get(t)?.delete(fn);
   }
-  private fire(): void {
-    for (const fn of [...this.listeners]) fn();
+  /** Dispatches `t` (`volumechange` by default) to its listeners. */
+  fire(t = 'volumechange'): void {
+    for (const fn of [...(this.listeners.get(t) ?? [])]) fn();
   }
   /** An outside write that does fire `volumechange` (LiveKit `el.muted = false`). */
   unmuteFromOutside(): void {
@@ -272,12 +275,133 @@ describe('rebind (the OS switched the output: headphones in or out, #255)', () =
     out.add('b', b, 'u2', false);
     out.add('c', none, 'u3', false);
     await out.setSink('headphones');
-    expect(await out.rebind()).toEqual({ rebound: 2, blocked: 1 });
+    expect(await out.rebind()).toEqual({ rebound: 2, blocked: 1, failed: 0 });
     expect(a.writes).toEqual([null, s1]);
     expect(b.writes).toEqual([null, s2]);
     expect(a.srcObject).toBe(s1);
     expect([a.plays, b.plays, none.plays]).toEqual([1, 1, 0]);
     expect(a.sinkId).toBe('headphones');
+  });
+
+  /** Elements that log every srcObject / setSinkId write into one shared journal. */
+  const journaled = (journal: string[], name: string, stream: object, playError?: string) => {
+    const a = new FakeAudio() as FakeAudio & HTMLMediaElement & { writes: (object | null)[]; plays: number };
+    a.writes = [];
+    a.plays = 0;
+    let src: object | null = stream;
+    Object.defineProperty(a, 'srcObject', {
+      get: () => src,
+      set: (v: object | null) => {
+        journal.push(`${name}:${v ? 'attach' : 'detach'}`);
+        src = v;
+      },
+    });
+    Object.defineProperty(a, 'setSinkId', {
+      value: (id: string) => {
+        journal.push(`${name}:sink=${id}${src ? '' : ' (detached)'}`);
+        a.sinkId = id;
+        return Promise.resolve();
+      },
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(a, 'play', {
+      value: () => {
+        a.plays++;
+        return playError ? Promise.reject(Object.assign(new Error('nope'), { name: playError })) : Promise.resolve();
+      },
+    });
+    return a;
+  };
+  const audible = (): AudioOutState => ({ deafened: false, userVolumes: {}, mutedUsers: {}, streamVolume: {} });
+
+  it('CBF-193: every element drops its stream before any takes it back (the shared renderer is rebuilt); the sink is set while detached', async () => {
+    const out = new RemoteAudioOut<ReturnType<typeof bound>>(audible);
+    const journal: string[] = [];
+    const a = journaled(journal, 'a', {});
+    const b = journaled(journal, 'b', {});
+    const c = journaled(journal, 'c', {});
+    out.add('a', a, 'u1', false);
+    out.add('b', b, 'u2', false);
+    out.add('c', c, 'u3', true);
+    await out.setSink('default');
+    journal.length = 0;
+    expect(await out.rebind()).toEqual({ rebound: 3, blocked: 0, failed: 0 });
+    const last = (suffix: string): number => Math.max(...journal.map((x, i) => (x.endsWith(suffix) ? i : -1)));
+    const first = (suffix: string): number => journal.findIndex((x) => x.endsWith(suffix));
+    // No new player is created while an old one still holds the old renderer.
+    expect(last(':detach')).toBeLessThan(first(':attach'));
+    expect(journal.filter((x) => x.includes('sink='))).toEqual(['a:sink=default (detached)', 'b:sink=default (detached)', 'c:sink=default (detached)']);
+    expect(last('(detached)')).toBeLessThan(first(':attach'));
+    expect([a.plays, b.plays, c.plays]).toEqual([1, 1, 1]);
+  });
+
+  it('CBF-193: an element busy with a slow sink switch holds the whole pass (no early re-attach elsewhere)', async () => {
+    const out = new RemoteAudioOut<ReturnType<typeof bound>>(audible);
+    const journal: string[] = [];
+    const a = journaled(journal, 'a', {});
+    const b = journaled(journal, 'b', {});
+    out.add('a', a, 'u1', false);
+    out.add('b', b, 'u2', false);
+    let release = (): void => undefined;
+    a.setSinkId = (id: string): Promise<undefined> => {
+      journal.push(`a:sink=${id}`);
+      return new Promise<undefined>((r) => (release = () => r(undefined)));
+    };
+    const switching = out.setSink('air');
+    const rebind = out.rebind();
+    await new Promise((r) => setTimeout(r, 0));
+    // a's switch is in flight: nobody has been detached or re-attached yet.
+    expect(journal.some((x) => x.endsWith('detach') || x.endsWith('attach'))).toBe(false);
+    a.setSinkId = (id: string): Promise<undefined> => {
+      journal.push(`a:sink=${id}`);
+      return Promise.resolve(undefined);
+    };
+    release();
+    await Promise.all([switching, rebind]);
+    const at = (x: string): number => journal.indexOf(x);
+    expect(at('a:detach')).toBeGreaterThan(-1);
+    expect(Math.max(at('a:detach'), at('b:detach'))).toBeLessThan(Math.min(at('a:attach'), at('b:attach')));
+  });
+
+  it('CBF-193: a player that found no renderer (play() → NotSupportedError) counts as failed, not blocked', async () => {
+    const out = new RemoteAudioOut<ReturnType<typeof bound>>(audible);
+    const journal: string[] = [];
+    out.add('a', journaled(journal, 'a', {}, 'NotSupportedError'), 'u1', false);
+    out.add('b', journaled(journal, 'b', {}, 'NotAllowedError'), 'u2', false);
+    out.add('c', journaled(journal, 'c', {}), 'u3', false);
+    expect(await out.rebind()).toEqual({ rebound: 3, blocked: 1, failed: 1 });
+  });
+
+  it('a stream LiveKit attached during the pass is not overwritten with the old one', async () => {
+    const out = new RemoteAudioOut<ReturnType<typeof bound>>(audible);
+    const fresh = {} as MediaStream;
+    const a = bound({});
+    Object.defineProperty(a, 'setSinkId', {
+      value: () => {
+        a.srcObject = fresh; // a re-subscribe attached a new stream while ours was detached
+        return Promise.resolve();
+      },
+    });
+    out.add('a', a, 'u1', false);
+    await out.rebind();
+    expect(a.srcObject).toBe(fresh);
+    expect(a.plays).toBe(1);
+  });
+
+  it('a track that went away during the pass stays detached and is not played', async () => {
+    const out = new RemoteAudioOut<ReturnType<typeof bound>>(audible);
+    const a = bound({});
+    Object.defineProperty(a, 'setSinkId', {
+      value: () => {
+        out.remove('a'); // TrackUnsubscribed while the streams were detached
+        return Promise.resolve();
+      },
+    });
+    out.add('a', a, 'u1', false);
+    expect(await out.rebind()).toEqual({ rebound: 0, blocked: 0, failed: 0 });
+    expect(a.srcObject).toBeNull();
+    expect(a.plays).toBe(0);
   });
 
   it('keeps deafen across the re-bind', async () => {
@@ -328,5 +452,25 @@ describe('sink ops are serialised per element (a re-bind cannot race a switch)',
     // The queued ops read the current choice when they run: the older 'air' is never applied.
     expect(calls).toEqual(['default', 'default', 'default']);
     expect(a.sinkId).toBe('default');
+  });
+});
+
+describe('a broken output reaches the owner (CBF-193)', () => {
+  it('`error` on an element calls onBroken; volume changes do not; a removed element no longer does', () => {
+    let broken = 0;
+    const out = new RemoteAudioOut<FakeAudio & HTMLMediaElement>(
+      () => ({ deafened: false, userVolumes: {}, mutedUsers: {}, streamVolume: {} }),
+      () => broken++,
+    );
+    const a = new FakeAudio() as FakeAudio & HTMLMediaElement;
+    out.add('a', a, 'u1', false);
+    a.unmuteFromOutside();
+    a.fire('volumechange');
+    expect(broken).toBe(0);
+    a.fire('error');
+    expect(broken).toBe(1);
+    out.remove('a');
+    a.fire('error');
+    expect(broken).toBe(1);
   });
 });

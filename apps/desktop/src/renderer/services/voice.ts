@@ -174,6 +174,11 @@ const REBIND_SETTLE_MS = 400;
  */
 const HEADSET_ROUTE_SETTLE_MS = 1500;
 /**
+ * A remote element fired `error` (its WebRTC output died or could not open, CBF-193): re-bind
+ * again, at most this many times per output change — a device that keeps failing cannot spin.
+ */
+const BROKEN_REBINDS = 2;
+/**
  * Mic track mute / unmute (ADR-0134): an op unsettled after this counts as failed (a lock held
  * across a dead link), and a failed one is retried after MUTE_RETRY_MS (by attempt, capped) —
  * never at once, so a link that refuses it cannot spin the renderer.
@@ -274,6 +279,8 @@ class VoiceEngine {
   private muteRetryTimer: number | null = null;
   /** scheduleRebind: the settle timer after an output device change. */
   private rebindTimer: number | null = null;
+  /** Re-binds a remote element's `error` may still start before the next output change (CBF-193). */
+  private brokenRebinds = BROKEN_REBINDS;
   /** performance.now() the pending re-bind is due at: a later request never brings it forward. */
   private rebindDue = 0;
   private muteFails = 0;
@@ -331,11 +338,14 @@ class VoiceEngine {
    * Remote audio: one <audio> per track (echo rule 1), the only writer of their muted / volume /
    * sink (deafen, per-user volumes survive device switches and LiveKit's own writes; docs/02 «Deafen»).
    */
-  private readonly audioOut = new RemoteAudioOut(() => {
-    const v = useVoice.getState();
-    const p = prefs();
-    return { deafened: v.deafened, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume };
-  });
+  private readonly audioOut = new RemoteAudioOut(
+    () => {
+      const v = useVoice.getState();
+      const p = prefs();
+      return { deafened: v.deafened, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume };
+    },
+    () => this.onRemoteAudioBroken(),
+  );
   /** Stream subscriptions we requested (setSubscribed signals on every call, so dedupe). */
   private readonly wanted = new Map<string, boolean>();
   /** Whose stream we told «I'm watching» (calaba.watch), to send the matching «stopped». */
@@ -806,6 +816,7 @@ class VoiceEngine {
         ...(this.outputSinkNow() ? { audioOutput: { deviceId: this.outputSinkNow() } } : {}),
       });
       this.room = room;
+      this.brokenRebinds = BROKEN_REBINDS;
       // H.264 «Авто» = High on the wire (hardware on macOS): codec preferences set between
       // addTransceiver and the offer (lib/media/h264.ts, docs/02 «Кодек»). Lives as long as the Room.
       installH264ProfileHook(room.localParticipant, () => room.engine.pcManager?.publisher.getTransceivers());
@@ -3114,7 +3125,10 @@ class VoiceEngine {
       const prev = this.devices;
       this.devices = next;
       // An input / camera change leaves the remote renderers alone (CBF-108).
-      if (announce && outputsChanged(prev, next)) this.scheduleRebind();
+      if (announce && outputsChanged(prev, next)) {
+        this.brokenRebinds = BROKEN_REBINDS;
+        this.scheduleRebind();
+      }
       if (!announce || !prev || !this.roomId) return;
       const p = prefs();
       for (const sw of deviceSwitches(prev, next, { micDeviceId: p.micDeviceId, outputDeviceId: p.outputDeviceId })) announceDeviceSwitch(sw);
@@ -4332,9 +4346,25 @@ class VoiceEngine {
       void this.audioOut.rebind().then((r) => {
         if (this.room !== room) return;
         log.info(`voice: output devices changed, ${r.rebound} remote audio element(s) re-bound`);
+        // A failed one fires `error` too: onRemoteAudioBroken runs the next pass.
+        if (r.failed > 0) log.warn(`voice: ${r.failed} remote audio element(s) did not start after the re-bind`);
         if (r.blocked > 0 && !document.hidden) this.offerPlayback();
       });
     }, ms);
+  }
+
+  /**
+   * A remote <audio> fired `error`: Chromium's shared WebRTC renderer lost its device (render
+   * error) or a re-bound player could not open it yet (CBF-193). That element is silent for good
+   * until the renderer is rebuilt — re-bind once the route has settled, a bounded number of
+   * times per output change (`brokenRebinds`, reset by the next one; a renderer that keeps
+   * failing on a fresh device cannot spin the renderer process).
+   */
+  private onRemoteAudioBroken(): void {
+    if (!this.room || this.brokenRebinds <= 0) return;
+    this.brokenRebinds--;
+    log.info('voice: a remote audio element reported a media error, re-binding');
+    this.scheduleRebind();
   }
 
   /** One pass of «play what the system paused» (RemoteAudioOut.replayPaused); a refusal offers the tap. */

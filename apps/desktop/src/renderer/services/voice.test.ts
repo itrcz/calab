@@ -1868,8 +1868,19 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       }
       return Promise.resolve();
     }
-    addEventListener(): void {}
-    removeEventListener(): void {}
+    private readonly listeners = new Map<string, Set<() => void>>();
+    addEventListener(t: string, fn: () => void): void {
+      const set = this.listeners.get(t) ?? new Set();
+      set.add(fn);
+      this.listeners.set(t, set);
+    }
+    removeEventListener(t: string, fn: () => void): void {
+      this.listeners.get(t)?.delete(fn);
+    }
+    /** Dispatches an element event (`error`: Chromium's renderer lost / could not open the output). */
+    dispatch(t: string): void {
+      for (const fn of [...(this.listeners.get(t) ?? [])]) fn();
+    }
     remove(): void {}
   }
   /** A remote audio track of `identity`; attach() returns a fake <audio>. */
@@ -1972,6 +1983,32 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       await fire([dflt('AirPods Pro', 'g-air'), spk, air, inp('mbp-mic', 'MacBook Mic', 'g-mbp')]);
       await vi.advanceTimersByTimeAsync(500);
       expect(a.binds).toBe(before + 1);
+    });
+
+    it('CBF-193: a remote element reporting a media error re-binds once settled, bounded per output change', async () => {
+      await fire([dflt('MacBook Speakers', 'g-mbp'), spk]);
+      await voice.join('A', 'ws');
+      const a = subscribe(FakeRoom.all.at(-1), 'u2:phone', 'TR_a');
+      await vi.advanceTimersByTimeAsync(2000);
+      const before = a.binds;
+      a.dispatch('error');
+      await vi.advanceTimersByTimeAsync(100);
+      expect(a.binds).toBe(before); // the route settles first
+      await vi.advanceTimersByTimeAsync(400);
+      expect(a.binds).toBe(before + 1);
+      a.dispatch('error');
+      await vi.advanceTimersByTimeAsync(500);
+      expect(a.binds).toBe(before + 2);
+      // A device that keeps failing cannot spin: the budget is spent until the outputs change.
+      a.dispatch('error');
+      await vi.advanceTimersByTimeAsync(500);
+      expect(a.binds).toBe(before + 2);
+      await fire([dflt('AirPods Pro', 'g-air'), spk, air]);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(a.binds).toBe(before + 3);
+      a.dispatch('error');
+      await vi.advanceTimersByTimeAsync(500);
+      expect(a.binds).toBe(before + 4);
     });
 
     it('a mic on another device does not re-bind', async () => {

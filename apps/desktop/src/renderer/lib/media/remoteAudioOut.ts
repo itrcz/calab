@@ -23,7 +23,21 @@ import { remoteAudio } from '../voiceLogic';
  * (WebKit gates it behind a setting) have no such method — the OS picks the output there.
  */
 export type AudioOutElement = Pick<HTMLMediaElement, 'muted' | 'volume' | 'addEventListener' | 'removeEventListener'> &
-  Partial<Pick<HTMLMediaElement, 'setSinkId' | 'paused' | 'play' | 'srcObject'>>;
+  Partial<Pick<HTMLMediaElement, 'setSinkId' | 'paused' | 'play' | 'srcObject' | 'error'>>;
+
+/** What one `rebind` pass did. */
+export interface RebindResult {
+  /** Elements whose stream was detached and attached again. */
+  rebound: number;
+  /** play() refused without a user gesture (NotAllowedError): the caller offers a tap. */
+  blocked: number;
+  /**
+   * play() failed otherwise or the element reports a media error: the new player found no
+   * renderer (its output device was not ready yet). The element's `error` event reaches the
+   * owner (`onBroken`), which runs another pass.
+   */
+  failed: number;
+}
 
 /** What one pass of `replayPaused` did. */
 export interface ReplayResult {
@@ -52,6 +66,8 @@ interface Entry<E extends AudioOutElement> {
   /** A screen share's system audio (not the voice). */
   stream: boolean;
   guard: () => void;
+  /** `error` on the element: the WebRTC renderer died or could not open (see `onBroken`). */
+  broken: () => void;
   /**
    * The element's sink ops (setSink, rebind) run one after another: a setSinkId still in flight
    * when a re-bind (or another switch) starts could land last with an older id.
@@ -66,7 +82,16 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
   private readonly els = new Map<string, Entry<E>>();
   private sinkId = '';
 
-  constructor(private readonly state: () => AudioOutState) {}
+  /**
+   * `onBroken`: an element fired `error` — Chromium reports a dead or unopenable WebRTC output
+   * this way (a render error on the device that went away: MEDIA_ERR_DECODE; a reload whose
+   * renderer could not open the device: MEDIA_ERR_SRC_NOT_SUPPORTED). Such an element stays
+   * silent and play() cannot revive it; only another `rebind` can. The owner decides when.
+   */
+  constructor(
+    private readonly state: () => AudioOutState,
+    private readonly onBroken: (() => void) | null = null,
+  ) {}
 
   has(sid: string): boolean {
     return this.els.has(sid);
@@ -87,10 +112,19 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
    */
   add(sid: string, el: E, userId: string, stream: boolean): void {
     if (this.els.has(sid)) return;
-    const entry: Entry<E> = { sid, el, userId, stream, guard: () => this.apply(entry, false), ops: Promise.resolve() };
+    const entry: Entry<E> = {
+      sid,
+      el,
+      userId,
+      stream,
+      guard: () => this.apply(entry, false),
+      broken: () => this.onBroken?.(),
+      ops: Promise.resolve(),
+    };
     this.els.set(sid, entry);
     // Someone else (LiveKit) wrote muted / volume: put ours back (a no-op when it already matches).
     el.addEventListener('volumechange', entry.guard);
+    el.addEventListener('error', entry.broken);
     this.apply(entry, false);
     if (this.sinkId) void this.sink(entry);
   }
@@ -100,6 +134,7 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
     const entry = this.els.get(sid);
     if (!entry) return undefined;
     entry.el.removeEventListener('volumechange', entry.guard);
+    entry.el.removeEventListener('error', entry.broken);
     this.els.delete(sid);
     return entry.el;
   }
@@ -112,32 +147,66 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
   /**
    * The OS switched the audio output (headphones in or out, AirPods, a dock): only people who
    * joined after the switch were heard, the others stayed silent until the room was re-entered
-   * (#255). `setSinkId` with an unchanged id ('' = the system default) is a no-op and a WebRTC
-   * renderer opened before the switch can stay on the old route; re-assigning the element's own
-   * stream makes the engine open a renderer on the current output. The element stays the same
-   * (echo rule 2); sink, playback state and play() are pushed again. One pass, no retry.
+   * (#255, CBF-193). Why a sink write cannot fix it (Chromium, third_party/blink/.../mediastream):
+   *  - every remote WebRTC track of the page plays through ONE `WebRtcAudioRenderer`, created by
+   *    the first player on that player's sink id and shared by all later ones
+   *    (`MediaStreamRendererFactory::GetAudioRenderer`: «Share the existing renderer if any»);
+   *  - `setSinkId` with the element's current id resolves without touching the player, and the
+   *    renderer's `SwitchOutputDevice` to its current id is a no-op too — a renderer whose output
+   *    died with the device stays dead;
+   *  - a player whose renderer could not open its device has no audio at all: the element gets
+   *    MEDIA_ERR_SRC_NOT_SUPPORTED, play() rejects, a later play() cannot help.
+   * So the renderer must be rebuilt: it goes only when its last player stops, i.e. when every
+   * remote element has dropped its stream at once. Steps, all elements together:
+   *  1. detach every stream (each player stops synchronously; the last one takes the shared
+   *     renderer and its output with it) — after the sink ops already queued, so no older
+   *     setSinkId lands on the new player;
+   *  2. the current sink on each element while it has no player: the next player — and with it
+   *     the new renderer — opens on that device directly (no switch on a fresh renderer);
+   *  3. attach the same stream again, push the playback state (deafen), play().
+   * The element stays the same (echo rule 2). One pass: an element that still fails fires
+   * `error`, and the owner (`onBroken`) decides about another pass — no timer here.
    */
-  async rebind(): Promise<{ rebound: number; blocked: number }> {
-    const out = { rebound: 0, blocked: 0 };
-    await Promise.all(
-      [...this.els.values()].map((entry) =>
-        this.queue(entry, async () => {
-          const { el } = entry;
-          const src = el.srcObject;
-          if (!src) return;
-          el.srcObject = null;
-          el.srcObject = src;
+  async rebind(): Promise<RebindResult> {
+    const out: RebindResult = { rebound: 0, blocked: 0, failed: 0 };
+    const entries = [...this.els.values()];
+    const run = Promise.all(entries.map((e) => e.ops)).then(async () => {
+      // Still ours and with a stream (an element without one has no player to rebuild).
+      const live = entries
+        .filter((e) => this.els.get(e.sid) === e && e.el.srcObject)
+        .map((e) => ({ e, src: e.el.srcObject as MediaProvider }));
+      // 1. All players stop in this one synchronous pass: the shared renderer goes with the last.
+      for (const { e } of live) e.el.srcObject = null;
+      // 2. The sink while there is no player (a gone device rejects: the element keeps its id).
+      await Promise.all(
+        live.map(async ({ e }) => {
+          if (typeof e.el.setSinkId === 'function') await e.el.setSinkId(this.sinkId).catch(() => undefined);
+        }),
+      );
+      // 3. The same stream again, unless something attached a new one meanwhile (LiveKit re-attach).
+      await Promise.all(
+        live.map(async ({ e, src }) => {
+          // The track went away meanwhile: its element is leaving the DOM, it stays detached.
+          if (this.els.get(e.sid) !== e) return;
+          const { el } = e;
+          if (el.srcObject === null) el.srcObject = src;
           out.rebound++;
-          await this.setSinkNow(entry);
+          this.apply(e, true);
           if (typeof el.play !== 'function') return;
           try {
             await el.play();
-          } catch (e) {
-            if ((e as { name?: unknown } | null)?.name === 'NotAllowedError') out.blocked++;
+            if (el.error) out.failed++;
+          } catch (err) {
+            if ((err as { name?: unknown } | null)?.name === 'NotAllowedError') out.blocked++;
+            else out.failed++;
           }
         }),
-      ),
-    );
+      );
+    });
+    // Sink ops queued meanwhile run after the pass (they read the current sink then).
+    const settled = run.catch(() => undefined);
+    for (const e of entries) e.ops = settled;
+    await run;
     return out;
   }
 
