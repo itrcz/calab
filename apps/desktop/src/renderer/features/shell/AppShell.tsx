@@ -135,7 +135,10 @@ function ShellLayout(): ReactNode {
   const mobile = useMobile();
   // An opened office file (ADR-0143): its editor exists (fileMounted) and/or its view is on screen.
   const fileMounted = useTaskTabs((s) => s.fileMounted !== null);
-  const fileShown = useTaskTabs((s) => s.fileActive !== null) && !home && !!wsId && !guestWs && hasWs;
+  // Also in «Личные» and in a guest workspace (CBF-195): the view is `flex-1` in the same row as the
+  // chat, so a file opened from a DM or a guest room that the shell did not count as shown stood
+  // beside the chat and squeezed both. Shown = it takes the whole content slot, the chat is hidden.
+  const fileShown = useTaskTabs((s) => s.fileActive !== null) && (home || (!!wsId && hasWs));
 
   // The bottom island (docs/08 «Нижний островок», ADR-0146): full on «Команда», folded into my
   // avatar on the other sections, an opened office file and a web app (setting on, default).

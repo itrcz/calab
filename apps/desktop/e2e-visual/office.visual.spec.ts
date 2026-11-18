@@ -99,6 +99,29 @@ test('office-entry-points', async ({ open, win, mock, shot }) => {
   await checkpoint(shot, 'office-entry-chat');
 });
 
+/**
+ * CBF-195: a file from a chat in «Личные» (the DM section has no workspace) opens as the whole
+ * view, never beside the chat: the chat is gone, the editor fills the content slot.
+ */
+test('office-from-dm', async ({ open, win, mock, shot }) => {
+  await open({ office: true, ui: { activeWorkspaceId: '@me' } });
+  await expect(win.getByTestId('dm-list').getByRole('button')).toHaveCount(3);
+  // A DM has no workspace: its files carry none (the meta is shared with the mock's file store).
+  const sent = mock.injectMessage({ roomId: IDS.dms.vera, authorId: IDS.users.vera, content: 'График на подпись', attachments: [IDS.files.sheet] });
+  for (const a of sent.attachments) a.workspaceId = '';
+  await win.getByTestId('dm-list').getByRole('button', { name: /Вера/ }).click();
+  await expect(win.getByTestId('dm-header')).toContainText('Вера');
+  await win.getByRole('button', { name: /Открыть График отпусков 2026\.xlsx/ }).click();
+  const view = win.getByTestId('office-view');
+  await expect(view).toBeVisible();
+  // Nothing of the chat beside the file: no header, no composer, and the view takes most of the window (the rail and the title bar apart).
+  await expect(win.getByTestId('dm-header')).toBeHidden();
+  const box = await view.boundingBox();
+  const inner = await win.evaluate(() => window.innerWidth);
+  expect(box && box.width > inner * 0.6).toBe(true);
+  await checkpoint(shot, 'office-from-dm');
+});
+
 test('office-file-view', async ({ open, win, mock, shot }) => {
   await open({ office: true, prefs: { diskView: 'list' } });
   seedOffice(mock);
