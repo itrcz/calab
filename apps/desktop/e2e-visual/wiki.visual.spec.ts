@@ -64,6 +64,26 @@ test('wiki-share', async ({ open, win, shot, theme }) => {
   await checkpoint(shot, 'wiki-share');
 });
 
+// CBF-194: the «Ссылка» tab — the organization-only link first (the «Скопировать ссылку» address),
+// public access without signing in only through the explicit switch (off by default).
+test('wiki-share-link', async ({ open, win, shot }) => {
+  await open();
+  await win.getByTestId('section-wiki').click();
+  // «Встречи» has no public link in the fixture (the handbook has one).
+  await win.getByTestId('wiki-node').filter({ hasText: 'Встречи' }).click();
+  await expect(win.getByTestId('wiki-title')).toHaveValue('Встречи');
+  await win.getByTestId('wiki-share').click();
+  const dialog = win.getByTestId('wiki-share-dialog');
+  await dialog.getByRole('radio', { name: 'Ссылка' }).click();
+  await expect(dialog.getByTestId('wiki-link-org-url')).toHaveValue(/\/wiki\/[^/]+$/);
+  await expect(dialog.getByRole('switch', { name: 'Доступ по ссылке' })).not.toBeChecked();
+  await expect(dialog.getByTestId('wiki-link-url')).toHaveCount(0);
+  await checkpoint(shot, 'wiki-share-link-org');
+  await dialog.getByRole('switch', { name: 'Доступ по ссылке' }).click();
+  await expect(dialog.getByTestId('wiki-link-url')).toHaveValue(/\/w\//);
+  await checkpoint(shot, 'wiki-share-link-public');
+});
+
 test('wiki-versions', async ({ open, win, shot, theme }) => {
   test.skip(ONLY_DARK(theme), 'dark only');
   await open();

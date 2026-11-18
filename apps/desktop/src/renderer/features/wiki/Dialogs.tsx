@@ -9,7 +9,8 @@ import { fmt } from '../../lib/format';
 import { diffable, diffBlocks, type DiffBlock } from '../../lib/textDiff';
 import { docHandle } from '../../lib/wiki/docHandle';
 import { ancestorsOf, childKey, isInSubtree, TOP } from '../../lib/wiki/tree';
-import { loadChildren, movePage, restoreVersion, wikiApi } from '../../services/wiki';
+import { copyPageLink, loadChildren, movePage, restoreVersion, wikiApi } from '../../services/wiki';
+import { wikiPageUrl } from '../../services/links';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { useWiki } from '../../stores/wiki';
@@ -147,6 +148,31 @@ const publicUrl = (code: string): string => new URL(`/w/${code}`, useSession.get
  * «Вместе с подстраницами» (the public page lists the branch), the address with «Скопировать»,
  * the term (chosen before switching on), views. A live link is updated in place, keeping its code.
  */
+function AddressRow({ address, onCopy, testId }: { address: string; onCopy?: () => void; testId: string }): ReactNode {
+  return (
+    <div className="flex items-center gap-2">
+      <Input readOnly value={address} aria-label={t('disk.link.address')} className="min-w-0 flex-1 text-ellipsis font-mono text-caption" onFocus={(e) => e.currentTarget.select()} data-testid={`${testId}-url`} />
+      <Button
+        variant="secondary"
+        className="shrink-0"
+        disabled={!address}
+        onClick={
+          onCopy ??
+          (() =>
+            void navigator.clipboard.writeText(address).then(
+              () => toast.success(t('disk.link.copied')),
+              (e: unknown) => toast.fail(e),
+            ))
+        }
+        data-testid={`${testId}-copy`}
+      >
+        <Copy className="size-3.5" aria-hidden />
+        {t('disk.link.copyShort')}
+      </Button>
+    </div>
+  );
+}
+
 function LinkPanel({ pageId }: { pageId: string }): ReactNode {
   const link = useWiki((s) => s.pages[pageId]?.link);
   const on = !!link;
@@ -155,6 +181,7 @@ function LinkPanel({ pageId }: { pageId: string }): ReactNode {
   const [children, setChildren] = useState(link?.includeChildren ?? false);
   const [busy, setBusy] = useState(false);
   const address = url || (link ? publicUrl(link.code) : '');
+  const orgUrl = wikiPageUrl(pageId) ?? '';
   const apply = (p: { on: boolean; includeChildren: boolean }): void => {
     setBusy(true);
     const done = (): void => setBusy(false);
@@ -187,6 +214,11 @@ function LinkPanel({ pageId }: { pageId: string }): ReactNode {
   const until = link?.expiresAt ? timestampDate(link.expiresAt) : null;
   return (
     <div className="flex flex-col gap-4" data-testid="wiki-link">
+      <div className="flex flex-col gap-2" data-testid="wiki-link-org">
+        <span className="text-body">{t('wiki.link.org')}</span>
+        <AddressRow address={orgUrl} onCopy={() => copyPageLink(pageId)} testId="wiki-link-org" />
+        <p className="text-caption text-muted">{t('wiki.link.orgHint')}</p>
+      </div>
       <Switch checked={on} onChange={(v) => apply({ on: v, includeChildren: children })} label={t('wiki.link.on')} hint={t('wiki.link.hint')} disabled={busy} />
       <Switch
         checked={children}
@@ -200,24 +232,7 @@ function LinkPanel({ pageId }: { pageId: string }): ReactNode {
       />
       {on ? (
         <>
-          <div className="flex items-center gap-2">
-            <Input readOnly value={address} aria-label={t('disk.link.address')} className="min-w-0 flex-1 text-ellipsis font-mono text-caption" onFocus={(e) => e.currentTarget.select()} data-testid="wiki-link-url" />
-            <Button
-              variant="secondary"
-              className="shrink-0"
-              disabled={!address}
-              onClick={() =>
-                void navigator.clipboard.writeText(address).then(
-                  () => toast.success(t('disk.link.copied')),
-                  (e: unknown) => toast.fail(e),
-                )
-              }
-              data-testid="wiki-link-copy"
-            >
-              <Copy className="size-3.5" aria-hidden />
-              {t('disk.link.copyShort')}
-            </Button>
-          </div>
+          <AddressRow address={address} testId="wiki-link" />
           <p className="text-caption text-muted">
             {until ? t('disk.link.until', { date: fmt.stamp(until) }) : t('disk.link.forever')}
             {' · '}

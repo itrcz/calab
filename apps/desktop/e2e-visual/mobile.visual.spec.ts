@@ -3083,6 +3083,9 @@ test('m-wiki-page', async ({ page }) => {
   await page.getByTestId('wiki-menu-access').tap();
   await expect(page.getByRole('dialog')).toBeVisible();
   await checkpoint(page, 'm-wiki-share', { snapshot: false });
+  await page.getByRole('dialog').getByRole('radio', { name: 'Ссылка' }).tap();
+  await expect(page.getByTestId('wiki-link-org-url')).toBeVisible();
+  await checkpoint(page, 'm-wiki-share-link', { snapshot: false });
 });
 
 test('m-wiki-toolbar', async ({ page }) => {
