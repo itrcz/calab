@@ -83,3 +83,28 @@ export function outputsChanged(prev: readonly Device[] | null, next: readonly De
       .join('\n');
   return key(prev) !== key(next);
 }
+
+/**
+ * The output the voices actually play to moved (CBF-193 review): the sink id changed, the chosen
+ * device came back or went, or — on the «default» alias — the OS default names another device.
+ * A device that comes or goes elsewhere (a monitor with speakers, a second headset while the
+ * voices stay on the speakers) leaves the shared renderer alone: re-binding then would cut every
+ * voice for nothing. Where the device behind the sink is unknown (no alias, no ids yet) any
+ * output change counts (`outputsChanged`). A renderer that dies anyway reports `error` on its
+ * elements, and the owner re-binds then.
+ */
+export function effectiveOutputChanged(prev: readonly Device[] | null, next: readonly Device[], chosen: string | null): boolean {
+  if (!prev) return true;
+  const target = (l: readonly Device[]): string | null => {
+    const outs = l.filter((d) => d.kind === 'audiooutput' && d.deviceId !== '');
+    if (outs.length === 0) return null;
+    const sink = outputSink(l, chosen);
+    if (sink !== '' && sink !== DEFAULT_SINK) return `id:${sink}`;
+    const def = outs.find((d) => d.deviceId === DEFAULT_SINK);
+    return def ? `default:${def.groupId}|${deviceName(def.label)}` : null;
+  };
+  const a = target(prev);
+  const b = target(next);
+  if (a === null || b === null) return outputsChanged(prev, next);
+  return a !== b;
+}

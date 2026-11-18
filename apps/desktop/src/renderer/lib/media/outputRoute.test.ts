@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureOnOutputHeadset, livekitOutputStale, outputSink, outputsChanged } from './outputRoute';
+import { captureOnOutputHeadset, effectiveOutputChanged, livekitOutputStale, outputSink, outputsChanged } from './outputRoute';
 
 const out = (deviceId: string, label: string, groupId = `g-${deviceId}`) => ({ deviceId, groupId, kind: 'audiooutput' as const, label });
 const inp = (deviceId: string, label: string, groupId = `g-${deviceId}`) => ({ deviceId, groupId, kind: 'audioinput' as const, label });
@@ -105,5 +105,23 @@ describe('outputsChanged', () => {
   it('only inputs / cameras changed, or the order: no', () => {
     expect(outputsChanged(base, [defaultTo(spk), spk, air, mbpMic])).toBe(false);
     expect(outputsChanged(base, [air, spk, defaultTo(spk), { deviceId: 'cam', groupId: 'c', kind: 'videoinput' as never, label: 'FaceTime' }])).toBe(false);
+  });
+});
+
+describe('effectiveOutputChanged', () => {
+  const base = [defaultTo(spk), spk, air, mbpMic, airMic];
+  it('the default moves, the chosen device goes or comes back, unknown before: yes', () => {
+    expect(effectiveOutputChanged(base, [defaultTo(air), spk, air], null)).toBe(true);
+    expect(effectiveOutputChanged(base, [defaultTo(spk), spk], 'air')).toBe(true);
+    expect(effectiveOutputChanged([defaultTo(spk), spk], base, 'air')).toBe(true);
+    expect(effectiveOutputChanged(null, base, null)).toBe(true);
+  });
+  it('another output comes or goes while the voices stay where they are: no', () => {
+    expect(effectiveOutputChanged(base, [defaultTo(spk), spk, mbpMic], null)).toBe(false);
+    expect(effectiveOutputChanged(base, [defaultTo(air), spk, air, out('hdmi', 'LG Monitor')], 'air')).toBe(false);
+  });
+  it('no alias (the device behind the sink unknown): any output change', () => {
+    expect(effectiveOutputChanged([spk, air], [spk], null)).toBe(true);
+    expect(effectiveOutputChanged([spk, air], [spk, air, mbpMic], null)).toBe(false);
   });
 });

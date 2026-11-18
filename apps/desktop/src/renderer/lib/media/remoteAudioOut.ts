@@ -171,9 +171,10 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
     const out: RebindResult = { rebound: 0, blocked: 0, failed: 0 };
     const entries = [...this.els.values()];
     const run = Promise.all(entries.map((e) => e.ops)).then(async () => {
-      // Still ours and with a stream (an element without one has no player to rebuild).
-      const live = entries
-        .filter((e) => this.els.get(e.sid) === e && e.el.srcObject)
+      // Every element with a stream NOW (an element without one has no player to rebuild): one
+      // added since the pass started already plays through the old renderer and would keep it.
+      const live = [...this.els.values()]
+        .filter((e) => e.el.srcObject)
         .map((e) => ({ e, src: e.el.srcObject as MediaProvider }));
       // 1. All players stop in this one synchronous pass: the shared renderer goes with the last.
       for (const { e } of live) e.el.srcObject = null;

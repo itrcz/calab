@@ -60,7 +60,7 @@ import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { answerCallSelf, canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, mySeat, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
-import { captureOnOutputHeadset, livekitOutputStale, outputSink, outputsChanged } from '../lib/media/outputRoute';
+import { captureOnOutputHeadset, effectiveOutputChanged, livekitOutputStale, outputSink } from '../lib/media/outputRoute';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
 import { isTempRoom } from '../lib/tempRooms';
@@ -2222,6 +2222,8 @@ class VoiceEngine {
       this.stopMicPipeline();
     }
     for (const el of this.audioOut.clear()) el.remove();
+    if (this.rebindTimer !== null) window.clearTimeout(this.rebindTimer);
+    this.rebindTimer = null;
     this.resetRecovery(keepSeat || park);
     this.viewers.clear();
     this.wanted.clear();
@@ -3124,8 +3126,9 @@ class VoiceEngine {
       }
       const prev = this.devices;
       this.devices = next;
-      // An input / camera change leaves the remote renderers alone (CBF-108).
-      if (announce && outputsChanged(prev, next)) {
+      // An input / camera change, or an output the voices do not use, leaves the remote
+      // renderers alone (CBF-108, CBF-193): a re-bind cuts every voice for a moment.
+      if (announce && effectiveOutputChanged(prev, next, prefs().outputDeviceId)) {
         this.brokenRebinds = BROKEN_REBINDS;
         this.scheduleRebind();
       }
@@ -4361,7 +4364,9 @@ class VoiceEngine {
    * failing on a fresh device cannot spin the renderer process).
    */
   private onRemoteAudioBroken(): void {
-    if (!this.room || this.brokenRebinds <= 0) return;
+    // A pass already due covers this element too: every element of a dead renderer fires
+    // `error` at once, which must not spend the whole budget on one pass.
+    if (!this.room || this.rebindTimer !== null || this.brokenRebinds <= 0) return;
     this.brokenRebinds--;
     log.info('voice: a remote audio element reported a media error, re-binding');
     this.scheduleRebind();

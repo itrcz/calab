@@ -1992,6 +1992,7 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
       await vi.advanceTimersByTimeAsync(2000);
       const before = a.binds;
       a.dispatch('error');
+      a.dispatch('error'); // every element of a dead renderer reports at once: one pass, one unit of budget
       await vi.advanceTimersByTimeAsync(100);
       expect(a.binds).toBe(before); // the route settles first
       await vi.advanceTimersByTimeAsync(400);
