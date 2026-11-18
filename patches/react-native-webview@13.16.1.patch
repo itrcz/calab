@@ -2,9 +2,11 @@ diff --git a/android/src/main/java/com/reactnativecommunity/webview/CalabOriginG
 new file mode 100644
 --- /dev/null
 +++ b/android/src/main/java/com/reactnativecommunity/webview/CalabOriginGuard.java
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,109 @@
 +package com.reactnativecommunity.webview;
 +
++import java.util.Collections;
++import java.util.Set;
 +import java.util.regex.Pattern;
 +
 +/**
@@ -99,6 +101,16 @@ new file mode 100644
 +            && p.host.equalsIgnoreCase(origin.host)
 +            && (p.port == -1 ? 443 : p.port) == origin.port;
 +    }
++
++    /**
++     * Origin rules for the Calab document-start script (ADR-0070, Android): exactly the app
++     * origin, so only an app document runs the bootstrap; subframes self-reject inside it.
++     * Without a valid origin in the manifest the rules widen to "*" — fail-open for the
++     * injection scope only, the message-channel guard stays fail-closed.
++     */
++    static Set<String> documentStartOriginRules(Origin origin) {
++        return Collections.singleton(origin != null ? origin.toString() : "*");
++    }
 +}
 diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java b/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java
 --- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java
@@ -130,7 +142,34 @@ diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebChrome
 diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java b/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
 --- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
 +++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
-@@ -253,7 +253,18 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+@@ -3,6 +3,7 @@ package com.reactnativecommunity.webview;
+ import android.annotation.SuppressLint;
+ import android.graphics.Rect;
+ import android.net.Uri;
++import android.os.Looper;
+ import android.text.TextUtils;
+ import android.view.ActionMode;
+ import android.view.Menu;
+@@ -18,6 +19,7 @@ import android.webkit.WebViewClient;
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+ import androidx.webkit.JavaScriptReplyProxy;
++import androidx.webkit.ScriptHandler;
+ import androidx.webkit.WebMessageCompat;
+ import androidx.webkit.WebViewCompat;
+ import androidx.webkit.WebViewFeature;
+@@ -53,6 +55,10 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+     String injectedJS;
+     protected @Nullable
+     String injectedJSBeforeContentLoaded;
++    // Calab patch (ADR-0070, Android): the same script registered as a document-start script, so
++    // the engine injects it before any page script; null without the feature (WebView < 113 keeps
++    // the legacy onPageStarted path) or with no script set.
++    private @Nullable ScriptHandler calabDocumentStartScript = null;
+     protected static final String JAVASCRIPT_INTERFACE = "ReactNativeWebView";
+     protected @Nullable
+     RNCWebViewBridge fallbackBridge;
+@@ -253,7 +259,18 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
              this.bridgeListener = new WebViewCompat.WebMessageListener() {
                @Override
                public void onPostMessage(@NonNull WebView view, @NonNull WebMessageCompat message, @NonNull Uri sourceOrigin, boolean isMainFrame, @NonNull JavaScriptReplyProxy replyProxy) {
@@ -150,7 +189,70 @@ diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.j
                }
              };
              WebViewCompat.addWebMessageListener(
-@@ -444,6 +455,12 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+@@ -309,6 +326,11 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+     }
+ 
+     public void callInjectedJavaScriptBeforeContentLoaded() {
++        // Calab patch (ADR-0070, Android): with a document-start registration alive the engine has
++        // already run this script before any page script; onPageStarted must not run it again.
++        if (calabDocumentStartScript != null) {
++            return;
++        }
+         if (getSettings().getJavaScriptEnabled() &&
+                 injectedJSBeforeContentLoaded != null &&
+                 !TextUtils.isEmpty(injectedJSBeforeContentLoaded)) {
+@@ -317,6 +339,50 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+         }
+     }
+ 
++    /**
++     * Calab patch (ADR-0070, Android; ADR-0067): the legacy injection above runs from
++     * onPageStarted, where evaluateJavascript races the page's own scripts — on a fast, cached
++     * load the page wins, CalabHostActivity is missing at boot and the host channel is dead for
++     * that document. Where the engine supports it (WebViewFeature.DOCUMENT_START_SCRIPT, WebView
++     * 113+) the script is registered as a document-start script: run atomically at document
++     * start, before any page script, on every navigation. Re-registering replaces the previous
++     * script (the bootstrap changes without remounting the WebView); the engine injects it into
++     * every frame of an allowed origin, and subframes self-reject inside the bootstrap. Scope:
++     * exactly the app origin when the manifest resolves it, otherwise "*" — fail-open for the
++     * injection scope only, the message-channel guard stays fail-closed. Called by the manager's
++     * prop setter, before onAfterUpdateTransaction loads the source; RN runs both on the UI
++     * thread, and the marshal below keeps that ordering even if it ever did not.
++     */
++    public void calabSetInjectedJSBeforeContentLoaded(@Nullable String script) {
++        injectedJSBeforeContentLoaded = script;
++        if (Looper.myLooper() == Looper.getMainLooper()) {
++            calabApplyDocumentStartScript();
++        } else {
++            post(new Runnable() {
++                @Override
++                public void run() {
++                    calabApplyDocumentStartScript();
++                }
++            });
++        }
++    }
++
++    private void calabApplyDocumentStartScript() {
++        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
++            return; // Legacy path: onPageStarted injects the stored field, exactly as upstream.
++        }
++        if (calabDocumentStartScript != null) {
++            calabDocumentStartScript.remove(); // removes the document-start registration
++            calabDocumentStartScript = null;
++        }
++        if (TextUtils.isEmpty(injectedJSBeforeContentLoaded)) {
++            return;
++        }
++        CalabOriginGuard.Origin origin = RNCWebViewClient.calabWebOrigin(getContext());
++        calabDocumentStartScript = WebViewCompat.addDocumentStartJavaScript(
++                this, injectedJSBeforeContentLoaded, CalabOriginGuard.documentStartOriginRules(origin));
++    }
++
+     protected String injectedJavaScriptObject = null;
+ 
+     public void setInjectedJavaScriptObject(String obj) {
+@@ -444,6 +510,12 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
           */
          @JavascriptInterface
          public void postMessage(String message) {
@@ -284,6 +386,20 @@ diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewCl
      }
  
      @Override
+diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt
+@@ -494,7 +494,9 @@ class RNCWebViewManagerImpl(private val newArch: Boolean = false) {
+ 
+     fun setInjectedJavaScriptBeforeContentLoaded(viewWrapper: RNCWebViewWrapper, value: String?) {
+         val view = viewWrapper.webView
+-        view.injectedJSBeforeContentLoaded = value
++        // Calab patch (ADR-0070, Android): store the field and, where the engine supports it
++        // (WebView 113+), register the script to run at document start instead of onPageStarted.
++        view.calabSetInjectedJSBeforeContentLoaded(value)
+     }
+ 
+     fun setInjectedJavaScriptForMainFrameOnly(viewWrapper: RNCWebViewWrapper, value: Boolean) {
 diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
 --- a/apple/RNCWebViewImpl.m
 +++ b/apple/RNCWebViewImpl.m
