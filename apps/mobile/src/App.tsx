@@ -268,11 +268,16 @@ function Host({ origin }: { origin: string }) {
 
   const onLoadStart = useCallback(
     ({ nativeEvent }: WebViewNavigationEvent) => {
+      // No resetActivity() here: on Android onLoadStart also fires for SPA route changes
+      // (doUpdateVisitedHistory on history.pushState), where the document — and the whole host
+      // handshake — survive. A real reload re-handshakes by itself: the fresh page sends hello
+      // on its first capability setter, and logout sends revoke. Resetting here dropped the
+      // document while the page stayed ready, and the channel went dead until the next reload
+      // (CBF-192 device check 2026-11-18: no push registration, no media-session FGS).
       if (!activity.current.belongsTo(state.generation)) return;
-      resetActivity();
       if (!leftApp(nativeEvent.url)) dispatch({ type: 'loadStart' });
     },
-    [leftApp, resetActivity, state.generation],
+    [leftApp, state.generation],
   );
 
   const onNavigationStateChange = useCallback(
