@@ -94,6 +94,7 @@ import {
   seatGraceMs,
   type MicPubView,
 } from '../lib/voiceRecovery';
+import { SilentVoiceWatch, type SilentStep, type VoiceFlow } from '../lib/silentVoice';
 import { SELF_SYNC_LAG_MS, SelfStateSync, type SelfFlags } from '../lib/selfStateSync';
 import { CONNECT_STUCK_MS, ConnectWatchdog, DISCONNECT_WAIT_MS, RECONNECT_STUCK_MS, STOP_STREAM_WAIT_MS, TEARDOWN_WAIT_MS, reconnectVerdict, rejectAfter, settleWithin, type ConnectStage, type StuckKind } from '../lib/voiceWatchdog';
 import { annot } from './annot';
@@ -373,6 +374,24 @@ class VoiceEngine {
    */
   private remoteSpeakers: string[] = [];
   private readonly levelSpeakers = new RemoteLevelSpeaking();
+  /** Remote identities speaking at the last syncSpeaking: a new one starts the silent-voice check. */
+  private remoteSpeakingNow = new Set<string>();
+  /**
+   * «Speaking but silent» (lib/silentVoice.ts, docs/02 «Тихий собеседник»): a speaking colleague
+   * whose subscribed mic plays nothing here — re-attach, then resubscribe, bounded. Runs only on
+   * speaking starts: one receiver getStats + one one-shot timer per check, no permanent timer.
+   */
+  private readonly silentWatch = new SilentVoiceWatch({
+    probe: (sid) => this.probeMic(sid),
+    speaking: (sid) => {
+      const hit = this.micPub(sid);
+      return hit !== null && this.remoteSpeakingNow.has(hit.p.identity);
+    },
+    act: (sid, step, why) => this.onSilentMic(sid, step, why),
+    now: () => Date.now(),
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (id) => window.clearTimeout(id as number),
+  });
   /** The remote-level speaking sampler runs (on every 2nd echo tick: one timer, docs/14-energy.md). */
   private levelSpeakOn = false;
   private levelTick = 0;
@@ -2667,6 +2686,7 @@ class VoiceEngine {
     // the speaking hold. VAD keeps the hold: the gate flaps between words.
     const instantOff = me && this.micMode() === 'ptt' && !this.selfSpeaking ? new Set([me]) : undefined;
     const remote = [...this.remoteSpeakers, ...this.levelSpeakers.identities()];
+    this.watchSpeakers(remote);
     this.speakers.update(speakingUserIds(remote, local, { userId: me, on: this.selfSpeaking && (this.room !== null || this.nativeRoom !== null) }), instantOff);
   }
 
@@ -2740,6 +2760,7 @@ class VoiceEngine {
 
   private resetSpeaking(): void {
     this.remoteSpeakers = [];
+    this.remoteSpeakingNow = new Set();
     this.stopLevelSpeaking();
     this.levelSpeakers.reset();
     this.selfSpeaking = false;
@@ -2985,6 +3006,106 @@ class VoiceEngine {
     // track.detach() is usually empty here: our element is the one registered for the sid.
     if (track.sid) this.audioOut.remove(track.sid)?.remove();
     for (const el of track.detach()) el.remove();
+  }
+
+  /**
+   * A fresh player for one remote track: its element drops the stream (srcObject = null, so the
+   * next attach builds a new MediaStream and player instead of re-using the old one), leaves the
+   * DOM and RemoteAudioOut, and the track is attached again (same rules as on TrackSubscribed).
+   */
+  private reattachAudio(track: RemoteTrack, p: RemoteParticipant): void {
+    if (!track.sid) return;
+    const old = this.audioOut.remove(track.sid);
+    if (old) {
+      track.detach(old);
+      old.srcObject = null;
+      old.remove();
+    }
+    this.attachAudio(track, p, false);
+  }
+
+  /** The remote mic publication with this track sid, and its participant. */
+  private micPub(sid: string): { pub: RemoteTrackPublication; p: RemoteParticipant } | null {
+    const room = this.room;
+    if (!room) return null;
+    for (const p of room.remoteParticipants.values()) {
+      const pub = p.getTrackPublication(Track.Source.Microphone);
+      if (pub?.trackSid === sid) return { pub, p };
+    }
+    return null;
+  }
+
+  /** New remote speakers (server active speakers or their incoming level) start the silent-voice check. */
+  private watchSpeakers(remote: readonly string[]): void {
+    const now = new Set(remote);
+    const started = [...now].filter((id) => !this.remoteSpeakingNow.has(id));
+    this.remoteSpeakingNow = now;
+    for (const id of started) this.onRemoteSpeakingStart(id);
+  }
+
+  private onRemoteSpeakingStart(identity: string): void {
+    const room = this.room;
+    if (!room || this.nativeRoom || room.state !== ConnectionState.Connected) return;
+    // Deafened: nothing is subscribed by design. A hidden web page: the page coming back checks.
+    if (useVoice.getState().deafened || (platform.kind === 'web' && document.hidden)) return;
+    const p = room.remoteParticipants.get(identity);
+    const pub = p?.getTrackPublication(Track.Source.Microphone);
+    if (!p || !pub?.trackSid || pub.isMuted) return;
+    const track = pub.track;
+    // Speaking without a track or an element (a TrackSubscribed that never reached us): the
+    // structural check attaches / resubscribes (bounded by its own tries).
+    if (!track?.sid || !this.audioOut.has(track.sid)) {
+      this.checkAudio('speaking without audio');
+      return;
+    }
+    // Muted by me (per-user mute, volume 0): silence is what was asked for.
+    const el = this.audioOut.element(track.sid);
+    if (!el || el.muted || el.volume === 0) return;
+    this.silentWatch.onSpeaking(pub.trackSid);
+  }
+
+  /** One mic's receive side now: its receiver's inbound-rtp counters and whether our element plays this track. */
+  private async probeMic(sid: string): Promise<VoiceFlow | null> {
+    const track = this.micPub(sid)?.pub.track;
+    const rx = track?.receiver;
+    if (!track?.sid || !rx) return null;
+    let report: RTCStatsReport;
+    try {
+      report = await rx.getStats();
+    } catch {
+      return null;
+    }
+    const entry = inboundRtp(report, 'audio')[0];
+    const packets = entry?.['packetsReceived'];
+    const samples = entry?.['totalSamplesReceived'];
+    if (typeof packets !== 'number') return null;
+    const el = this.audioOut.element(track.sid);
+    const src = el?.srcObject;
+    const bound = el !== undefined && !el.paused && src instanceof MediaStream && src.getAudioTracks().includes(track.mediaStreamTrack);
+    return { packets, samples: typeof samples === 'number' ? samples : null, bound };
+  }
+
+  /** A speaking colleague's mic plays nothing here (lib/silentVoice.ts): one bounded step. */
+  private onSilentMic(sid: string, step: SilentStep, why: string): void {
+    const hit = this.micPub(sid);
+    if (!hit || useVoice.getState().deafened) return;
+    const { pub, p } = hit;
+    if (step === 'give-up') {
+      log.warn(`voice: mic ${sid} of ${p.identity} still silent while speaking after re-attach and resubscribe (${why}); a rejoin is left to the user`);
+      return;
+    }
+    if (step === 'reattach') {
+      if (!pub.track) return;
+      log.info(`voice: mic ${sid} of ${p.identity} speaking but silent here (${why}), re-attaching its <audio>`);
+      this.reattachAudio(pub.track, p);
+      return;
+    }
+    log.info(`voice: mic ${sid} of ${p.identity} speaking but silent here (${why}), resubscribing`);
+    const room = this.room;
+    pub.setSubscribed(false);
+    window.setTimeout(() => {
+      if (this.room === room && !useVoice.getState().deafened) pub.setSubscribed(true);
+    }, RESUBSCRIBE_GAP_MS);
   }
 
   private nativeControls(): HostAudioControls {
@@ -4321,6 +4442,7 @@ class VoiceEngine {
     this.audioCheckTimer = null;
     this.micCheckTimer = null;
     this.resubscribes.clear();
+    this.silentWatch.reset();
     this.micMutedAt = null;
     this.micResumes = 0;
     this.micRestarts = 0;
@@ -4446,7 +4568,8 @@ class VoiceEngine {
    */
   private checkAudio(why: string): void {
     const room = this.room;
-    if (!room || document.hidden) return; // the page coming back checks again
+    // A hidden web page: the page coming back checks again. A hidden desktop window still plays.
+    if (!room || (platform.kind === 'web' && document.hidden)) return;
     const pubs = new Map<string, { pub: RemoteTrackPublication; p: RemoteParticipant }>();
     const views: MicPubView[] = [];
     for (const p of room.remoteParticipants.values()) {
