@@ -22,6 +22,7 @@
       "electron-winstaller"
     ],
     "patchedDependencies": {
+      "livekit-client@2.23.0": "patches/livekit-client@2.23.0.patch",
       "uiohook-napi@1.5.5": "patches/uiohook-napi@1.5.5.patch",
       "react-native-webview@13.16.1": "patches/react-native-webview@13.16.1.patch",
       "react-virtuoso@4.18.16": "patches/react-virtuoso@4.18.16.patch"

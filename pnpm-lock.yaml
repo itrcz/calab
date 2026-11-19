@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  livekit-client@2.23.0:
+    hash: f672031a1959e1b70ea5d8209ddf73d4ee4fa095e7cd24562a07c85ef81ff964
+    path: patches/livekit-client@2.23.0.patch
   react-native-webview@13.16.1:
     hash: 5f5f62729d7e3b9e60aa9815342a952b4bce5f70cc1156456fe9fef5a8f96012
     path: patches/react-native-webview@13.16.1.patch
@@ -204,7 +207,7 @@ importers:
         version: 31.0.0(@noble/hashes@2.4.0)
       livekit-client:
         specifier: 2.23.0
-        version: 2.23.0(@types/dom-mediacapture-record@1.0.22)
+        version: 2.23.0(patch_hash=f672031a1959e1b70ea5d8209ddf73d4ee4fa095e7cd24562a07c85ef81ff964)(@types/dom-mediacapture-record@1.0.22)
       livekit-server-sdk:
         specifier: ^2.19.3
         version: 2.19.3
@@ -11232,7 +11235,7 @@ snapshots:
 
   linkifyjs@4.4.0: {}
 
-  livekit-client@2.23.0(@types/dom-mediacapture-record@1.0.22):
+  livekit-client@2.23.0(patch_hash=f672031a1959e1b70ea5d8209ddf73d4ee4fa095e7cd24562a07c85ef81ff964)(@types/dom-mediacapture-record@1.0.22):
     dependencies:
       '@livekit/mutex': 1.1.1
       '@livekit/protocol': 1.52.1

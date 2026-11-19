@@ -1,0 +1,26 @@
+diff --git a/dist/livekit-client.esm.mjs b/dist/livekit-client.esm.mjs
+--- a/dist/livekit-client.esm.mjs
++++ b/dist/livekit-client.esm.mjs
+@@ -26856,6 +26856,9 @@
+   clearReconnectTimeout() {
+     if (this.reconnectTimeout) {
+       CriticalTimers.clearTimeout(this.reconnectTimeout);
++      // `pendingReconnect` is derived from this handle, so it must not outlive the timer
++      // (backport of livekit-client 2.24.0: a stale handle buffered room events until the next reconnect)
++      this.reconnectTimeout = undefined;
+     }
+   }
+   clearPendingReconnect() {
+diff --git a/src/room/RTCEngine.ts b/src/room/RTCEngine.ts
+--- a/src/room/RTCEngine.ts
++++ b/src/room/RTCEngine.ts
+@@ -2085,6 +2085,9 @@
+   private clearReconnectTimeout() {
+     if (this.reconnectTimeout) {
+       CriticalTimers.clearTimeout(this.reconnectTimeout);
++      // `pendingReconnect` is derived from this handle, so it must not outlive the timer
++      // (backport of livekit-client 2.24.0: a stale handle buffered room events until the next reconnect)
++      this.reconnectTimeout = undefined;
+     }
+   }
+ 
