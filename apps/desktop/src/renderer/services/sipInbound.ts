@@ -2,7 +2,7 @@ import { PresenceStatus, SipCallStatus, type SipCall, type WorkspaceSnapshot } f
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
-import { holdNotification } from '../lib/notifyHold';
+import { showNotification } from '../lib/notifyHold';
 import { toSource } from '../lib/notifyClick';
 import { log } from '../lib/log';
 import { formatPhone } from '../lib/sip';
@@ -75,11 +75,11 @@ function notify(c: SipCall): void {
     // Caller ID (ADR-0137 §2): «Входящий звонок · Анна Петрова (ООО Ромашка)», else the number.
     const who = c.callerName || c.callerCompany || c.callerUserId ? phonePartyLabel(c, t('call.sipUnknown'), c.callerUserId ? memberName(c.workspaceId, c.callerUserId) : '') : '';
     const title = who ? t('telc.notify', { who }) : t('call.sipNotify', { number: c.number ? formatPhone(c.number) : t('call.sipUnknown') });
-    const n = holdNotification(new Notification(title, {
+    const n = showNotification(title, {
       tag: `sipin:${c.id}`,
       silent: true,
       requireInteraction: true,
-    }));
+    });
     n.onclick = toSource(() => n.close());
     notice = n;
   } catch {

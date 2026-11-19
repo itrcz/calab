@@ -1,5 +1,5 @@
 import { pushOnTab } from '../lib/phoneNav';
-import { holdNotification } from '../lib/notifyHold';
+import { showNotification } from '../lib/notifyHold';
 import { toSource } from '../lib/notifyClick';
 import { holdBoardsAddress } from './boardsAddress';
 import { useInbox } from '../stores/inbox';
@@ -396,7 +396,7 @@ function notifyTask(u: TaskUpdate): void {
   if (visible) return;
   const what = noticeText(task, n);
   try {
-    const note = holdNotification(new Notification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` }));
+    const note = showNotification(`${task.key} · ${task.title}`, { body: what, silent: true, tag: `task:${task.id}` });
     note.onclick = toSource(() => openTaskAnywhere(task));
   } catch {
     // notifications unavailable

@@ -1,5 +1,5 @@
 import { timestampFromMs, timestampMs } from '@bufbuild/protobuf/wkt';
-import { holdNotification } from '../lib/notifyHold';
+import { showNotification } from '../lib/notifyHold';
 import { toSource } from '../lib/notifyClick';
 import type { MessageInitShape } from '@bufbuild/protobuf';
 import {
@@ -357,7 +357,7 @@ function remindExternal(minutes: number, ev: WireExternalEvent): void {
 /** The system notification (one per tag on a machine) and the in-app toast with its action. */
 function notifyReminder(text: string, action: string, tag: string, act: () => void): void {
   try {
-    const n = holdNotification(new Notification(text, { body: action, tag }));
+    const n = showNotification(text, { body: action, tag });
     n.onclick = toSource(act);
   } catch {
     // notifications unavailable: the toast below still says it

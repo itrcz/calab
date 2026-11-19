@@ -1,5 +1,5 @@
 import { PresenceStatus } from '@calaba/protocol';
-import { holdNotification } from '../../lib/notifyHold';
+import { showNotification } from '../../lib/notifyHold';
 import { toSource } from '../../lib/notifyClick';
 import type { MailEvent } from '../../../shared/mail';
 import { t } from '../../i18n';
@@ -56,13 +56,11 @@ function notifyNewMail(e: Extract<MailEvent, { type: 'new_mail' }>): void {
   if (onScreen(e)) return;
   const account = useMail.getState().accounts[e.accountId];
   try {
-    const n = holdNotification(
-      new Notification(`${addressLabel(e.from)} · ${e.subject.trim() || t('mbox.noSubject')}`, {
-        body: account?.email ?? '',
-        silent: true,
-        tag: `mail:${e.messageId}`,
-      }),
-    );
+    const n = showNotification(`${addressLabel(e.from)} · ${e.subject.trim() || t('mbox.noSubject')}`, {
+      body: account?.email ?? '',
+      silent: true,
+      tag: `mail:${e.messageId}`,
+    });
     n.onclick = toSource(() => openMailMessage(e.threadId, e.messageId));
   } catch {
     // notifications unavailable

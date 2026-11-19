@@ -45,6 +45,7 @@ const { useChatView } = await import('../features/chat/chatView');
 const { useRooms } = await import('../stores/rooms');
 const { useSession } = await import('../stores/session');
 const { useInbox } = await import('../stores/inbox');
+const { HOME } = await import('../stores/dms');
 
 const ME = '0190a0b0-0000-7000-8000-00000000000a';
 const id = (n: number): string => `0190a0b0-0000-7000-8000-${String(n).padStart(12, '0')}`;
@@ -189,5 +190,18 @@ describe('system notification of a message (ADR-0141, #99)', () => {
     expect(openRoom).toHaveBeenCalledWith('ws2', 'a');
     expect(useChatView.getState().jump).toMatchObject({ roomId: 'a', messageId: m.id });
     expect(showWindow.mock.invocationCallOrder[0]).toBeLessThan(openRoom.mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it('a DM message: a click opens the chat in «Личные» (HOME), not a workspace', () => {
+    useRooms.getState().upsert({ id: 'd', type: RoomType.DM, workspaceId: '' } as never);
+    const openRoom = vi.fn();
+    useUi.setState({ openRoom } as never);
+    shown.length = 0;
+    const m = create(MessageSchema, { id: id(701), roomId: 'd', authorId: 'other', content: 'привет' });
+    onIncomingMessage(m, '', false);
+    expect(shown).toHaveLength(1);
+    shown[0]?.n.onclick?.();
+    expect(openRoom).toHaveBeenCalledWith(HOME, 'd');
+    expect(useChatView.getState().jump).toMatchObject({ roomId: 'd', messageId: m.id });
   });
 });

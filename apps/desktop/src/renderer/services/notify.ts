@@ -1,5 +1,5 @@
 import { CallOutcome, PresenceStatus, levelNotifies, type Message, type Room } from '@calaba/protocol';
-import { holdNotification } from '../lib/notifyHold';
+import { showNotification } from '../lib/notifyHold';
 import { toSource } from '../lib/notifyClick';
 import { useChatView } from '../features/chat/chatView';
 import { chatSound } from '../lib/chatSound';
@@ -132,7 +132,7 @@ function showMessageNotification(m: Message, workspaceId: string, room: Room | u
   const body = systemPreview(m, author) || previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? t('notify.attachment') : '');
   try {
     const title = messageNoticeTitle(author, room, dm, workspaceNameIfMany(workspaceId));
-    const n = holdNotification(new Notification(title, { body, silent: true, tag: m.roomId }));
+    const n = showNotification(title, { body, silent: true, tag: m.roomId });
     // The chat (switching the workspace) at the message itself.
     n.onclick = toSource(() => {
       useUi.getState().openRoom(dm ? HOME : workspaceId, m.roomId);

@@ -14,7 +14,7 @@ import type { MessageInitShape } from '@bufbuild/protobuf';
 import { t } from '../i18n';
 import { body, call, callEmpty, qs } from '../lib/api/client';
 import { fromWire } from '../lib/mentions';
-import { holdNotification } from '../lib/notifyHold';
+import { showNotification } from '../lib/notifyHold';
 import { toSource } from '../lib/notifyClick';
 import { platform } from '../platform';
 import { itemOf, useCanvasUi } from '../stores/canvasUi';
@@ -236,7 +236,7 @@ export function onCanvasCommentMention(e: CanvasCommentMention): void {
   if (looking) return;
   try {
     const title = t('canvasComments.notice.title', { name: e.canvasName || t('canvas.untitled') });
-    const note = holdNotification(new Notification(title, { body: noticeBody(e), silent: true, tag: `canvas-comment:${e.commentId}` }));
+    const note = showNotification(title, { body: noticeBody(e), silent: true, tag: `canvas-comment:${e.commentId}` });
     note.onclick = toSource(() => void openCanvasComment(e.workspaceId, e.canvasId, e.threadId));
   } catch {
     // notifications unavailable
