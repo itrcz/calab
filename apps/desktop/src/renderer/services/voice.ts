@@ -3047,7 +3047,9 @@ class VoiceEngine {
     const room = this.room;
     if (!room || this.nativeRoom || room.state !== ConnectionState.Connected) return;
     // Deafened: nothing is subscribed by design. A hidden web page: the page coming back checks.
-    if (useVoice.getState().deafened || (platform.kind === 'web' && document.hidden)) return;
+    // Autoplay blocked (web before a tap): every element is paused by the browser, the tap fixes it
+    // (offerPlayback) — healing would spend the whole budget on healthy mics.
+    if (useVoice.getState().deafened || (platform.kind === 'web' && document.hidden) || !room.canPlaybackAudio) return;
     const p = room.remoteParticipants.get(identity);
     const pub = p?.getTrackPublication(Track.Source.Microphone);
     if (!p || !pub?.trackSid || pub.isMuted) return;
@@ -3088,7 +3090,7 @@ class VoiceEngine {
   /** A speaking colleague's mic plays nothing here (lib/silentVoice.ts): one bounded step. */
   private onSilentMic(sid: string, step: SilentStep, why: string): void {
     const hit = this.micPub(sid);
-    if (!hit || useVoice.getState().deafened) return;
+    if (!hit || useVoice.getState().deafened || this.room?.canPlaybackAudio === false) return;
     const { pub, p } = hit;
     if (step === 'give-up') {
       log.warn(`voice: mic ${sid} of ${p.identity} still silent while speaking after re-attach and resubscribe (${why}); a rejoin is left to the user`);
