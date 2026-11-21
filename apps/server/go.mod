@@ -6,14 +6,14 @@ tool google.golang.org/protobuf/cmd/protoc-gen-go
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.48.0
-	github.com/aws/aws-sdk-go-v2/credentials v1.21.0
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.24
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
+	github.com/aws/aws-sdk-go-v2/credentials v1.21.1
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.26
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.115.0
 	github.com/aws/smithy-go v1.28.9
 	github.com/caarlos0/env/v11 v11.4.2
 	github.com/coder/websocket v1.8.15
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/emiago/sipgo v1.7.3
+	github.com/emiago/sipgo v1.7.4
 	github.com/gen2brain/webp v0.6.4
 	github.com/go-asn1-ber/asn1-ber v1.5.8
 	github.com/go-jose/go-jose/v4 v4.1.9
@@ -21,21 +21,21 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/icholy/digest v1.2.0
-	github.com/jackc/pgx/v5 v5.12.0
-	github.com/klippa-app/go-pdfium v1.21.4
-	github.com/livekit/protocol v1.53.2
-	github.com/livekit/server-sdk-go/v2 v2.19.0
+	github.com/jackc/pgx/v5 v5.13.0
+	github.com/klippa-app/go-pdfium v1.21.5
+	github.com/livekit/protocol v1.54.1
+	github.com/livekit/server-sdk-go/v2 v2.20.0
 	github.com/pion/rtp v1.10.6
 	github.com/pion/webrtc/v4 v4.2.26
-	github.com/pressly/goose/v3 v3.30.0
+	github.com/pressly/goose/v3 v3.30.1
 	github.com/prometheus/client_golang v1.25.0
-	github.com/redis/rueidis v1.0.79
+	github.com/redis/rueidis v1.0.80
 	github.com/stripe/stripe-go/v86 v86.4.2
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.48.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/text v0.44.0
@@ -82,14 +82,15 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lithammer/shortuuid/v4 v4.3.0 // indirect
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 // indirect
-	github.com/livekit/mediatransportutil v0.0.0-20260821083140-f234b534b095 // indirect
+	github.com/livekit/mediatransportutil v0.0.0-20261014192331-dd8e31a0adc0 // indirect
 	github.com/livekit/psrpc v0.8.2 // indirect
 	github.com/magefile/mage v1.17.2 // indirect
-	github.com/mfridman/interpolate v0.0.2 // indirect
+	github.com/mfridman/interpolate v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
 	github.com/pion/datachannel v1.6.3 // indirect
 	github.com/pion/dtls/v3 v3.1.15 // indirect
+	github.com/pion/dtls/v4 v4.0.0-rc.8 // indirect
 	github.com/pion/ice/v4 v4.4.8 // indirect
 	github.com/pion/interceptor v0.1.51 // indirect
 	github.com/pion/logging v0.2.4 // indirect
