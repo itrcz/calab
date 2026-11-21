@@ -19,7 +19,7 @@
     "test:docs": "vitest run"
   },
   "dependencies": {
-    "lucide-react": "^1.72.0",
+    "lucide-react": "^1.75.0",
     "next": "15.5.29",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
@@ -33,7 +33,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "eslint": "^10.14.0",
+    "eslint": "^10.15.0",
     "hast-util-to-string": "^3.0.1",
     "rehype-autolink-headings": "^7.1.0",
     "rehype-raw": "^7.0.0",
@@ -49,7 +49,7 @@
     "tailwindcss": "^4.3.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.0",
-    "typescript-eslint": "~8.72.2",
+    "typescript-eslint": "~8.73.0",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.2.0",
     "vitest": "^5.1.0",
