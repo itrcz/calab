@@ -71,7 +71,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           persist-credentials: false   # the next steps build and run PR code; the push token is added only for the push
       - if: steps.decide.outputs.reason == '' && steps.meta.outputs.package-ecosystem == 'go_modules'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: apps/server/go.mod
           cache-dependency-path: apps/server/go.sum
