@@ -1,0 +1,23 @@
+/** English UI strings — echo on loudspeakers (docs/02, docs/08). Same keys as ru/echo.ts. */
+export const deEcho = {
+  'echo.risk': 'Es sieht so aus, als ob die andere Person sich selbst hören kann. Setzen Sie Kopfhörer auf oder wechseln Sie in den „Lautsprecher“-Modus',
+  'echo.riskAction': 'Aktivieren Sie „Lautsprecher“',
+  'echo.riskAuto': 'Es sieht so aus, als ob die andere Person sich selbst hören kann. Während andere reden, wird Ihr Mikrofon leiser („Auto“-Modus)',
+  'echo.riskSpeakers': 'Es sieht so aus, als ob die andere Person sich selbst noch hören kann. Setzen Sie Kopfhörer auf oder stellen Sie Ihre Lautsprecher leiser',
+  'echo.card': 'Lautsprecher und Echo',
+  'echo.mode': 'Wie du zuhörst',
+  'echo.modeHeadphones': 'Kopfhörer',
+  'echo.modeSpeakers': 'Lautsprecher',
+  'echo.modeAuto': 'Automatisch',
+  'echo.hintHeadphones': 'Ihr Mikrofon spielt immer mit voller Lautstärke. Wenn andere beginnen, sich selbst zu hören, wird Calab Sie darüber informieren.',
+  'echo.hintSpeakers': 'Während andere reden, ist Ihr Mikrofon leiser, sodass ihre Stimme aus Ihren Lautsprechern nicht zu ihnen zurückkommt. Sie können immer noch unterbrechen.',
+  'echo.hintAuto': 'Ihr Mikrofon ist abgesenkt, während andere sprechen, aber nur, wenn Calab bemerkt, dass sie sich selbst hören können.',
+  'echo.check': 'Echocheck',
+  'echo.checkHint': 'Ihre Lautsprecher geben 3 Sekunden lang einen leisen Ton ab, während wir im Mikrofon darauf hören',
+  'echo.checkBtn': 'Überprüfen',
+  'echo.checkInCall': 'Während eines Anrufs nicht verfügbar',
+  'echo.none': 'Kein Echo erkannt.',
+  'echo.weak': 'Schwaches Echo: Andere können sich gelegentlich selbst hören. Drehen Sie Ihre Lautsprecher leiser oder wählen Sie „Auto“.',
+  'echo.strong': 'Starkes Echo: Andere werden sich selbst hören. Setzen Sie Kopfhörer auf oder wählen Sie „Lautsprecher“.',
+  'echo.failed': 'Konnte nicht überprüft werden: {error}',
+} as const;

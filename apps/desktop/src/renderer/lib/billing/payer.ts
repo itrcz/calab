@@ -133,7 +133,7 @@ export function countryName(code: string, locale: Locale): string {
   return displayNames(locale)?.of(code) ?? code;
 }
 
-const LOCALE_COUNTRY: Record<Locale, string> = { ru: 'RU', en: 'US', es: 'ES', 'zh-CN': 'CN' };
+const LOCALE_COUNTRY: Record<Locale, string> = { ru: 'RU', en: 'US', es: 'ES', 'zh-CN': 'CN', de: 'DE' };
 
 /**
  * The preselected country of a new payer: Russia for an account of the Russian market, else the

@@ -21,7 +21,7 @@ By submitting a contribution you (a) certify that you have the right to submit i
 - Go: `gofmt`, `golangci-lint` config in `.golangci.yml`.
 - TypeScript: strict, ESLint config in `apps/desktop`.
 - Commit messages in English, imperative mood.
-- UI strings live in `apps/desktop/src/renderer/i18n/<locale>/*.ts` (ru, en, es, zh-CN — add all four).
+- UI strings live in `apps/desktop/src/renderer/i18n/<locale>/*.ts` (ru, en, es, zh-CN, de — add all five).
 - Performance rules apply to every UI change: no `backdrop-filter`, no infinite animations, re-renders under control (see `CLAUDE.md` → «Производительность», `docs/14-energy.md`).
 
 ## Reporting bugs
