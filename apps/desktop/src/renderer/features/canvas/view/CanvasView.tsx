@@ -88,6 +88,7 @@ const REFUSED: Record<RefusedWhy, MessageKey> = {
   size: 'canvasBoard.pasteTooLarge',
   create: 'canvasBoard.createFull',
   clipboard: 'canvasBoard.clipboardFailed',
+  notImage: 'canvasBoard.imageNotPicture',
 };
 
 function readEnv(): Env {
@@ -166,6 +167,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       title: () => live.current.name,
       onTooLarge: () => toast.error(t('canvasBoard.tooLarge')),
       onRefused: (why) => toast.error(t(REFUSED[why])),
+      onImageFailed: (e) => toast.fail(e, t('canvasBoard.imageUploadFailed')),
       onFatal: (code) => {
         setGone(true);
         live.current.onFatal?.(code);

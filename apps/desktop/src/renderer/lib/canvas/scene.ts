@@ -13,7 +13,7 @@ import { pointInShape } from './shapes';
 import { fmtFromDelta, type Fmt } from './richText';
 import { SHAPE_PAD, TEXT_PAD, TextLayouter, stickyPad, isFontToken, storedFontPx, type FontToken } from './textLayout';
 import {
-  DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector, isFrame, isImageSrc,
+  DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector, isFrame, isImageSrc, isLinkUrl,
   type BoxRec, type ConnectorRec, type Endpoint, type FrameRec, type ObjectRec, type RouteKind, type Arrow,
 } from './types';
 
@@ -56,6 +56,12 @@ export function visualBounds(o: ObjectRec): Rect {
   // A frame's title hangs above its top edge (as wide as the frame at most).
   if (o.kind === 'frame') return rectInflate({ x: o.x, y: o.y - FRAME_TITLE_H, w: o.w, h: o.h + FRAME_TITLE_H }, 1);
   return rectInflate(aabb(o), o.kind === 'shape' ? o.strokeWidth : o.kind === 'ink' ? o.strokeWidth / 2 + 1 : 1);
+}
+
+/** A stored web link of a text-bearing box (`isLinkUrl`); anything else reads as none. */
+function linkOf(m: FieldSource): { link?: string } {
+  const v = m.get('link');
+  return isLinkUrl(v) ? { link: v } : {};
 }
 
 /**
@@ -593,7 +599,7 @@ export class Scene {
           kind, id, z, x, y,
           w: num(m.get('w'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE),
           color: color(m.get('color'), DEFAULTS.stickyColor), text: textOf(), ...rich(), ...fontSizeOf('sticky'),
-          ...(m.get('pad') === true ? { pad: true } : {}), ...this.extras(m, true),
+          ...(m.get('pad') === true ? { pad: true } : {}), ...linkOf(m), ...this.extras(m, true),
         };
       case 'text': {
         const w = num(m.get('w'), DEFAULTS.textW, DEFAULTS.minTextW, MAX_SIZE);
@@ -601,7 +607,7 @@ export class Scene {
         const text = textOf();
         const lay = cell.fmt ? this.text.layoutRich(text, cell.fmt, size, w - 2 * TEXT_PAD) : this.text.layout(text, size, w - 2 * TEXT_PAD);
         const h = Math.max(size * 1.3, lay.height) + 2 * TEXT_PAD;
-        return { kind, id, z, x, y, w, h, size, color: color(m.get('color'), DEFAULTS.textColor), text, ...rich(), ...this.extras(m, true) };
+        return { kind, id, z, x, y, w, h, size, color: color(m.get('color'), DEFAULTS.textColor), text, ...rich(), ...linkOf(m), ...this.extras(m, true) };
       }
       case 'shape': {
         const shape = m.get('shape');
@@ -610,7 +616,7 @@ export class Scene {
           w: num(m.get('w'), DEFAULTS.shapeW, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.shapeH, DEFAULTS.minBox, MAX_SIZE),
           shape: isShapeKind(shape) ? shape : 'rect',
           fill: color(m.get('fill'), DEFAULTS.shapeFill), ...(m.get('soft') === true ? { soft: true } : {}), stroke: color(m.get('stroke'), DEFAULTS.shapeStroke),
-          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...rich(), ...fontSizeOf('shape'), ...this.extras(m, true),
+          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...rich(), ...fontSizeOf('shape'), ...linkOf(m), ...this.extras(m, true),
         };
       }
       case 'image': {

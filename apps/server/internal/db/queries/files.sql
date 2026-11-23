@@ -74,6 +74,7 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM disk_file_versions dv WHERE dv.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM canvas_item_files cf WHERE cf.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM sip_ivr_menus im WHERE im.prompt_file_id = f.id OR im.notice_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM sip_accounts sa WHERE sa.off_hours_notice_file_id = f.id)
@@ -100,8 +101,8 @@ SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
 
 -- name: UnattachedBytesByUploader :one
 -- Bytes a user uploaded to a workspace that are not attached to any message yet (stickers,
--- files of the Disk, ADR-0094, and of wiki pages, ADR-0096, are not uploads waiting for a
--- message).
+-- files of the Disk, ADR-0094, of wiki pages, ADR-0096, and of canvases are not uploads waiting
+-- for a message).
 SELECT coalesce(sum(f.size), 0)::bigint FROM files f
 WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.file_id = f.id)
@@ -114,6 +115,7 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM disk_file_versions dv WHERE dv.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM canvas_item_files cf WHERE cf.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id);
 
 -- name: SetFileImage :one

@@ -31,6 +31,7 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/blob"
+	"github.com/calaba/calaba/server/internal/canvasacl"
 	"github.com/calaba/calaba/server/internal/config"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
@@ -877,6 +878,26 @@ func (s *Service) CanRead(r *http.Request, f sqlc.File) (bool, error) {
 				m, err := res.Member(ctx, ch.Page(pf.PageID).WorkspaceID, uid)
 				if err == nil {
 					if ch.Bits(m, &pf.PageID).Has(perm.WikiView) {
+						return true, nil
+					}
+				} else if err := candidate(err); err != nil {
+					return false, err
+				}
+			}
+		} else if !db.IsNotFound(err) {
+			return false, err
+		}
+		// A picture pasted or dropped on a canvas (ADR-0127 addendum 2026-11-23), in the trash
+		// too: CANVAS_VIEW on its canvas.
+		if cf, err := s.db.Q.GetCanvasItemFile(ctx, f.ID); err == nil {
+			ch, err := canvasacl.Load(ctx, s.db.Q, []uuid.UUID{cf.ItemID})
+			if err != nil {
+				return false, err
+			}
+			if ch.Has(cf.ItemID) {
+				m, err := res.Member(ctx, ch.Item(cf.ItemID).WorkspaceID, uid)
+				if err == nil {
+					if ch.Bits(m, &cf.ItemID).Has(perm.CanvasView) {
 						return true, nil
 					}
 				} else if err := candidate(err); err != nil {

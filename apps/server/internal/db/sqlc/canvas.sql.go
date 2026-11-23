@@ -12,6 +12,22 @@ import (
 	"github.com/google/uuid"
 )
 
+const addCanvasItemFile = `-- name: AddCanvasItemFile :exec
+
+INSERT INTO canvas_item_files (item_id, file_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
+`
+
+type AddCanvasItemFileParams struct {
+	ItemID uuid.UUID
+	FileID uuid.UUID
+}
+
+// ---- files ----
+func (q *Queries) AddCanvasItemFile(ctx context.Context, arg AddCanvasItemFileParams) error {
+	_, err := q.db.Exec(ctx, addCanvasItemFile, arg.ItemID, arg.FileID)
+	return err
+}
+
 const appendCanvasUpdate = `-- name: AppendCanvasUpdate :one
 
 WITH s AS (
@@ -523,6 +539,18 @@ func (q *Queries) GetCanvasItem(ctx context.Context, id uuid.UUID) (CanvasItemHe
 		&i.TrashedRoot,
 		&i.Emoji,
 	)
+	return i, err
+}
+
+const getCanvasItemFile = `-- name: GetCanvasItemFile :one
+SELECT item_id, file_id, created_at FROM canvas_item_files WHERE file_id = $1 ORDER BY created_at LIMIT 1
+`
+
+// The canvas a file belongs to (files.CanRead: a picture of the Canvas is read through its canvas).
+func (q *Queries) GetCanvasItemFile(ctx context.Context, fileID uuid.UUID) (CanvasItemFile, error) {
+	row := q.db.QueryRow(ctx, getCanvasItemFile, fileID)
+	var i CanvasItemFile
+	err := row.Scan(&i.ItemID, &i.FileID, &i.CreatedAt)
 	return i, err
 }
 

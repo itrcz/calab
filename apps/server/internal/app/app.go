@@ -551,6 +551,7 @@ func New(d Deps) *App {
 	canvasSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link:", 60, 60)    // ADR-0127 wave 5: the public name, 60 per minute per IP
 	canvasSvc.LinkSyncLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link-ws:", 20, 10) // … the anonymous socket's connects: 20 at once, 10 per minute per IP
 	canvasSvc.Billing = planSvc
+	canvasSvc.Files = filesSvc
 	canvasSvc.Plans = planSvc
 	canvasSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, ysync.Config{})
 	canvasSvc.Routes(mux, private)

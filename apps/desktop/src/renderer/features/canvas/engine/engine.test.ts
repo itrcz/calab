@@ -9,6 +9,7 @@ import { destroyRigs, rig, type Rig } from './testRig';
 
 const sticky = (x: number, y: number, extra: object = {}) => ({ init: { kind: 'sticky' as const, x, y, ...extra } });
 const objs = (r: Rig) => r.engine.doc;
+const macrotask = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
 const flush = async (): Promise<void> => {
   await Promise.resolve();
   await Promise.resolve();
@@ -537,6 +538,7 @@ describe('keyboard', () => {
     await flush();
     expect(r.clip.text.startsWith('calaba-canvas:')).toBe(true);
     r.key('v', { metaKey: true });
+    await macrotask(); // ⌘V's fallback read runs when no `paste` event came
     await flush();
     expect(objs(r).count).toBe(4);
     expect(r.engine.getState().selectionCount).toBe(2);
@@ -582,6 +584,7 @@ describe('keyboard', () => {
     const r = rig();
     r.clip.text = 'just words';
     r.key('v', { metaKey: true });
+    await macrotask(); // ⌘V's fallback read runs when no `paste` event came
     await flush();
     const id = r.engine.getState().selectedId ?? '';
     expect(objs(r).snapshot(id)).toMatchObject({ kind: 'text', text: 'just words' });
@@ -593,6 +596,7 @@ describe('keyboard', () => {
     r.key('c', { metaKey: true });
     await flush();
     r.key('v', { metaKey: true });
+    await macrotask(); // ⌘V's fallback read runs when no `paste` event came
     await flush();
     const id = r.engine.getState().selectedId ?? '';
     const o = r.engine.scene.get(id);

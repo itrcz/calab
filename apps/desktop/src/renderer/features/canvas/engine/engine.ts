@@ -16,7 +16,7 @@ import { framePresetSize, type FramePreset } from '../../../lib/canvas/frames';
 import { ERASER_SIZES, INK_MAX_WIDTH, INK_MIN_WIDTH, MARKER_WIDTHS, PEN_WIDTHS } from '../../../lib/canvas/ink';
 import { LiveLayer } from '../../../lib/canvas/live';
 import {
-  DEFAULTS, MAX_OBJECTS, aabb, hasText, isConnector,
+  DEFAULTS, MAX_OBJECTS, aabb, hasText, isConnector, isLinkUrl, pastedLink,
   type Endpoint, type ObjectKind, type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind, type ShapeRec, type StickyRec,
 } from '../../../lib/canvas/types';
 import { VOTE_DEFAULT, VoteBook, type VotePhase, type VoteSession } from '../../../lib/canvas/votes';
@@ -33,7 +33,7 @@ import { TextEditor, type EditSpec } from './textEditor';
 import { BADGE_MARGIN_PX, hitBadge } from './voteDraw';
 
 /** Why an action did nothing: a paste or ⌘D over the object (`objects`) or state (`size`) limit, a create at the limit, the clipboard denied. */
-export type RefusedWhy = 'objects' | 'size' | 'create' | 'clipboard';
+export type RefusedWhy = 'objects' | 'size' | 'create' | 'clipboard' | 'notImage';
 
 /** `pen` draws with the pen or the marker (`EngineState.inkMarker`); `eraser` removes freehand strokes (ADR-0127 addendum 2026-10-29). */
 export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector' | 'comment' | 'pen' | 'eraser' | 'frame';
@@ -93,7 +93,18 @@ export interface EngineState {
 export interface ClipboardPort {
   readText(): Promise<string>;
   writeText(text: string): Promise<void>;
+  /** The whole clipboard (the async Clipboard API): a copied picture comes as an `image/*` item. Absent: text only. */
+  read?(): Promise<readonly ClipboardItemLike[]>;
 }
+
+/** What `ClipboardPort.read` gives per item (the DOM `ClipboardItem`, narrowed). */
+export interface ClipboardItemLike {
+  readonly types: readonly string[];
+  getType(type: string): Promise<Blob>;
+}
+
+/** Picture types a paste or a drop puts on the board (what the server's thumbnailer and the <img> decoder read). */
+export const PASTE_IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
 export interface LocalAwareness {
   cursor: Point | null;
@@ -118,6 +129,13 @@ export interface EngineOptions {
   /** World grid step for snapping; 0 disables. */
   gridSize?: number;
   clipboard?: ClipboardPort;
+  /**
+   * Pictures from outside (a paste of a copied picture, a drop of image files): the view uploads them and places each
+   * with `insertImage` at `at` (world; null = the view's center). Absent: such a paste does nothing.
+   */
+  pasteImages?: (files: readonly File[], at: Point | null) => void;
+  /** Opens an object's web link (⌘/Ctrl+click, «Открыть ссылку»): the platform's external browser. Absent: links do not open. */
+  openLink?: (url: string) => void;
   /** A paste or ⌘D was refused whole: the object limit (`objects`) or the document's state limit (`size`). */
   onRefused?: (why: RefusedWhy) => void;
   /** Positioned element the text editor is appended to (default: the canvas' parent). */
@@ -1269,6 +1287,25 @@ export class CanvasEngine implements Core {
 
   async paste(): Promise<string[]> {
     if (!this.canEdit() || !this.clipboardPort) return [];
+    // A copied picture (a screenshot, «Копировать изображение» in a browser) goes up as a file; our own copy is text.
+    if (this.opts.pasteImages && this.clipboardPort.read) {
+      try {
+        const items = await this.clipboardPort.read();
+        const files: File[] = [];
+        for (const it of items) {
+          const type = it.types.find((t) => PASTE_IMAGE_TYPES.has(t));
+          if (!type) continue;
+          const blob = await it.getType(type);
+          files.push(new File([blob], `image.${type.slice('image/'.length).replace('jpeg', 'jpg')}`, { type }));
+        }
+        if (files.length > 0) {
+          if (this.canEdit()) this.opts.pasteImages(files, null);
+          return [];
+        }
+      } catch {
+        // Denied or unsupported here: the text path below asks again and says so.
+      }
+    }
     let text: string;
     try {
       text = await this.clipboardPort.readText();
@@ -1280,6 +1317,20 @@ export class CanvasEngine implements Core {
     return this.pasteText(text);
   }
 
+  /**
+   * A `paste` event's content: pictures among `files` go up (`pasteImages`), else the text is pasted (`pasteText`).
+   * Returns the ids made now (pictures land later, as their uploads finish).
+   */
+  pasteData(files: readonly File[], text: string): string[] {
+    if (!this.canEdit()) return [];
+    const pics = files.filter((f) => PASTE_IMAGE_TYPES.has(f.type));
+    if (pics.length > 0 && this.opts.pasteImages) {
+      this.opts.pasteImages(pics, null);
+      return [];
+    }
+    return text ? this.pasteText(text) : [];
+  }
+
   /** Pastes our JSON (placed visibly, offset on repeats) or plain text as a text object at the view center. */
   pasteText(text: string): string[] {
     if (!this.canEdit()) return [];
@@ -1289,8 +1340,10 @@ export class CanvasEngine implements Core {
       const t = text.trim();
       if (!t || text.startsWith('calaba-canvas:')) return [];
       const c = { x: view.x + view.w / 2, y: view.y + view.h / 2 };
+      // A web link pastes as a text that opens it (⌘/Ctrl+click, «Открыть ссылку»), as in Miro.
+      const link = pastedLink(t);
       this.doc.checkpoint();
-      const id = this.doc.create({ kind: 'text', x: c.x - DEFAULTS.textW / 2, y: c.y - DEFAULTS.textSize, text: t });
+      const id = this.doc.create({ kind: 'text', x: c.x - DEFAULTS.textW / 2, y: c.y - DEFAULTS.textSize, text: t, ...(link ? { link } : {}) });
       if (id) this.setSelection([id]);
       else this.refused(1);
       return id ? [id] : [];
@@ -1604,6 +1657,49 @@ export class CanvasEngine implements Core {
   }
 
   /** Hit-test a world point with a screen-pixel radius; `boxPx` (a finger) also picks a box that close when nothing is hit exactly. */
+  /** The web link of the topmost linked object at a world point (⌘/Ctrl+click), or null. */
+  linkAt(world: Point): string | null {
+    const o = this.scene.hit(world, this.px(6), (r) => hasText(r) && r.link !== undefined);
+    return o && hasText(o) ? (o.link ?? null) : null;
+  }
+
+  /** Opens a link through the platform (the view checks the scheme again). Viewers may open links too. */
+  openLink(url: string): void {
+    if (isLinkUrl(url)) this.opts.openLink?.(url);
+  }
+
+  /** The center of the visible board (world). */
+  viewCenter(): Point {
+    const v = this.visibleWorld();
+    return { x: v.x + v.w / 2, y: v.y + v.h / 2 };
+  }
+
+  /** Dropped files: the pictures among them go up and land at `at` (world), the first one centered there. */
+  dropImages(files: readonly File[], at: Point): void {
+    if (!this.acceptsImages) return;
+    const pics = files.filter((f) => PASTE_IMAGE_TYPES.has(f.type));
+    if (pics.length > 0) this.opts.pasteImages?.(pics, at);
+    else if (files.length > 0) this.opts.onRefused?.('notImage');
+  }
+
+  /** A dragged web link (`text/uri-list`: comments start with #, the first URL counts) as a linked text at `at`. */
+  dropLink(uriList: string, at: Point): string | null {
+    if (!this.canEdit()) return null;
+    const url = uriList.split(/\r?\n/).map((l) => l.trim()).find((l) => l !== '' && !l.startsWith('#')) ?? '';
+    const link = pastedLink(url);
+    if (!link) return null;
+    this.doc.checkpoint();
+    const id = this.doc.create({ kind: 'text', x: at.x, y: at.y - DEFAULTS.textSize, text: link, link });
+    if (id) this.setSelection([id]);
+    else this.refused(1);
+    return id;
+  }
+
+  /** Whether the view takes pictures from outside (drop / paste); with editing allowed. */
+  get acceptsImages(): boolean {
+    return this.canEdit() && this.opts.pasteImages !== undefined;
+  }
+
   hitAt(world: Point, px = 6, boxPx = 0): ObjectRec | null {
     const hit = this.scene.hit(world, this.px(px));
     return hit || boxPx === 0 ? hit : this.scene.hit(world, this.px(px), undefined, this.px(boxPx));
@@ -1820,14 +1916,15 @@ export class CanvasEngine implements Core {
    * Places a picture (a sticker from a pack) centered on the view, its long side `DEFAULTS.imageSize`, and selects it.
    * `w`, `h` are the source's pixel size (for the aspect ratio). Returns the id; null when refused (read-only, the limit).
    */
-  insertImage(src: string, w: number, h: number, stickerId?: string): string | null {
+  insertImage(src: string, w: number, h: number, stickerId?: string, at?: Point | null): string | null {
     if (!this.canEdit()) return null;
     const view = this.visibleWorld();
     const ratio = w > 0 && h > 0 ? w / h : 1;
-    const size = DEFAULTS.imageSize;
+    // A sticker keeps the tidy default; a picture from outside is as large as it is up to a readable size (Miro).
+    const size = stickerId || w <= 0 || h <= 0 ? DEFAULTS.imageSize : Math.min(Math.max(w, h), DEFAULTS.pastedImageMax);
     const iw = ratio >= 1 ? size : size * ratio;
     const ih = ratio >= 1 ? size / ratio : size;
-    const c = { x: view.x + view.w / 2, y: view.y + view.h / 2 };
+    const c = at ?? { x: view.x + view.w / 2, y: view.y + view.h / 2 };
     this.doc.checkpoint();
     const id = this.doc.create({ kind: 'image', src, x: c.x - iw / 2, y: c.y - ih / 2, w: iw, h: ih, ...(stickerId ? { stickerId } : {}) });
     this.finishCreate(id ? [id] : [], false);

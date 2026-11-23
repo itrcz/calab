@@ -15,6 +15,7 @@ import {
   SearchType,
   UpdateCanvasItemRequestSchema,
   UpdateCanvasPermissionsRequestSchema,
+  UploadFileResponseSchema,
   type CanvasActivityPage,
   type CanvasItem,
   type CanvasItemRemove,
@@ -29,7 +30,7 @@ import { confirmAction } from '../components/Confirm';
 import { showMode } from '../features/shell/sectionNav';
 import { t } from '../i18n';
 import { ApiError, body, call, callBytes, callEmpty, qs } from '../lib/api/client';
-import { api } from '../lib/api/endpoints';
+import { api, uploadInto } from '../lib/api/endpoints';
 import { canvasDocHandle } from '../lib/canvas/docHandle';
 import { ancestorsOf, childKey, isFolder, TOP, trashKey } from '../lib/canvas/tree';
 import { pushOnTab } from '../lib/phoneNav';
@@ -86,7 +87,15 @@ export const canvasApi = {
   createLink: (id: string, days: number): Promise<CanvasLinkResponse> =>
     call('POST', `${C(id)}/link`, CanvasLinkResponseSchema, body(CreateCanvasLinkRequestSchema, { expiresInDays: days })),
   deleteLink: (id: string) => callEmpty('DELETE', `${C(id)}/link`),
+  /** A picture pasted or dropped on the board (CANVAS_WRITE): stored with the canvas, read with CANVAS_VIEW on it. */
+  upload: (id: string, file: File) => uploadInto(`${C(id)}/files`, UploadFileResponseSchema, (r) => r.file, file, file.name, () => undefined),
 };
+
+/** Uploads a picture for canvas `id`: its media path and pixel size for the board's image object. */
+export async function uploadCanvasImage(id: string, file: File): Promise<{ path: string; width: number; height: number }> {
+  const meta = await canvasApi.upload(id, file).promise;
+  return { path: `/api/files/${meta.id}`, width: meta.width, height: meta.height };
+}
 
 // ---------------------------------------------------------------- loading
 

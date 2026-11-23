@@ -5,7 +5,7 @@ import { fmtFromDelta, fmtToDelta, formatChanges, rawText, type Fmt } from './ri
 import { INK_MAX_WIDTH, INK_MIN_WIDTH, inkErase, inkPoints } from './ink';
 import { fontFields, isFontToken } from './textLayout';
 import {
-  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_STATE, MAX_TEXT, MAX_TITLE, SCHEMA_VERSION, SHAPE_KINDS, isImageSrc, splitFill,
+  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_STATE, MAX_TEXT, MAX_TITLE, SCHEMA_VERSION, SHAPE_KINDS, isImageSrc, isLinkUrl, splitFill,
   type Endpoint, type ObjectInit, type ObjectKind, type ObjectPatch, type ShapeKind, type Side,
 } from './types';
 
@@ -131,9 +131,9 @@ function isLow(c: number): boolean {
 export type PlainObject = { id: string; kind: ObjectKind; z: string } & Record<string, unknown>;
 
 const FIELD_KEYS: Record<ObjectKind, readonly string[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'pad', 'rot', 'locked', 'group'],
-  text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
-  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'soft', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'pad', 'link', 'rot', 'locked', 'group'],
+  text: ['x', 'y', 'w', 'size', 'color', 'link', 'rot', 'locked', 'group'],
+  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'soft', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'link', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
   image: ['x', 'y', 'w', 'h', 'src', 'stickerId', 'rot', 'locked', 'group'],
   ink: ['x', 'y', 'w', 'h', 'points', 'stroke', 'strokeWidth', 'marker', 'erase', 'rot', 'locked', 'group'],
@@ -141,9 +141,9 @@ const FIELD_KEYS: Record<ObjectKind, readonly string[]> = {
 };
 
 const PATCH_KEYS: Record<ObjectKind, readonly (keyof ObjectPatch)[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'pad', 'rot', 'locked', 'group'],
-  text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
-  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'soft', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'pad', 'link', 'rot', 'locked', 'group'],
+  text: ['x', 'y', 'w', 'size', 'color', 'link', 'rot', 'locked', 'group'],
+  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'soft', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'link', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
   // The picture itself (`src`) is fixed at creation.
   image: ['x', 'y', 'w', 'h', 'rot', 'locked', 'group'],
@@ -167,6 +167,7 @@ function extraFields(init: ObjectInit): Record<string, unknown> {
     if (typeof init.fontPx === 'number' && Number.isFinite(init.fontPx)) Object.assign(out, fontFields(init.kind, clamp(init.fontPx, DEFAULTS.minTextSize, DEFAULTS.maxTextSize)));
     else if (isFontToken(init.fontSize) && init.fontSize !== 'm') out.fontSize = init.fontSize;
   }
+  if ((init.kind === 'sticky' || init.kind === 'text' || init.kind === 'shape') && isLinkUrl(init.link)) out.link = init.link;
   return out;
 }
 
@@ -306,6 +307,7 @@ function patchValue(kind: ObjectKind, key: keyof ObjectPatch, v: unknown): unkno
     case 'label': return typeof v === 'string' ? clampText(v) : undefined;
     case 'erase': return v === null ? REMOVE : inkErase(v) ? [...(v as number[])] : undefined;
     case 'title': return typeof v === 'string' ? clampTitle(v) : undefined;
+    case 'link': return v === null ? REMOVE : isLinkUrl(v) ? v : undefined;
   }
 }
 

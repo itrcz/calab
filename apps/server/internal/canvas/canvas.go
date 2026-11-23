@@ -33,6 +33,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/events"
+	"github.com/calaba/calaba/server/internal/files"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -73,6 +74,9 @@ type Service struct {
 	LinkReadLimit, LinkSyncLimit *redisx.RateLimiter
 	ViewersPerLink, ViewersPerIP int
 	Billing                      BillingGate
+
+	// Files stores the pictures pasted or dropped on a canvas (files.go); nil = no upload route.
+	Files *files.Service
 
 	// Plans caps the live canvases of a workspace (KindCanvases: create and restore; ADR-0126
 	// addendum 2026-10-23); nil = no plan limit.
@@ -142,6 +146,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/canvas/items/{id}/link", s.getLink)
 	h("POST /api/canvas/items/{id}/link", s.createLink)
 	h("DELETE /api/canvas/items/{id}/link", s.deleteLink)
+	h("POST /api/canvas/items/{id}/files", s.upload)
 	// Anonymous: the code is the credential (link.go).
 	mux.Handle("GET /api/public/canvas/{code}", httpx.HandlerFunc(s.publicCanvas))
 	if s.sync != nil {

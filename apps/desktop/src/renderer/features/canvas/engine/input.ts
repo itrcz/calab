@@ -78,6 +78,8 @@ const writable = (o: { kind: string }): boolean => o.kind === 'sticky' || o.kind
 export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): () => void {
   const pointers = new Map<number, Point>();
   let spaceDown = false;
+  /** ⌘V's async-API read, cancelled when the `paste` event brings the clipboard itself. */
+  let pasteFallback: ReturnType<typeof setTimeout> | null = null;
   let panDrag: { id: number } | null = null;
   let pinch: PinchGesture | null = null;
   /** Pointer ids the pinch measures (a third finger does not take part). */
@@ -308,6 +310,16 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     }
     if (pointers.size > 2) return;
     const m = mods(e);
+    // ⌘/Ctrl+click on a linked object opens its link (viewers too), as in Miro; it neither selects nor drags.
+    if (e.button === 0 && m.mod && !spaceDown && e.pointerType !== 'touch') {
+      const link = engine.linkAt(w);
+      if (link) {
+        e.preventDefault();
+        pointers.delete(e.pointerId);
+        engine.openLink(link);
+        return;
+      }
+    }
     const wantsPan = e.button === 1 || (e.button === 0 && spaceDown) || (e.button === 0 && engine.readOnly);
     if (wantsPan) {
       e.preventDefault();
@@ -573,7 +585,14 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         case is('a'): engine.selectAll(); break;
         case is('c'): void engine.copy(); break;
         case is('x'): void engine.cut(); break;
-        case is('v'): void engine.paste(); break;
+        case is('v'):
+          // The browser (or Electron's «Вставить») fires `paste` with the clipboard's files and text, no permission
+          // needed (Electron refuses `clipboard-read`). Only when no such event comes does the async API read it.
+          pasteFallback = setTimeout(() => {
+            pasteFallback = null;
+            void engine.paste();
+          }, 0);
+          return;
         case is('z'): if (e.shiftKey) engine.redo(); else engine.undo(); break;
         case is('y'): engine.redo(); break;
         case is('d'): engine.duplicateSelection(); break;
@@ -651,6 +670,39 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     spaceDown = false;
   };
 
+  const onPaste = (e: ClipboardEvent): void => {
+    if (pasteFallback !== null) {
+      clearTimeout(pasteFallback);
+      pasteFallback = null;
+    }
+    const dt = e.clipboardData;
+    if (!dt || engine.readOnly) return;
+    e.preventDefault();
+    engine.pasteData([...dt.files], dt.getData('text/plain'));
+  };
+
+  // Drops from outside (owner 23.11): image files go up and land where they were dropped; a dragged web link becomes a
+  // linked text there. Anything else is not taken (the browser's own drop stays refused by the app).
+  const dropKind = (dt: DataTransfer | null): 'files' | 'link' | null => {
+    if (!dt || engine.readOnly) return null;
+    if (dt.types.includes('Files')) return engine.acceptsImages ? 'files' : null;
+    return dt.types.includes('text/uri-list') ? 'link' : null;
+  };
+  const onDragOver = (e: DragEvent): void => {
+    if (!dropKind(e.dataTransfer)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  };
+  const onDrop = (e: DragEvent): void => {
+    const kind = dropKind(e.dataTransfer);
+    if (!kind || !e.dataTransfer) return;
+    e.preventDefault();
+    canvas.focus({ preventScroll: true });
+    const { w } = local(e);
+    if (kind === 'files') engine.dropImages([...e.dataTransfer.files], w);
+    else engine.dropLink(e.dataTransfer.getData('text/uri-list'), w);
+  };
+
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onUp);
@@ -664,6 +716,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   canvas.addEventListener('keydown', onKeyDown);
   canvas.addEventListener('keyup', onKeyUp);
   canvas.addEventListener('blur', onBlur);
+  canvas.addEventListener('paste', onPaste);
+  canvas.addEventListener('dragover', onDragOver);
+  canvas.addEventListener('drop', onDrop);
   return () => {
     clearPress();
     canvas.removeEventListener('pointerdown', onDown);
@@ -679,5 +734,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     canvas.removeEventListener('keydown', onKeyDown);
     canvas.removeEventListener('keyup', onKeyUp);
     canvas.removeEventListener('blur', onBlur);
+    if (pasteFallback !== null) clearTimeout(pasteFallback);
+    canvas.removeEventListener('paste', onPaste);
+    canvas.removeEventListener('dragover', onDragOver);
+    canvas.removeEventListener('drop', onDrop);
   };
 }

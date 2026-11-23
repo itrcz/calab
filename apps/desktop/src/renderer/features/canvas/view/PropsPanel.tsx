@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Layers, Lock, LockOpen, Minus, SendToBack, Shapes, Slash, Trash2, Ungroup,
+  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Layers, ExternalLink, Lock, LockOpen, Minus, Unlink, SendToBack, Shapes, Slash, Trash2, Ungroup,
   type LucideIcon,
 } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
@@ -557,6 +557,18 @@ export const PropsPanel = memo(function PropsPanel({
         <IconButton label={t('canvasBoard.props.ungroup')} shortcut={`⇧${MOD}G`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.ungroupSelection())} data-testid="canvas-prop-ungroup">
           <Ungroup className={ICON} strokeWidth={1.75} aria-hidden />
         </IconButton>
+      ) : null}
+      {m.link !== undefined ? (
+        <>
+          <IconButton label={t('canvasBoard.props.openLink')} shortcut={`${MOD}+click`} size="sm" onMouseDown={keepFocus} onClick={() => engine.openLink(m.link ?? '')} data-testid="canvas-prop-open-link">
+            <ExternalLink className={ICON} strokeWidth={1.75} aria-hidden />
+          </IconButton>
+          {m.locked ? null : (
+            <IconButton label={t('canvasBoard.props.removeLink')} size="sm" onMouseDown={keepFocus} onClick={run(() => patch({ link: null }))} data-testid="canvas-prop-remove-link">
+              <Unlink className={ICON} strokeWidth={1.75} aria-hidden />
+            </IconButton>
+          )}
+        </>
       ) : null}
       {/* Locked: one labelled button says both the state and the way out (an icon toggle next to a «locked» badge read as two locks). */}
       {m.locked ? (
