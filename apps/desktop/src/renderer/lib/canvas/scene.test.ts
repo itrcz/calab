@@ -269,11 +269,24 @@ describe('queries', () => {
     const s = populated();
     expect(s.hit({ x: 120, y: 120 }, 2, (o) => o.id !== 'o2')?.id).toBe('o1');
   });
-  it('marquee picks what it touches, connectors by their path', () => {
+  it('marquee picks only what it takes whole, connectors by their path', () => {
     const s = populated();
-    expect(s.inRect({ x: 90, y: 90, w: 20, h: 20 }).map((o) => o.id)).toEqual(['o1', 'o2']);
-    expect(s.inRect({ x: 190, y: 490, w: 20, h: 20 }).map((o) => o.id)).toEqual(['o5']);
-    expect(s.inRect({ x: 190, y: 400, w: 20, h: 50 })).toEqual([]);
+    // Crossing two stickies takes neither (Miro): only what lies wholly inside.
+    expect(s.inRect({ x: 90, y: 90, w: 20, h: 20 })).toEqual([]);
+    expect(s.inRect({ x: -10, y: -10, w: 180, h: 180 }).map((o) => o.id)).toEqual(['o1']);
+    expect(s.inRect({ x: -10, y: -10, w: 300, h: 300 }).map((o) => o.id)).toEqual(['o1', 'o2']);
+    expect(s.inRect({ x: 190, y: 490, w: 20, h: 20 })).toEqual([]);
+    expect(s.inRect({ x: -10, y: 480, w: 420, h: 40 }).map((o) => o.id)).toEqual(['o5']);
+  });
+  it('a frame over the stickies of a column leaves the column out', () => {
+    const d = new CanvasDoc(new Y.Doc(), { rng: seededRng(3), makeId: ids() });
+    d.createMany([
+      { init: { kind: 'shape', shape: 'rect', x: 0, y: 0, w: 400, h: 2000, fill: 'green' } },
+      { init: { kind: 'sticky', x: 20, y: 20 } },
+      { init: { kind: 'sticky', x: 200, y: 400 } },
+    ]);
+    const s = sceneOf(d);
+    expect(s.inRect({ x: -50, y: 10, w: 600, h: 700 }).map((o) => o.id)).toEqual(['o2', 'o3']);
   });
   it('bounds of all or some', () => {
     const s = populated();

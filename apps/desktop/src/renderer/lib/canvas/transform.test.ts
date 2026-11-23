@@ -170,7 +170,7 @@ describe('Scene with rotated objects', () => {
     expect(b.h).toBeCloseTo(400);
     expect(s.bounds()?.h).toBeCloseTo(400);
   });
-  it('the marquee picks a rotated box by its real outline', () => {
+  it('the marquee picks a rotated box only with all its corners', () => {
     const d = makeDoc();
     d.create({ kind: 'sticky', x: 0, y: 0, w: 200, h: 40, rot: 45 });
     const s = sceneOf(d);
@@ -178,7 +178,8 @@ describe('Scene with rotated objects', () => {
     expect(bb).not.toBeNull();
     if (!bb) return;
     expect(s.inRect({ x: bb.x, y: bb.y, w: 10, h: 10 })).toEqual([]);
-    expect(s.inRect({ x: 90, y: 10, w: 20, h: 20 }).map((o) => o.id)).toEqual(['o1']);
+    expect(s.inRect({ x: 90, y: 10, w: 20, h: 20 })).toEqual([]);
+    expect(s.inRect({ x: bb.x - 1, y: bb.y - 1, w: bb.w + 2, h: bb.h + 2 }).map((o) => o.id)).toEqual(['o1']);
   });
   it('a document without the new fields builds the same records as before (no rot / locked / group keys)', () => {
     const d = makeDoc();

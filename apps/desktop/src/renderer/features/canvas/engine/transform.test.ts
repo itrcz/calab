@@ -359,13 +359,15 @@ describe('groups', () => {
     r.click(1000, 600);
     expect(r.engine.selection.size).toBe(0);
   });
-  it('the marquee takes a touched group whole', () => {
+  it('the marquee takes a group whole when it takes one member', () => {
     const r = rig();
     const [a, b] = pair2(r);
     r.engine.setSelection([a, b]);
     r.engine.groupSelection();
     r.engine.clearSelection();
-    r.drag([50, 50], [150, 150]); // touches only a
+    r.drag([50, 50], [150, 150]); // crosses a, takes nothing
+    expect(r.engine.selection.size).toBe(0);
+    r.drag([50, 50], [250, 250]); // takes a whole
     expect([...r.engine.selection].sort()).toEqual([a, b].sort());
   });
   it('dragging a member moves the whole group; the frame offers rotation and no resize', () => {

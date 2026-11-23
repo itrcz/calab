@@ -205,9 +205,9 @@ describe('ink in the document', () => {
     expect(visualBounds(o)).toEqual({ x: 7, y: 17, w: 106, h: 56 });
     d.patch(id, { w: 200 });
     expect(ink(s, id).points).toEqual([0, 0, 100, 50, 200, 0]);
-    // The marquee takes it only across the line.
-    expect(s.inRect({ x: 50, y: 40, w: 20, h: 10 }).map((r) => r.id)).toEqual([id]);
-    expect(s.inRect({ x: 12, y: 50, w: 10, h: 15 })).toEqual([]);
+    // The marquee takes it only whole, by its points.
+    expect(s.inRect({ x: 50, y: 40, w: 20, h: 10 })).toEqual([]);
+    expect(s.inRect({ x: 5, y: 15, w: 215, h: 60 }).map((r) => r.id)).toEqual([id]);
   });
   it('a rotated stroke is hit in its own frame', () => {
     const d = makeDoc();
