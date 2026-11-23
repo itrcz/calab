@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InboundVideoStats, OutboundVideoLayer } from './stats';
-import { MINOR_LOG_MS, MISMATCH_GRACE_MS, PublisherDiag, VIEWER_LOG_MS, ViewerDiag, requestedRids } from './streamDiag';
+import { MAJOR_LOG_MS, MINOR_LOG_MS, MISMATCH_GRACE_MS, PublisherDiag, VIEWER_LOG_MS, ViewerDiag, requestedRids } from './streamDiag';
 
 function layer(rid: string, o: Partial<OutboundVideoLayer> = {}): OutboundVideoLayer {
   return {
@@ -39,11 +39,23 @@ describe('PublisherDiag', () => {
     expect(d.tick([layer('q'), layer('h', { fps: 14.6, targetKbps: 1750 })], 2000)).toBeNull();
   });
 
-  it('logs a layer switching off or a new limitation at once', () => {
+  it('logs a layer switching off or a new limitation at once after a quiet period', () => {
     const d = new PublisherDiag();
     d.tick([layer('q'), layer('h')], 0);
-    expect(d.tick([layer('q'), layer('h', { active: false })], 2000)).toBe('stream out: h:off | q:on 552x360@15 t250k | lim=none | sfu=?');
-    expect(d.tick([layer('q', { qualityLimitation: 'bandwidth' }), layer('h', { active: false })], 4000)).toContain('lim=bandwidth');
+    const t = MAJOR_LOG_MS;
+    expect(d.tick([layer('q'), layer('h', { active: false })], t)).toBe('stream out: h:off | q:on 552x360@15 t250k | lim=none | sfu=?');
+    expect(d.tick([layer('q', { qualityLimitation: 'bandwidth' }), layer('h', { active: false })], 2 * t)).toContain('lim=bandwidth');
+  });
+
+  it('bounds the lines when the size / limitation flips every tick', () => {
+    const d = new PublisherDiag();
+    let lines = 0;
+    for (let now = 0; now < 60_000; now += 2000) {
+      const flip = (now / 2000) % 2 === 0;
+      if (d.tick([layer('q'), layer('h', { width: flip ? 1104 : 828, height: flip ? 720 : 540, qualityLimitation: flip ? 'none' : 'cpu' })], now)) lines++;
+      if (d.request(flip ? ['h', 'q'] : ['q'], now + 1)) lines++;
+    }
+    expect(lines).toBeLessThanOrEqual(2 * (60_000 / MAJOR_LOG_MS));
   });
 
   it('logs fps / target changes at most every MINOR_LOG_MS', () => {
@@ -59,9 +71,12 @@ describe('PublisherDiag', () => {
     expect(d.request(['h', 'q'], 100)).toBeNull();
     const stuck = [layer('q'), layer('h', { active: false })];
     expect(d.tick(stuck, 2000)).toBe('stream out: h:off | q:on 552x360@15 t250k | lim=none | sfu=h,q');
-    expect(d.tick(stuck, MISMATCH_GRACE_MS)).toBe('stream out: h:off | q:on 552x360@15 t250k | lim=none | sfu=h,q | MISMATCH');
-    expect(d.tick(stuck, MISMATCH_GRACE_MS + 2000)).toBeNull();
-    expect(d.request([], 10_000)).toBe('stream: SFU requests none');
+    expect(d.tick(stuck, MISMATCH_GRACE_MS)).toBeNull(); // inside the window: caught up after it
+    const t = 2000 + MAJOR_LOG_MS;
+    expect(d.tick(stuck, t)).toBe('stream out: h:off | q:on 552x360@15 t250k | lim=none | sfu=h,q | MISMATCH');
+    expect(d.tick(stuck, t + 2000)).toBeNull();
+    expect(d.request([], t + 2000)).toBe('stream: SFU requests none');
+    expect(d.request(['q'], t + 4000)).toBeNull(); // rate-limited; sfu= in stream out still shows it
   });
 
   it('starts over after reset', () => {

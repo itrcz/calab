@@ -10,8 +10,16 @@ import type { InboundVideoStats, OutboundVideoLayer } from './stats';
 /** livekit VideoQuality (protocol): LOW / MEDIUM / HIGH → simulcast rid (videoQualityForRid). */
 const RID_OF_QUALITY: Record<number, string> = { 0: 'q', 1: 'h', 2: 'f' };
 
-/** Minor changes (fps, target bitrate) are logged at most this often; layer/size changes at once. */
+/** Minor changes (fps, target bitrate) are logged at most this often. */
 export const MINOR_LOG_MS = 30_000;
+/**
+ * Major changes (layer on/off, size, limitation, SFU request) are logged at once after a quiet
+ * period, then at most this often: CPU / BWE adaptation can flip a layer's size or
+ * `qualityLimitationReason` every tick, and dynacast can flap; a change inside the window is
+ * logged on the first tick after it if it still holds. Worst case ≈ 6 `stream out` + 6
+ * `SFU requests` lines a minute.
+ */
+export const MAJOR_LOG_MS = 10_000;
 /** A requested layer that is still off (or the reverse) after this long is flagged `MISMATCH`. */
 export const MISMATCH_GRACE_MS = 4_000;
 /** The viewer side logs a received-resolution change at most this often per stream. */
@@ -59,26 +67,33 @@ function kbpsBucket(kbps: number | null): number {
 /**
  * Publisher side: one line per change of the stream's encoder state. Major changes (a layer on/off,
  * its frame size, `qualityLimitationReason`, the SFU's request, a mismatch between the two) are
- * logged at once; minor ones (fps, target bitrate by ×1.5 steps) at most every MINOR_LOG_MS.
+ * logged at once, at most every MAJOR_LOG_MS; minor ones (fps, target bitrate by ×1.5 steps) at most every MINOR_LOG_MS.
  */
 export class PublisherDiag {
   private requested: string[] | null = null;
   private requestedAt = 0;
+  private requestLoggedAt = -Infinity;
   private major = '';
   private minor = '';
   private loggedAt = -Infinity;
 
-  /** Records the SFU's request; returns its log line, null when it repeats the last one. */
+  /**
+   * Records the SFU's request; returns its log line, null when it repeats the last one or comes
+   * within MAJOR_LOG_MS of the last logged one (the `sfu=` field of `stream out` still shows it).
+   */
   request(rids: string[], now: number): string | null {
     if (this.requested && this.requested.join() === rids.join()) return null;
     this.requested = rids;
     this.requestedAt = now;
+    if (now - this.requestLoggedAt < MAJOR_LOG_MS) return null;
+    this.requestLoggedAt = now;
     return `stream: SFU requests ${rids.length ? rids.join(',') : 'none'}`;
   }
 
   /** The stream stopped: the next one starts with a fresh line. */
   reset(): void {
     this.requested = null;
+    this.requestLoggedAt = -Infinity;
     this.major = '';
     this.minor = '';
     this.loggedAt = -Infinity;
@@ -94,7 +109,8 @@ export class PublisherDiag {
     const mismatch = this.requested !== null && now - this.requestedAt >= MISMATCH_GRACE_MS && this.mismatched(sorted, this.requested);
     const major = [...sorted.map((l) => (l.active === false ? `${l.rid}:off` : `${l.rid}:${l.width}x${l.height}`)), lim, sfu, mismatch].join('|');
     const minor = sorted.map((l) => `${fpsBucket(l.fps)}/${kbpsBucket(l.targetKbps)}`).join('|');
-    if (major === this.major && (minor === this.minor || now - this.loggedAt < MINOR_LOG_MS)) return null;
+    const since = now - this.loggedAt;
+    if (major === this.major ? minor === this.minor || since < MINOR_LOG_MS : since < MAJOR_LOG_MS) return null;
     this.major = major;
     this.minor = minor;
     this.loggedAt = now;
