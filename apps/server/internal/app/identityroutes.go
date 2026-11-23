@@ -639,6 +639,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/canvas/items/{id}/link":    scopeCanvasItem,
 	"POST /api/canvas/items/{id}/link":   scopeCanvasItem,
 	"DELETE /api/canvas/items/{id}/link": scopeCanvasItem,
+	"POST /api/canvas/items/{id}/files":  scopeCanvasItem,
 	"GET /api/public/canvas/{code}":      scopePublic,
 	"GET /api/public/canvas/{code}/sync": scopePublic,
 	// Balance billing (ADR-0080 v5). The provider webhook is public like POST /api/rtc/webhook

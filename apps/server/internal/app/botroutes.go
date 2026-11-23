@@ -417,6 +417,7 @@ var botRouteGroups = []botRouteGroup{
 		"PATCH /api/canvas/comments/{id}",
 		"PATCH /api/canvas/items/{id}",
 		"POST /api/canvas/items/{id}/comments",
+		"POST /api/canvas/items/{id}/files",
 		"POST /api/canvas/items/{id}/link",
 		"POST /api/canvas/items/{id}/restore",
 		"POST /api/canvas/items/{id}/take-over",
