@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Container } from '@/components/ui';
 import { isLocale, localePath, type Locale } from '@/i18n';
-import { getLegalDocuments, APP_LEGAL_IDS, isAppLegalDocument, LEGAL_VERSION } from '@/lib/legal';
+import { getLegalDocuments, APP_LEGAL_IDS, isAppLegalDocument, LEGAL_VERSION, formatLegalEdition } from '@/lib/legal';
 
 type Params = Promise<{ locale: string; document: string }>;
 
@@ -39,13 +39,14 @@ export default async function AppLegalPage({ params }: { params: Params }) {
   const documents = getLegalDocuments(locale);
   const content = documents[document];
   const ru = locale === 'ru';
+  const edition = formatLegalEdition(locale);
   return (
     <main id="main" lang={ru ? 'ru' : 'en'} className="py-12 sm:py-20">
       <Container>
         <article className="mx-auto max-w-[840px] break-words" aria-labelledby="legal-title">
           <p className="text-[13px] font-medium tracking-wide text-fg-2">{ru ? 'CALAB · ПРАВОВЫЕ ДОКУМЕНТЫ' : 'CALAB GLOBAL · LEGAL · ENGLISH'}</p>
           <h1 id="legal-title" className="mt-4 text-[32px] leading-tight font-semibold tracking-tight sm:text-[44px]">{content.title}</h1>
-          <p className="mt-4 text-[14px] text-fg-2">{ru ? 'Редакция от ' : 'Updated '}<time dateTime={LEGAL_VERSION}>{ru ? '9 октября 2026 года' : '9 October 2026'}</time></p>
+          <p className="mt-4 text-[14px] text-fg-2">{edition.label}<time dateTime={LEGAL_VERSION}>{edition.date}</time></p>
           <p className="mt-6 text-[17px] leading-7 text-fg-2">{content.description}</p>
           <div className="mt-8 space-y-10">
             {content.sections.map((section, index) => (
