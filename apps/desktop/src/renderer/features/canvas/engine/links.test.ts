@@ -4,7 +4,7 @@ import { parse, serialize, toInits } from '../../../lib/canvas/clipboard';
 import { isLinkUrl, pastedLink, type ObjectRec } from '../../../lib/canvas/types';
 import { panelModelOf } from '../view/selectionModel';
 import type { ClipboardItemLike } from './engine';
-import { PASTE_FALLBACK_MS } from './input';
+import { LINK_CLICK_MS, PASTE_FALLBACK_MS } from './input';
 import { destroyRigs, rig } from './testRig';
 
 afterEach(() => {
@@ -215,3 +215,83 @@ describe('⌘V through the paste event (Electron refuses clipboard-read)', () =>
     expect(r.engine.doc.count).toBe(0);
   });
 });
+
+describe('a click on the selected linked object opens it (owner 23.11, as in Miro)', () => {
+  const later = (): Promise<void> => new Promise((done) => setTimeout(done, LINK_CLICK_MS + 30));
+  const dbl = (r: ReturnType<typeof rig>, x: number, y: number): void => {
+    r.click(x, y);
+    r.click(x, y);
+    r.canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  };
+
+  it('the first click selects, a clean click on the selected one opens after the double-click interval', async () => {
+    const openLink = vi.fn();
+    const r = rig({ openLink });
+    const [a] = r.make({ init: { kind: 'sticky', x: 100, y: 100, text: 'site', link: URL_A } });
+    r.click(150, 150);
+    await later();
+    expect([...r.engine.selection]).toEqual([a]);
+    expect(openLink).not.toHaveBeenCalled();
+    r.click(150, 150);
+    expect(openLink).not.toHaveBeenCalled(); // not yet: it may become a double click
+    await later();
+    expect(openLink).toHaveBeenCalledWith(URL_A);
+  });
+
+  it('a double click on the selected one edits the text and opens nothing', async () => {
+    const openLink = vi.fn();
+    const r = rig({ openLink });
+    r.make({ init: { kind: 'sticky', x: 100, y: 100, text: 'site', link: URL_A } });
+    r.click(150, 150);
+    await later();
+    dbl(r, 150, 150);
+    await later();
+    expect(openLink).not.toHaveBeenCalled();
+    expect(r.engine.getState().editing).toBe(true);
+  });
+
+  it('dragging the selected one moves it and opens nothing; an object without a link opens nothing', async () => {
+    const openLink = vi.fn();
+    const r = rig({ openLink });
+    const [a] = r.make({ init: { kind: 'sticky', x: 100, y: 100, text: 'site', link: URL_A } }, { init: { kind: 'sticky', x: 500, y: 100 } });
+    r.click(150, 150);
+    r.drag([150, 150], [250, 200]);
+    await later();
+    expect(openLink).not.toHaveBeenCalled();
+    expect(r.engine.scene.get(a ?? '')).toMatchObject({ x: 200, y: 150 });
+    r.click(550, 150);
+    r.click(550, 150);
+    await later();
+    expect(openLink).not.toHaveBeenCalled();
+  });
+
+  it('in a multi-selection or with Shift a click does not open', async () => {
+    const openLink = vi.fn();
+    const r = rig({ openLink });
+    const [a, b] = r.make({ init: { kind: 'sticky', x: 100, y: 100, link: URL_A } }, { init: { kind: 'sticky', x: 500, y: 100 } });
+    r.engine.setSelection([a ?? '', b ?? '']);
+    r.click(150, 150); // narrows to a, does not open
+    await later();
+    expect(openLink).not.toHaveBeenCalled();
+    r.click(150, 150, { shiftKey: true });
+    await later();
+    expect(openLink).not.toHaveBeenCalled();
+  });
+
+  it('hover: a hand and the address under the selected linked object, or under any with ⌘ held', () => {
+    const r = rig();
+    const [a] = r.make({ init: { kind: 'sticky', x: 100, y: 100, link: URL_A } });
+    r.move(150, 150);
+    expect(r.canvas.style.cursor).not.toBe('pointer');
+    expect(r.engine['overlay'].link ?? null).toBeNull();
+    r.move(152, 150, { metaKey: true });
+    expect(r.canvas.style.cursor).toBe('pointer');
+    expect(r.engine['overlay'].link).toMatchObject({ at: { x: 100, y: 260 }, text: URL_A });
+    r.engine.setSelection([a ?? '']);
+    r.move(155, 150);
+    expect(r.canvas.style.cursor).toBe('pointer');
+    r.move(900, 700);
+    expect(r.engine['overlay'].link ?? null).toBeNull();
+  });
+});
+

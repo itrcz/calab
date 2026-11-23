@@ -1657,10 +1657,35 @@ export class CanvasEngine implements Core {
   }
 
   /** Hit-test a world point with a screen-pixel radius; `boxPx` (a finger) also picks a box that close when nothing is hit exactly. */
+  private hoveredLink: string | null = null;
+
+  /**
+   * The link pill under object `id` (its address), or none (null). Set on hover of a link a click would open: the one
+   * selected linked object, or any with ⌘/Ctrl held. A repaint only when the hovered object changes.
+   */
+  hoverLink(id: string | null): void {
+    if (id === this.hoveredLink) return;
+    this.hoveredLink = id;
+    const o = id ? this.scene.get(id) : undefined;
+    const link = o && hasText(o) ? o.link : undefined;
+    if (!o || !link) {
+      this.hoveredLink = null;
+      if (this.overlay.link) this.setOverlay({ link: null });
+      return;
+    }
+    const b = aabb(o);
+    this.setOverlay({ link: { at: { x: b.x, y: b.y + b.h }, text: link } });
+  }
+
   /** The web link of the topmost linked object at a world point (⌘/Ctrl+click), or null. */
   linkAt(world: Point): string | null {
-    const o = this.scene.hit(world, this.px(6), (r) => hasText(r) && r.link !== undefined);
+    const o = this.linkObjectAt(world);
     return o && hasText(o) ? (o.link ?? null) : null;
+  }
+
+  /** The topmost object with a web link at a world point. */
+  linkObjectAt(world: Point): ObjectRec | null {
+    return this.scene.hit(world, this.px(6), (r) => hasText(r) && r.link !== undefined);
   }
 
   /** Opens a link through the platform (the view checks the scheme again). Viewers may open links too. */
