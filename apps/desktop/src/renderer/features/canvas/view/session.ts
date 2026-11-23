@@ -107,10 +107,14 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     files.forEach((f, i) => {
       upload(o.canvasId, f).then(
         (r) => {
+          // The board may have closed while the picture was uploading: the engine and its document are gone.
+          if (closed) return;
           const p = at ?? engine.viewCenter();
           engine.insertImage(r.path, r.width, r.height, undefined, { x: p.x + i * IMAGE_STEP, y: p.y + i * IMAGE_STEP });
         },
-        (e: unknown) => o.onImageFailed?.(e),
+        (e: unknown) => {
+          if (!closed) o.onImageFailed?.(e);
+        },
       );
     });
   };
