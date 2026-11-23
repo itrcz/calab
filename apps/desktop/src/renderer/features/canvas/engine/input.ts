@@ -25,6 +25,10 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
 
 const TOOL_KEYS = { v: 1, s: 1, t: 1, r: 1, c: 1, k: 1, p: 1, e: 1, f: 1 };
 const NO_MODS: Mods = { shift: false, alt: false, mod: false };
+/** ⌘V waits this long (ms) for the `paste` event before reading the clipboard itself (the event never came). */
+export const PASTE_FALLBACK_MS = 300;
+/** A `paste` event this recent (ms) answers the ⌘V that follows it: no second read. */
+const PASTE_PAIR_MS = 500;
 /** Touch editing (ADR-0127 wave 5b): a press that stays put this long on empty canvas opens the phone's menu. */
 const LONG_PRESS_MS = 500;
 /** Two taps on one object within this long edit its text (the finger's double click). */
@@ -80,6 +84,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   let spaceDown = false;
   /** ⌘V's async-API read, cancelled when the `paste` event brings the clipboard itself. */
   let pasteFallback: ReturnType<typeof setTimeout> | null = null;
+  /** When the last `paste` event came (performance.now): Electron's menu sends it around the keydown, in either order. */
+  let lastPasteEvent = -Infinity;
   let panDrag: { id: number } | null = null;
   let pinch: PinchGesture | null = null;
   /** Pointer ids the pinch measures (a third finger does not take part). */
@@ -588,10 +594,13 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         case is('v'):
           // The browser (or Electron's «Вставить») fires `paste` with the clipboard's files and text, no permission
           // needed (Electron refuses `clipboard-read`). Only when no such event comes does the async API read it.
+          // Electron's «Вставить» (the menu owns ⌘V) delivers it asynchronously, before or after this keydown.
+          if (performance.now() - lastPasteEvent < PASTE_PAIR_MS) return;
+          if (pasteFallback !== null) clearTimeout(pasteFallback);
           pasteFallback = setTimeout(() => {
             pasteFallback = null;
             void engine.paste();
-          }, 0);
+          }, PASTE_FALLBACK_MS);
           return;
         case is('z'): if (e.shiftKey) engine.redo(); else engine.undo(); break;
         case is('y'): engine.redo(); break;
@@ -671,6 +680,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   };
 
   const onPaste = (e: ClipboardEvent): void => {
+    lastPasteEvent = performance.now();
     if (pasteFallback !== null) {
       clearTimeout(pasteFallback);
       pasteFallback = null;

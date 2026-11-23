@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { attachInput } from './input';
+import { attachInput, PASTE_FALLBACK_MS } from './input';
 import { keyIs } from './keys';
 import type { CanvasEngine } from './engine';
 
@@ -41,7 +41,7 @@ describe('canvas hotkeys', () => {
     const e = press({ code: 'KeyV', key: 'м', ctrlKey: true });
     // Left to the browser, which fires `paste` with the clipboard; without that event the async read runs next task.
     expect(e.defaultPrevented).toBe(false);
-    await new Promise((done) => setTimeout(done, 0));
+    await new Promise((done) => setTimeout(done, PASTE_FALLBACK_MS + 20));
     // eslint-disable-next-line @typescript-eslint/unbound-method -- spy reference, not a call
     expect(engine.paste).toHaveBeenCalled();
   });

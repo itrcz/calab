@@ -5,11 +5,12 @@ import { MAX_SCALE } from '../../../lib/canvas/camera';
 import { anchorPoint } from '../../../lib/canvas/route';
 import { isBox, isConnector } from '../../../lib/canvas/types';
 import { defaultPalette } from './palette';
+import { PASTE_FALLBACK_MS } from './input';
 import { destroyRigs, rig, type Rig } from './testRig';
 
 const sticky = (x: number, y: number, extra: object = {}) => ({ init: { kind: 'sticky' as const, x, y, ...extra } });
 const objs = (r: Rig) => r.engine.doc;
-const macrotask = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+const macrotask = (): Promise<void> => new Promise((done) => setTimeout(done, PASTE_FALLBACK_MS + 20));
 const flush = async (): Promise<void> => {
   await Promise.resolve();
   await Promise.resolve();

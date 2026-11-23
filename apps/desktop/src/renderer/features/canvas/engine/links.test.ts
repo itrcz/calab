@@ -4,6 +4,7 @@ import { parse, serialize, toInits } from '../../../lib/canvas/clipboard';
 import { isLinkUrl, pastedLink, type ObjectRec } from '../../../lib/canvas/types';
 import { panelModelOf } from '../view/selectionModel';
 import type { ClipboardItemLike } from './engine';
+import { PASTE_FALLBACK_MS } from './input';
 import { destroyRigs, rig } from './testRig';
 
 afterEach(() => {
@@ -163,7 +164,7 @@ describe('⌘V through the paste event (Electron refuses clipboard-read)', () =>
     Object.defineProperty(e, 'clipboardData', { value: { files, getData: (t: string) => (t === 'text/plain' ? text : '') } });
     return e;
   };
-  const macrotask = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+  const macrotask = (): Promise<void> => new Promise((done) => setTimeout(done, PASTE_FALLBACK_MS + 20));
 
   it('the event brings text or pictures; the async read is not used then', async () => {
     const pasteImages = vi.fn();
@@ -181,6 +182,22 @@ describe('⌘V through the paste event (Electron refuses clipboard-read)', () =>
     r.canvas.dispatchEvent(pasteEvent([png], 'image.png'));
     expect(pasteImages).toHaveBeenCalledWith([png], null);
     expect(r.engine.doc.count).toBe(1);
+  });
+
+  it('Electron order: the event before the keydown, or a while after it — the clipboard is not read again', async () => {
+    const r = rig();
+    const readText = vi.spyOn(r.clip, 'readText');
+    // The menu's paste first, then the keydown.
+    r.canvas.dispatchEvent(pasteEvent([], 'first'));
+    r.key('v', { metaKey: true });
+    await macrotask();
+    // The keydown first, the event 100 ms later.
+    r.key('v', { metaKey: true });
+    await new Promise((done) => setTimeout(done, 100));
+    r.canvas.dispatchEvent(pasteEvent([], 'second'));
+    await macrotask();
+    expect(readText).not.toHaveBeenCalled();
+    expect(r.engine.scene.all().map((o) => (o.kind === 'text' ? o.text : ''))).toEqual(['first', 'second']);
   });
 
   it('without a paste event ⌘V still reads the clipboard', async () => {
