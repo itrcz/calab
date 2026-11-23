@@ -1,6 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { COOKIE_COPY } from '@/i18n/cookies';
 import { localePath, type Locale } from '@/i18n/locales';
@@ -34,6 +35,12 @@ function CookieIcon() {
  */
 export function CookiePreferences({ locale }: { locale: Locale }) {
   const t = COOKIE_COPY[locale];
+  // The app-mode legal pages (#139, docs/adr/0148) stay inside app mode: the public cookies page
+  // carries the landing header/footer (pricing, the public offer, payments), which a native-shell
+  // reviewer must not reach from a privacy/terms page in one more tap.
+  const pathname = usePathname();
+  const inAppMode = pathname.includes('/legal/app/');
+  const cookiesHref = inAppMode ? `${localePath(locale, 'legal/app/')}cookies/` : localePath(locale, 'legal/cookies/');
   const raw = useSyncExternalStore(subscribePreferences, readPreferences, serverPreferences);
   const preferences = parsePreferences(raw);
   const [opened, setOpened] = useState(false);
@@ -101,7 +108,7 @@ export function CookiePreferences({ locale }: { locale: Locale }) {
           <h2 id="cookie-title" ref={heading} tabIndex={-1} className="cookie-banner-title">{t.title}</h2>
           <p className="cookie-banner-text">
             {settings ? t.body : t.short}{' '}
-            <a href={localePath(locale, 'legal/cookies/')} className="link">{t.policy}</a>
+            <a href={cookiesHref} className="link">{t.policy}</a>
           </p>
         </div>
         {settings && (
