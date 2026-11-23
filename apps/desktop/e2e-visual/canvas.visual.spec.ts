@@ -205,6 +205,34 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
     await checkpoint(shot, 'canvas-sticker');
   }
 
+  // 5e. Links (owner 23.11): an underlined linked text and sticky; the selected sticky's panel shows where a click leads
+  // («↗ figma.com») and «Убрать ссылку» (dark and light). The ⌘-hover pill is covered by unit tests: the test driver
+  // sends a pointerleave right after a hover, so it cannot be screenshotted here.
+  await open();
+  mock.canvas.put({ workspaceId: IDS.workspaces.main, name: 'Ссылки', ownerId: IDS.users.anna }, (d) => {
+    d.create({ kind: 'text', x: 0, y: 0, w: 320, text: 'https://example.com/roadmap/q1', link: 'https://example.com/roadmap/q1' });
+    d.create({ kind: 'sticky', x: 380, y: -40, color: 'blue', text: 'Макеты в Figma', link: 'https://www.figma.com/file/calab-canvas-links' });
+    d.create({ kind: 'sticky', x: 380, y: 160, color: 'yellow', text: 'Без ссылки' });
+  });
+  await win.getByTestId('section-canvas').click();
+  await win.getByTestId('canvas-node').filter({ hasText: 'Ссылки' }).getByTestId('canvas-node-open').click();
+  await expect(win.getByTestId('canvas-title')).toHaveText('Ссылки');
+  await expect(win.getByTestId('canvas-connecting')).toHaveCount(0);
+  await win.getByTestId('canvas-fit-all').click();
+  await win.waitForTimeout(900);
+  const surface = await win.getByTestId('canvas-surface').boundingBox();
+  if (!surface) throw new Error('no canvas surface');
+  // Objects span x 0…540, y −40…320; «Показать всё» centres them at scale ≤ 1 with 48 px padding (as `atWorld`).
+  const fit = Math.min(1, (surface.width - 96) / 540, (surface.height - 96) / 360);
+  const linkAt = { x: surface.x + surface.width / 2 + (460 - 270) * fit, y: surface.y + surface.height / 2 + (40 - 140) * fit };
+  await win.mouse.click(linkAt.x, linkAt.y);
+  await expect(win.getByTestId('canvas-prop-open-link')).toBeVisible();
+  await expect(win.getByTestId('canvas-prop-remove-link')).toBeVisible();
+  await expect(win.getByTestId('canvas-prop-open-link')).toHaveText('figma.com');
+  await win.mouse.move(linkAt.x + 4, linkAt.y + 4);
+  await win.waitForTimeout(300);
+  await checkpoint(shot, 'canvas-links', { keepPointer: true });
+
   // 6. «Доступ» (dark and light).
   await open();
   await win.getByTestId('section-canvas').click();

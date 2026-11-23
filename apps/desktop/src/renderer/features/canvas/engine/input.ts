@@ -480,7 +480,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     if (e.pointerType === 'mouse') {
       engine.hoverQuick(spaceDown ? null : engine.quickAt(w));
       const link = spaceDown ? null : linkTarget(w, e.metaKey || e.ctrlKey);
-      engine.hoverLink(link);
+      // The selected object's address is on its properties panel (which would cover a pill under it).
+      const selectedOne = link !== null && engine.selection.size === 1 && engine.selection.has(link);
+      engine.hoverLink(selectedOne ? null : link);
       setCursor(spaceDown ? 'grab' : link ? 'pointer' : hoverCursor(w));
     }
   };

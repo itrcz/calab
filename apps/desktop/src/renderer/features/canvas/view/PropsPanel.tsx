@@ -369,6 +369,15 @@ function ArrangeMenu({ engine, units, focusCanvas }: { engine: CanvasEngine; uni
  * displayed values change (selectionModel), never per frame of a drag or pan. Hidden during gestures and
  * text editing.
  */
+/** The site of a link as people read it: the host without `www.`. */
+function linkHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 export const PropsPanel = memo(function PropsPanel({
   engine, palette, focusCanvas,
 }: {
@@ -560,9 +569,19 @@ export const PropsPanel = memo(function PropsPanel({
       ) : null}
       {m.link !== undefined ? (
         <>
-          <IconButton label={t('canvasBoard.props.openLink')} shortcut={`${MOD}+click`} size="sm" onMouseDown={keepFocus} onClick={() => engine.openLink(m.link ?? '')} data-testid="canvas-prop-open-link">
-            <ExternalLink className={ICON} strokeWidth={1.75} aria-hidden />
-          </IconButton>
+          {/* Where a click on the object leads: the site's name on the button (a pill under the object would sit under this panel). */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 max-w-[180px] text-fg"
+            aria-label={`${t('canvasBoard.props.openLink')}: ${linkHost(m.link)}`}
+            onMouseDown={keepFocus}
+            onClick={() => engine.openLink(m.link ?? '')}
+            data-testid="canvas-prop-open-link"
+          >
+            <ExternalLink className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+            <span className="truncate">{linkHost(m.link)}</span>
+          </Button>
           {m.locked ? null : (
             <IconButton label={t('canvasBoard.props.removeLink')} size="sm" onMouseDown={keepFocus} onClick={run(() => patch({ link: null }))} data-testid="canvas-prop-remove-link">
               <Unlink className={ICON} strokeWidth={1.75} aria-hidden />

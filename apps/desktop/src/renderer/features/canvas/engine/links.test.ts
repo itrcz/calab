@@ -278,7 +278,7 @@ describe('a click on the selected linked object opens it (owner 23.11, as in Mir
     expect(openLink).not.toHaveBeenCalled();
   });
 
-  it('hover: a hand and the address under the selected linked object, or under any with ⌘ held', () => {
+  it('hover: a hand over the selected linked object (its address is on the panel), a hand and the address pill with ⌘ held', () => {
     const r = rig();
     const [a] = r.make({ init: { kind: 'sticky', x: 100, y: 100, link: URL_A } });
     r.move(150, 150);
@@ -290,6 +290,7 @@ describe('a click on the selected linked object opens it (owner 23.11, as in Mir
     r.engine.setSelection([a ?? '']);
     r.move(155, 150);
     expect(r.canvas.style.cursor).toBe('pointer');
+    expect(r.engine['overlay'].link ?? null).toBeNull();
     r.move(900, 700);
     expect(r.engine['overlay'].link ?? null).toBeNull();
   });
