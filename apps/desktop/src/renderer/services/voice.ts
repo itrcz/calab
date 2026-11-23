@@ -47,6 +47,7 @@ import { micTier, musicTier, type OpusTier } from '../lib/media/opusTier';
 import { applyMicTier, installOpusTierHook } from '../lib/media/opusTierPublish';
 import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '../lib/media/echo';
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
+import { PublisherDiag, ViewerDiag, requestedRids } from '../lib/media/streamDiag';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { denoiseMode, wakeDbFor } from '../lib/media/denoiseSleep';
 import { rnnoiseSupported } from '../lib/media/rnnoiseSupport';
@@ -335,6 +336,9 @@ class VoiceEngine {
   private lastMeterPush = 0;
   private audioBitrateKbps = 32;
   private screen: ActiveScreenShare | null = null;
+  /** Stream quality lines in main.log on change (docs/02 «Стрим: диагностика качества»). */
+  private readonly screenDiag = new PublisherDiag();
+  private readonly viewerDiag = new ViewerDiag();
   /**
    * Remote audio: one <audio> per track (echo rule 1), the only writer of their muted / volume /
    * sink (deafen, per-user volumes survive device switches and LiveKit's own writes; docs/02 «Deafen»).
@@ -4169,6 +4173,11 @@ class VoiceEngine {
         return;
       }
       this.screen = share;
+      this.screenDiag.reset();
+      share.onSfuRequest((codecs) => {
+        const line = this.screen === share ? this.screenDiag.request(requestedRids(codecs), performance.now()) : null;
+        if (line) log.info(line);
+      });
       this.viewers.set(share.video.sid ?? '', new Set());
       // Whole screen: the annotation overlay may cover it (ADR-0028); a window: preview only. An
       // empty display id (Windows, issue #102) still goes: main resolves a single display itself.
@@ -4847,6 +4856,8 @@ class VoiceEngine {
     this.camera.onStats(cameraOut);
     const screenReport = await this.screen?.video.getRTCStatsReport();
     const screenOut = screenReport ? outboundVideo(screenReport, this.rates, 'screen') : [];
+    const outLine = this.screen ? this.screenDiag.tick(screenOut, performance.now()) : null;
+    if (outLine) log.info(outLine);
     // A capture that changed size after publishing left an H.264 layer odd → OpenH264 (docs/14).
     if (hasOddH264Layer(screenOut)) {
       const was = screenOut.map((l) => `${l.width}x${l.height}`);
@@ -4877,6 +4888,8 @@ class VoiceEngine {
       const v = watchedTrack ? inboundRtp(inbound, 'video').find((e) => e['trackIdentifier'] === watchedTrack) : undefined;
       if (v && watchedSid) watching = inboundVideo(withOnly(inbound, v), this.rates, watchedSid);
     }
+    const inLine = this.viewerDiag.tick(watchedSid, watching, performance.now());
+    if (inLine) log.info(inLine);
     const rtt = pair?.rttMs ?? null;
     let out = 0;
     let inn = 0;

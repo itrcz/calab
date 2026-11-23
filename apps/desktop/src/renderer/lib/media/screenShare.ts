@@ -67,6 +67,46 @@ export function screenPublishOptions(codec: ScreenCodec, preset: ConcreteScreenS
   };
 }
 
+/** What `setThumbScale` needs of an RTCRtpSender (a fake one in tests). */
+export type ParamsSender = Pick<RTCRtpSender, 'getParameters' | 'setParameters'>;
+
+/** A mutex in the shape of `@livekit/mutex`: `lock()` resolves with the unlock function. */
+export interface SenderLock {
+  lock(): Promise<() => void>;
+}
+
+/**
+ * livekit-client's per-track sender mutex (`LocalVideoTrack.senderLock`, private; livekit-client is
+ * pinned exactly, re-check on upgrade). Dynacast (`setPublishingLayersForSender`: `encodings[].active`
+ * on every subscribed-quality update), `refreshSenderEncodings` and `prioritizePerformance` hold it
+ * from their `getParameters()` until their `setParameters()` settles. Null if it is gone.
+ */
+export function livekitSenderLock(track: LocalVideoTrack): SenderLock | null {
+  const l = (track as unknown as { senderLock?: Partial<SenderLock> }).senderLock;
+  return l && typeof l.lock === 'function' ? (l as SenderLock) : null;
+}
+
+/**
+ * Sets the thumb layer's (`rid` q) `scaleResolutionDownBy` and nothing else, under livekit's sender
+ * lock: dynacast's own read-modify-write of `active` / `maxBitrate` is then never in flight while we
+ * read the parameters, so writing them back cannot restore a stale `active: false` on the full
+ * layer (viewers stuck on the thumb until the stream restarts). False = already that scale.
+ */
+export async function setThumbScale(sender: ParamsSender, lock: SenderLock | null, scale: number): Promise<boolean> {
+  const unlock = lock ? await lock.lock() : null;
+  try {
+    // Read right before the write (no await in between): `active` / `maxBitrate` stay as they are now.
+    const params = sender.getParameters();
+    const thumb = params.encodings.find((e) => e.rid === 'q');
+    if (!thumb || thumb.scaleResolutionDownBy === scale) return false;
+    thumb.scaleResolutionDownBy = scale;
+    await sender.setParameters(params);
+    return true;
+  } finally {
+    unlock?.();
+  }
+}
+
 export interface DesktopSource {
   id: string;
   name: string;
@@ -98,6 +138,8 @@ export interface ActiveScreenShare {
    * is not touched. False when nothing was changed.
    */
   realign(): Promise<boolean>;
+  /** Listener of the SFU's layer requests (dynacast `subscribedCodecs`), for the diagnostics log. */
+  onSfuRequest(fn: ((subscribedCodecs: unknown) => void) | null): void;
   audio: LocalAudioTrack | null;
   audioProblem: StreamAudioProblem;
   sourceName: string;
@@ -217,6 +259,26 @@ export async function startScreenShare(
   const layout = codec === 'h264' ? await alignCaptureForH264(videoTrack, [THUMB_LAYER.height], fps) : null;
   const video = new LocalVideoTrack(videoTrack, undefined, true);
   setH264Profile(video, codec === 'h264' ? opts.h264Profile : undefined);
+  // Diagnostics (docs/02 «Стрим: диагностика качества»): every dynacast update of the SFU reaches
+  // the track as `setPublishingCodecs(subscribedCodecs)` (livekit-client internals, pinned; the same
+  // track object is republished after a full reconnect, so this outlives a recreated engine).
+  // Installed before publishing: the first update may come before startScreenShare returns.
+  let onSfuRequest: ((subscribedCodecs: unknown) => void) | null = null;
+  let lastSfuRequest: unknown = undefined;
+  const lk = video as unknown as { setPublishingCodecs?: (codecs: unknown) => Promise<unknown> };
+  const setPublishingCodecs = lk.setPublishingCodecs?.bind(video);
+  if (setPublishingCodecs) {
+    lk.setPublishingCodecs = (codecs) => {
+      lastSfuRequest = codecs;
+      try {
+        onSfuRequest?.(codecs);
+      } catch {
+        // diagnostics only
+      }
+      return setPublishingCodecs(codecs);
+    };
+  }
+
   const publishOpts = screenPublishOptions(codec, opts.preset, opts.contentHint, fps, layout);
   try {
     await lp.publishTrack(video, publishOpts);
@@ -254,21 +316,19 @@ export async function startScreenShare(
   });
 
   let realigning = false;
+  const senderLock = livekitSenderLock(video);
+  if (codec === 'h264' && !senderLock) log.warn('stream: livekit sender lock not found, the thumb rescale may race dynacast');
   const realign = async (): Promise<boolean> => {
     const sender = video.sender;
     if (codec !== 'h264' || !sender || realigning || stopped) return false;
     const { width = 0, height = 0 } = videoTrack.getSettings();
     const scale = evenLayerScale(width, height, THUMB_LAYER.height);
-    const params = sender.getParameters();
-    const thumb = params.encodings.find((e) => e.rid === 'q');
-    if (!scale || !thumb || thumb.scaleResolutionDownBy === scale) return false;
-    thumb.scaleResolutionDownBy = scale;
+    if (!scale) return false;
     realigning = true;
     try {
-      await sender.setParameters(params);
-      return true;
+      return await setThumbScale(sender, senderLock, scale);
     } catch (err) {
-      // Raced livekit-client's dynacast update (a stale transaction): the next stats tick retries.
+      // The next stats tick retries.
       log.warn('stream: could not rescale the thumb layer', err);
       return false;
     } finally {
@@ -278,5 +338,9 @@ export async function startScreenShare(
 
   // Web: the browser picked the source; its label is the best name we have.
   const sourceName = opts.source.name || videoTrack.label || t('common.screen');
-  return { video, audio, audioProblem, sourceName, stop, realign };
+  const onSfuRequestSet = (fn: ((subscribedCodecs: unknown) => void) | null): void => {
+    onSfuRequest = fn;
+    if (fn && lastSfuRequest !== undefined) fn(lastSfuRequest);
+  };
+  return { video, audio, audioProblem, sourceName, stop, realign, onSfuRequest: onSfuRequestSet };
 }
