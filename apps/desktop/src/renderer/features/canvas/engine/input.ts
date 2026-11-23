@@ -1,5 +1,5 @@
 import { ROTATE_CURSOR, dist, hitHandleRot, rectContainsPoint, resizeCursorAt, rotateHandlePoint, type HandleId, type Point } from '../../../lib/canvas/geometry';
-import { isConnector } from '../../../lib/canvas/types';
+import { hasText, isConnector } from '../../../lib/canvas/types';
 import type { CanvasEngine, Tool } from './engine';
 import {
   CreateGesture, DrawGesture, EndpointGesture, EraseGesture, MarqueeGesture, MoveGesture, PanGesture, PinchGesture, ResizeGesture, RotateGesture, TOUCH_SLOP_PX, TapPanGesture, WireGesture,
@@ -25,6 +25,12 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
 
 const TOOL_KEYS = { v: 1, s: 1, t: 1, r: 1, c: 1, k: 1, p: 1, e: 1, f: 1 };
 const NO_MODS: Mods = { shift: false, alt: false, mod: false };
+/** A click on the selected linked object opens it after this long (ms), unless a second click makes it a double click (edit). */
+export const LINK_CLICK_MS = 350;
+/** ⌘V waits this long (ms) for the `paste` event before reading the clipboard itself (the event never came). */
+export const PASTE_FALLBACK_MS = 300;
+/** A `paste` event this recent (ms) answers the ⌘V that follows it: no second read. */
+const PASTE_PAIR_MS = 500;
 /** Touch editing (ADR-0127 wave 5b): a press that stays put this long on empty canvas opens the phone's menu. */
 const LONG_PRESS_MS = 500;
 /** Two taps on one object within this long edit its text (the finger's double click). */
@@ -78,6 +84,26 @@ const writable = (o: { kind: string }): boolean => o.kind === 'sticky' || o.kind
 export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): () => void {
   const pointers = new Map<number, Point>();
   let spaceDown = false;
+  /** ⌘V's async-API read, cancelled when the `paste` event brings the clipboard itself. */
+  let pasteFallback: ReturnType<typeof setTimeout> | null = null;
+  /** When the last `paste` event came (performance.now): Electron's menu sends it around the keydown, in either order. */
+  let lastPasteEvent = -Infinity;
+  /** A pending «open the link» of a click on the selected linked object (cancelled by a double click or a new press). */
+  let linkTimer: ReturnType<typeof setTimeout> | null = null;
+  const cancelLink = (): void => {
+    if (linkTimer !== null) clearTimeout(linkTimer);
+    linkTimer = null;
+  };
+  /** The linked object a click would open under the pointer: the one selected, or any with ⌘/Ctrl (mouse only). */
+  const linkTarget = (w: Point, mod: boolean): string | null => {
+    if (engine.tool !== 'select') return null;
+    const o = engine.linkObjectAt(w);
+    if (!o) return null;
+    const top = engine.hitAt(w);
+    if (top?.id !== o.id) return null; // something else lies over it
+    if (mod) return o.id;
+    return engine.selection.size === 1 && engine.selection.has(o.id) && engine.getState().votePhase !== 'open' ? o.id : null;
+  };
   let panDrag: { id: number } | null = null;
   let pinch: PinchGesture | null = null;
   /** Pointer ids the pinch measures (a third finger does not take part). */
@@ -267,6 +293,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   };
 
   const onDown = (e: PointerEvent): void => {
+    cancelLink();
+    engine.hoverLink(null);
     canvas.focus({ preventScroll: true });
     engine.cancelAnimation();
     engine.flushCamera();
@@ -308,6 +336,16 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     }
     if (pointers.size > 2) return;
     const m = mods(e);
+    // ⌘/Ctrl+click on a linked object opens its link (viewers too), as in Miro; it neither selects nor drags.
+    if (e.button === 0 && m.mod && !spaceDown && e.pointerType !== 'touch') {
+      const link = engine.linkAt(w);
+      if (link) {
+        e.preventDefault();
+        pointers.delete(e.pointerId);
+        engine.openLink(link);
+        return;
+      }
+    }
     const wantsPan = e.button === 1 || (e.button === 0 && spaceDown) || (e.button === 0 && engine.readOnly);
     if (wantsPan) {
       e.preventDefault();
@@ -397,6 +435,16 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         if (!m.shift && wasSelected && ids.length > 1) engine.setSelection(unit);
         // Voting open: a plain click on a sticky or shape is a vote (Alt or its own badge takes one back).
         if (!m.shift && !m.mod) engine.voteClick(hit.id, w, m.alt);
+        // A clean click on the one selected linked object opens the link (owner 23.11, as in Miro) — after the double-click
+        // interval, so a double click edits the text instead.
+        const link = hasText(hit) ? hit.link : undefined;
+        if (link && !m.shift && !m.mod && !m.alt && wasSelected && ids.length === 1 && engine.getState().votePhase !== 'open') {
+          cancelLink();
+          linkTimer = setTimeout(() => {
+            linkTimer = null;
+            engine.openLink(link);
+          }, LINK_CLICK_MS);
+        }
       }, undefined, m.shift ? undefined : padPull(engine, hit.id, ids));
       return;
     }
@@ -431,7 +479,11 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     engine.setLocalCursor(w);
     if (e.pointerType === 'mouse') {
       engine.hoverQuick(spaceDown ? null : engine.quickAt(w));
-      setCursor(spaceDown ? 'grab' : hoverCursor(w));
+      const link = spaceDown ? null : linkTarget(w, e.metaKey || e.ctrlKey);
+      // The selected object's address is on its properties panel (which would cover a pill under it).
+      const selectedOne = link !== null && engine.selection.size === 1 && engine.selection.has(link);
+      engine.hoverLink(selectedOne ? null : link);
+      setCursor(spaceDown ? 'grab' : link ? 'pointer' : hoverCursor(w));
     }
   };
 
@@ -477,9 +529,11 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     engine.setLocalCursor(null);
     engine.hoverQuick(null);
     engine.hoverPad(null);
+    engine.hoverLink(null);
   };
 
   const onDouble = (e: MouseEvent): void => {
+    cancelLink();
     if (engine.readOnly || engine.tool !== 'select') return;
     const { w } = local(e);
     // A double-click on a handle of the frame is two presses on the handle, not a new text.
@@ -573,7 +627,17 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         case is('a'): engine.selectAll(); break;
         case is('c'): void engine.copy(); break;
         case is('x'): void engine.cut(); break;
-        case is('v'): void engine.paste(); break;
+        case is('v'):
+          // The browser (or Electron's «Вставить») fires `paste` with the clipboard's files and text, no permission
+          // needed (Electron refuses `clipboard-read`). Only when no such event comes does the async API read it.
+          // Electron's «Вставить» (the menu owns ⌘V) delivers it asynchronously, before or after this keydown.
+          if (performance.now() - lastPasteEvent < PASTE_PAIR_MS) return;
+          if (pasteFallback !== null) clearTimeout(pasteFallback);
+          pasteFallback = setTimeout(() => {
+            pasteFallback = null;
+            void engine.paste();
+          }, PASTE_FALLBACK_MS);
+          return;
         case is('z'): if (e.shiftKey) engine.redo(); else engine.undo(); break;
         case is('y'): engine.redo(); break;
         case is('d'): engine.duplicateSelection(); break;
@@ -651,6 +715,40 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     spaceDown = false;
   };
 
+  const onPaste = (e: ClipboardEvent): void => {
+    lastPasteEvent = performance.now();
+    if (pasteFallback !== null) {
+      clearTimeout(pasteFallback);
+      pasteFallback = null;
+    }
+    const dt = e.clipboardData;
+    if (!dt || engine.readOnly) return;
+    e.preventDefault();
+    engine.pasteData([...dt.files], dt.getData('text/plain'));
+  };
+
+  // Drops from outside (owner 23.11): image files go up and land where they were dropped; a dragged web link becomes a
+  // linked text there. Anything else is not taken (the browser's own drop stays refused by the app).
+  const dropKind = (dt: DataTransfer | null): 'files' | 'link' | null => {
+    if (!dt || engine.readOnly) return null;
+    if (dt.types.includes('Files')) return engine.acceptsImages ? 'files' : null;
+    return dt.types.includes('text/uri-list') ? 'link' : null;
+  };
+  const onDragOver = (e: DragEvent): void => {
+    if (!dropKind(e.dataTransfer)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  };
+  const onDrop = (e: DragEvent): void => {
+    const kind = dropKind(e.dataTransfer);
+    if (!kind || !e.dataTransfer) return;
+    e.preventDefault();
+    canvas.focus({ preventScroll: true });
+    const { w } = local(e);
+    if (kind === 'files') engine.dropImages([...e.dataTransfer.files], w);
+    else engine.dropLink(e.dataTransfer.getData('text/uri-list'), w);
+  };
+
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onUp);
@@ -664,6 +762,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   canvas.addEventListener('keydown', onKeyDown);
   canvas.addEventListener('keyup', onKeyUp);
   canvas.addEventListener('blur', onBlur);
+  canvas.addEventListener('paste', onPaste);
+  canvas.addEventListener('dragover', onDragOver);
+  canvas.addEventListener('drop', onDrop);
   return () => {
     clearPress();
     canvas.removeEventListener('pointerdown', onDown);
@@ -679,5 +780,10 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     canvas.removeEventListener('keydown', onKeyDown);
     canvas.removeEventListener('keyup', onKeyUp);
     canvas.removeEventListener('blur', onBlur);
+    if (pasteFallback !== null) clearTimeout(pasteFallback);
+    cancelLink();
+    canvas.removeEventListener('paste', onPaste);
+    canvas.removeEventListener('dragover', onDragOver);
+    canvas.removeEventListener('drop', onDrop);
   };
 }

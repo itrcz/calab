@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Layers, Lock, LockOpen, Minus, SendToBack, Shapes, Slash, Trash2, Ungroup,
+  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Layers, ExternalLink, Lock, LockOpen, Minus, Unlink, SendToBack, Shapes, Slash, Trash2, Ungroup,
   type LucideIcon,
 } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
@@ -369,6 +369,15 @@ function ArrangeMenu({ engine, units, focusCanvas }: { engine: CanvasEngine; uni
  * displayed values change (selectionModel), never per frame of a drag or pan. Hidden during gestures and
  * text editing.
  */
+/** The site of a link as people read it: the host without `www.`. */
+function linkHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 export const PropsPanel = memo(function PropsPanel({
   engine, palette, focusCanvas,
 }: {
@@ -557,6 +566,28 @@ export const PropsPanel = memo(function PropsPanel({
         <IconButton label={t('canvasBoard.props.ungroup')} shortcut={`⇧${MOD}G`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.ungroupSelection())} data-testid="canvas-prop-ungroup">
           <Ungroup className={ICON} strokeWidth={1.75} aria-hidden />
         </IconButton>
+      ) : null}
+      {m.link !== undefined ? (
+        <>
+          {/* Where a click on the object leads: the site's name on the button (a pill under the object would sit under this panel). */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 max-w-[180px] text-fg"
+            aria-label={`${t('canvasBoard.props.openLink')}: ${linkHost(m.link)}`}
+            onMouseDown={keepFocus}
+            onClick={() => engine.openLink(m.link ?? '')}
+            data-testid="canvas-prop-open-link"
+          >
+            <ExternalLink className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+            <span className="truncate">{linkHost(m.link)}</span>
+          </Button>
+          {m.locked ? null : (
+            <IconButton label={t('canvasBoard.props.removeLink')} size="sm" onMouseDown={keepFocus} onClick={run(() => patch({ link: null }))} data-testid="canvas-prop-remove-link">
+              <Unlink className={ICON} strokeWidth={1.75} aria-hidden />
+            </IconButton>
+          )}
+        </>
       ) : null}
       {/* Locked: one labelled button says both the state and the way out (an icon toggle next to a «locked» badge read as two locks). */}
       {m.locked ? (

@@ -68,6 +68,8 @@ export interface OverlayState {
   ink?: InkPreview | null;
   /** «Continue» dots beside one selected sticky / shape (engine/quick.ts); `hot`: the hovered one with its preview. */
   quick?: QuickOverlay | null;
+  /** The address of the hovered link (a click opens it): a pill under the object's bottom-left corner. */
+  link?: { at: Point; text: string } | null;
 }
 
 /** The source frame and its sides (dots placed at draw time, so they keep their screen distance at any zoom). */
@@ -81,12 +83,16 @@ export interface QuickOverlay {
 export const emptyOverlay = (): OverlayState => ({ outlines: [], connectors: [], group: null, marquee: null, guides: [], angle: null, ghost: null, wire: null, glue: null });
 
 export const overlayIsEmpty = (o: OverlayState): boolean =>
-  o.outlines.length === 0 && o.connectors.length === 0 && !o.group && !o.marquee && o.guides.length === 0 && !o.angle && !o.ghost && !o.wire && !o.glue && !o.ink && !o.quick;
+  o.outlines.length === 0 && o.connectors.length === 0 && !o.group && !o.marquee && o.guides.length === 0 && !o.angle && !o.ghost && !o.wire && !o.glue && !o.ink && !o.quick && !o.link;
 
 /** Screen px every overlay box is padded by: handles, the rotate knob above a frame, the «continue» dots, line widths. */
 const OVERLAY_PAD_PX = TOUCH_ROTATE_OFFSET_PX + TOUCH_HANDLE_PX + QUICK_HIT_PX + 6;
 /** Room the angle pill takes down-right of its point (screen px), whatever its text. */
 const ANGLE_BOX_PX = { w: 14 + 72, h: 14 + 24 };
+/** The link pill: at most this wide (screen px), its text cut with an ellipsis; hung this far under the object. */
+const LINK_MAX_PX = 360;
+const LINK_GAP_PX = 6;
+const LINK_H_PX = 22;
 
 /**
  * The world rect everything `drawOverlay` paints lies in (padded for handles, knobs and dots), or null for an empty
@@ -138,6 +144,7 @@ export function overlayBounds(o: OverlayState, scale: number): Rect | null {
     else add(Math.min(g.from, g.to), g.at, Math.abs(g.to - g.from), 0);
   }
   if (o.angle) add(o.angle.at.x, o.angle.at.y, ANGLE_BOX_PX.w * px, ANGLE_BOX_PX.h * px);
+  if (o.link) add(o.link.at.x, o.link.at.y, LINK_MAX_PX * px, (LINK_GAP_PX + LINK_H_PX) * px);
   if (o.ink) pts(o.ink.points, Math.max(o.ink.width, px) / 2);
   if (x1 < x0) return null;
   const pad = OVERLAY_PAD_PX * px;
@@ -249,6 +256,7 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
   }
 
   if (o.angle) drawAngle(ctx, o.angle, p, px);
+  if (o.link) drawLinkPill(ctx, o.link, p, px);
 
   if (o.ink) strokeInk(ctx, o.ink.points, 0, 0, resolveColor(p, o.ink.color) ?? p.ink, Math.max(o.ink.width, px), o.ink.marker);
 }
@@ -268,6 +276,37 @@ function drawAngle(ctx: Ctx2D, a: { at: Point; deg: number }, p: CanvasPalette, 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, a.at.x + 14 * px + w / 2, a.at.y + 14 * px + h / 2 + 0.5 * px);
+  ctx.restore();
+}
+
+/** The hovered link's address under its object: screen-sized, cut to `LINK_MAX_PX` with an ellipsis. */
+function drawLinkPill(ctx: Ctx2D, l: { at: Point; text: string }, p: CanvasPalette, px: number): void {
+  ctx.save();
+  ctx.font = `500 ${12 * px}px ${p.fontFamily}`;
+  const pad = 8 * px;
+  const max = LINK_MAX_PX * px - 2 * pad;
+  let text = l.text;
+  if (ctx.measureText(text).width > max) {
+    let lo = 0;
+    let hi = text.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ctx.measureText(`${text.slice(0, mid)}…`).width <= max) lo = mid;
+      else hi = mid - 1;
+    }
+    text = `${text.slice(0, lo)}…`;
+  }
+  const w = ctx.measureText(text).width + 2 * pad;
+  const h = LINK_H_PX * px;
+  const y = l.at.y + LINK_GAP_PX * px;
+  ctx.beginPath();
+  traceRounded(ctx, { x: l.at.x, y, w, h }, h / 2);
+  ctx.fillStyle = p.accent;
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, l.at.x + pad, y + h / 2 + 0.5 * px);
   ctx.restore();
 }
 

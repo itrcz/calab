@@ -54,6 +54,35 @@ export interface BaseRec {
 /** Text formatting (bold / italic / strike, lists): absent for plain text (ADR-0127). */
 export interface RichFields {
   readonly fmt?: Fmt;
+  /**
+   * A web link the object opens (owner 23.11, a pasted URL): http(s) only, ≤ MAX_LINK. ⌘/Ctrl+click or «Открыть ссылку»
+   * opens it in the browser; the text is underlined. Builds before it ignore the field (plain text).
+   */
+  readonly link?: string;
+}
+
+/** The longest stored link. */
+export const MAX_LINK = 2048;
+
+/** A link an object may carry: an absolute http(s) URL without spaces or control characters. */
+export function isLinkUrl(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > MAX_LINK || !/^https?:\/\/\S+$/i.test(v)) return false;
+  for (let i = 0; i < v.length; i++) {
+    const c = v.charCodeAt(i);
+    if (c < 0x20 || c === 0x7f) return false;
+  }
+  try {
+    const u = new URL(v);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname !== '';
+  } catch {
+    return false;
+  }
+}
+
+/** A pasted text that is one web link and nothing else (surrounding spaces aside). */
+export function pastedLink(text: string): string | null {
+  const t = text.trim();
+  return isLinkUrl(t) ? t : null;
 }
 
 export interface StickyRec extends BaseRec, RichFields {
@@ -191,6 +220,8 @@ export const DEFAULTS = {
   connectorStroke: 'stroke',
   /** Long side of a new picture (stickers are 512 px squares). */
   imageSize: 200,
+  /** The long side of a picture pasted or dropped from outside, at most (its own pixel size below that). */
+  pastedImageMax: 480,
   inkStroke: 'stroke',
   inkWidth: 4,
   /** A new frame: 16:9 at a size that holds a row of stickies. */
@@ -217,6 +248,8 @@ export interface InitExtras {
   fontSize?: FontToken;
   /** Exact text size in px of a sticky or shape; wins over `fontSize`. */
   fontPx?: number;
+  /** A web link of a sticky, text or shape (`isLinkUrl`; ignored by the others). */
+  link?: string;
 }
 
 /** Fields a creation call may set (kind-specific; unknown ones are ignored). */
@@ -258,6 +291,8 @@ export interface ObjectPatch {
   soft?: boolean;
   /** A sticky pad; false removes it. */
   pad?: boolean;
+  /** The web link of a sticky, text or shape (`isLinkUrl`); null removes it. */
+  link?: string | null;
   stroke?: string;
   strokeWidth?: number;
   from?: Endpoint;

@@ -744,6 +744,12 @@ type CanvasItem struct {
 	Emoji       string
 }
 
+type CanvasItemFile struct {
+	ItemID    uuid.UUID
+	FileID    uuid.UUID
+	CreatedAt time.Time
+}
+
 type CanvasItemHead struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID

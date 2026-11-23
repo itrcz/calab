@@ -527,3 +527,12 @@ SELECT w.id, ts_headline('russian', coalesce(nullif(w.plain_text, ''), w.name),
     to_tsquery('russian', sqlc.arg('tsq')::text) || to_tsquery('simple', sqlc.arg('tsq')::text),
     sqlc.arg('options')::text)::text AS snippet
 FROM canvas_items w WHERE w.id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- ---- files ----
+
+-- name: AddCanvasItemFile :exec
+INSERT INTO canvas_item_files (item_id, file_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;
+
+-- name: GetCanvasItemFile :one
+-- The canvas a file belongs to (files.CanRead: a picture of the Canvas is read through its canvas).
+SELECT * FROM canvas_item_files WHERE file_id = $1 ORDER BY created_at LIMIT 1;

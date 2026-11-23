@@ -3,7 +3,7 @@ import { CanvasDoc, clampTitle, color, endpoint, isGroupId, isKind, isShapeKind,
 import { FRAME_TITLE_H, FRAME_TITLE_SIZE, frameTitleRect } from './frames';
 import {
   boundsOf, distToPolyline, normRot, pointsBounds, rectCenter, rectContainsPoint, rectInflate,
-  rotatePoint, rotatedRectHitsRect, type Point, type Rect,
+  rotatePoint, type Point, type Rect,
 } from './geometry';
 import { isValidKey } from './fracIndex';
 import { INK_MAX_WIDTH, INK_MIN_WIDTH, fitErase, fitInk, inkDistance, inkErase, inkPoints, inSwath } from './ink';
@@ -13,7 +13,7 @@ import { pointInShape } from './shapes';
 import { fmtFromDelta, type Fmt } from './richText';
 import { SHAPE_PAD, TEXT_PAD, TextLayouter, stickyPad, isFontToken, storedFontPx, type FontToken } from './textLayout';
 import {
-  DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector, isFrame, isImageSrc,
+  DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector, isFrame, isImageSrc, isLinkUrl,
   type BoxRec, type ConnectorRec, type Endpoint, type FrameRec, type ObjectRec, type RouteKind, type Arrow,
 } from './types';
 
@@ -58,25 +58,10 @@ export function visualBounds(o: ObjectRec): Rect {
   return rectInflate(aabb(o), o.kind === 'shape' ? o.strokeWidth : o.kind === 'ink' ? o.strokeWidth / 2 + 1 : 1);
 }
 
-function segHitsRect(ax: number, ay: number, bx: number, by: number, r: Rect): boolean {
-  // Liang–Barsky against the rect.
-  let t0 = 0;
-  let t1 = 1;
-  const dx = bx - ax;
-  const dy = by - ay;
-  const clip = (p: number, q: number): boolean => {
-    if (p === 0) return q >= 0;
-    const t = q / p;
-    if (p < 0) {
-      if (t > t1) return false;
-      if (t > t0) t0 = t;
-    } else {
-      if (t < t0) return false;
-      if (t < t1) t1 = t;
-    }
-    return true;
-  };
-  return clip(-dx, ax - r.x) && clip(dx, r.x + r.w - ax) && clip(-dy, ay - r.y) && clip(dy, r.y + r.h - ay);
+/** A stored web link of a text-bearing box (`isLinkUrl`); anything else reads as none. */
+function linkOf(m: FieldSource): { link?: string } {
+  const v = m.get('link');
+  return isLinkUrl(v) ? { link: v } : {};
 }
 
 /**
@@ -343,24 +328,24 @@ export class Scene {
     return !(inner.w > 0 && inner.h > 0 && pointInShape(o.shape, inner, q));
   }
 
-  /** Objects touching the rect (marquee); a frame only when the rect takes it whole, so a frame drawn inside one picks its contents. */
+  /**
+   * Objects the rect takes whole (marquee, as in Miro — owner 23.11): a column or an area behind the stickies that the
+   * frame only crosses stays out, so a frame drawn over the stickies of a column picks the stickies alone. A rotated
+   * box by its outer bounds; a stroke by its points; a connector by its routed path.
+   */
   inRect(r: Rect): ObjectRec[] {
+    const inside = (x: number, y: number): boolean => x >= r.x && y >= r.y && x <= r.x + r.w && y <= r.y + r.h;
     return this.query(r).filter((o) => {
-      if (o.kind === 'frame') return o.x >= r.x && o.y >= r.y && o.x + o.w <= r.x + r.w && o.y + o.h <= r.y + r.h;
-      if (o.kind === 'ink' && !o.rot) {
-        // An unrotated stroke: by its line, so a frame across the empty part of a big scribble does not take it.
+      if (isConnector(o) || (o.kind === 'ink' && !o.rot)) {
         const p = o.points;
-        if (p.length < 4) return rectContainsPoint(r, { x: o.x + (p[0] ?? 0), y: o.y + (p[1] ?? 0) }, 0);
-        for (let i = 0; i + 3 < p.length; i += 2) {
-          if (segHitsRect(o.x + (p[i] ?? 0), o.y + (p[i + 1] ?? 0), o.x + (p[i + 2] ?? 0), o.y + (p[i + 3] ?? 0), r)) return true;
-        }
-        return false;
+        const ox = isConnector(o) ? 0 : o.x;
+        const oy = isConnector(o) ? 0 : o.y;
+        if (p.length < 2) return false;
+        for (let i = 0; i + 1 < p.length; i += 2) if (!inside(ox + (p[i] ?? 0), oy + (p[i + 1] ?? 0))) return false;
+        return true;
       }
-      if (!isConnector(o)) return rotatedRectHitsRect(o, o.rot ?? 0, r);
-      for (let i = 0; i + 3 < o.points.length; i += 2) {
-        if (segHitsRect(o.points[i] ?? 0, o.points[i + 1] ?? 0, o.points[i + 2] ?? 0, o.points[i + 3] ?? 0, r)) return true;
-      }
-      return false;
+      const b = aabb(o);
+      return inside(b.x, b.y) && inside(b.x + b.w, b.y + b.h);
     });
   }
 
@@ -614,7 +599,7 @@ export class Scene {
           kind, id, z, x, y,
           w: num(m.get('w'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE),
           color: color(m.get('color'), DEFAULTS.stickyColor), text: textOf(), ...rich(), ...fontSizeOf('sticky'),
-          ...(m.get('pad') === true ? { pad: true } : {}), ...this.extras(m, true),
+          ...(m.get('pad') === true ? { pad: true } : {}), ...linkOf(m), ...this.extras(m, true),
         };
       case 'text': {
         const w = num(m.get('w'), DEFAULTS.textW, DEFAULTS.minTextW, MAX_SIZE);
@@ -622,7 +607,7 @@ export class Scene {
         const text = textOf();
         const lay = cell.fmt ? this.text.layoutRich(text, cell.fmt, size, w - 2 * TEXT_PAD) : this.text.layout(text, size, w - 2 * TEXT_PAD);
         const h = Math.max(size * 1.3, lay.height) + 2 * TEXT_PAD;
-        return { kind, id, z, x, y, w, h, size, color: color(m.get('color'), DEFAULTS.textColor), text, ...rich(), ...this.extras(m, true) };
+        return { kind, id, z, x, y, w, h, size, color: color(m.get('color'), DEFAULTS.textColor), text, ...rich(), ...linkOf(m), ...this.extras(m, true) };
       }
       case 'shape': {
         const shape = m.get('shape');
@@ -631,7 +616,7 @@ export class Scene {
           w: num(m.get('w'), DEFAULTS.shapeW, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.shapeH, DEFAULTS.minBox, MAX_SIZE),
           shape: isShapeKind(shape) ? shape : 'rect',
           fill: color(m.get('fill'), DEFAULTS.shapeFill), ...(m.get('soft') === true ? { soft: true } : {}), stroke: color(m.get('stroke'), DEFAULTS.shapeStroke),
-          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...rich(), ...fontSizeOf('shape'), ...this.extras(m, true),
+          strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...rich(), ...fontSizeOf('shape'), ...linkOf(m), ...this.extras(m, true),
         };
       }
       case 'image': {

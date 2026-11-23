@@ -50,6 +50,8 @@ export interface PanelModel {
   frameFill?: string;
   /** The name of the one selected frame (only when it is the whole selection). */
   frameTitle?: string;
+  /** The web link of the one selected sticky, text or shape (only when it is the whole selection). */
+  link?: string;
 }
 
 function uniform<T>(values: readonly T[]): T | undefined {
@@ -99,11 +101,13 @@ export function panelModelOf(objs: readonly ObjectRec[], groupSize: (gid: string
   set('inkMarker', uniform(ink.map((o) => o.marker === true)));
   set('frameFill', uniform(frame.map((o) => o.fill)));
   if (objs.length === 1 && frame[0]) out.frameTitle = frame[0].title;
+  const one = objs.length === 1 ? objs[0] : undefined;
+  if (one && (one.kind === 'sticky' || one.kind === 'text' || one.kind === 'shape') && one.link !== undefined) out.link = one.link;
   return out;
 }
 
 const KEYS: readonly (keyof PanelModel)[] = [
-  'count', 'hasSticky', 'hasText', 'hasShape', 'hasConnector', 'locked', 'canGroup', 'canUngroup', 'units', 'stickyColor', 'textColor', 'textSize', 'fontPx', 'shape', 'fill', 'stroke', 'strokeWidth', 'arrow', 'route', 'hasInk', 'inkColor', 'inkWidth', 'inkMarker', 'hasFrame', 'frameFill', 'frameTitle',
+  'count', 'hasSticky', 'hasText', 'hasShape', 'hasConnector', 'locked', 'canGroup', 'canUngroup', 'units', 'stickyColor', 'textColor', 'textSize', 'fontPx', 'shape', 'fill', 'stroke', 'strokeWidth', 'arrow', 'route', 'hasInk', 'inkColor', 'inkWidth', 'inkMarker', 'hasFrame', 'frameFill', 'frameTitle', 'link',
 ];
 
 export const samePanelModel = (a: PanelModel | null, b: PanelModel | null): boolean =>

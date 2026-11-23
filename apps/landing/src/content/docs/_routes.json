@@ -236,6 +236,7 @@
 {"method":"POST","path":"/api/dms/{id}/files","decision":"allow","group":"dm"},
 {"method":"PATCH","path":"/api/dms/{id}/state","decision":"deny","group":"dm"},
 {"method":"GET","path":"/api/dms/candidates","decision":"allow","group":"dm"},
+{"method":"POST","path":"/api/canvas/items/{id}/files","decision":"deny","group":"files"},
 {"method":"GET","path":"/api/files/{id}","decision":"allow","group":"files"},
 {"method":"GET","path":"/api/files/{id}/thumbnail","decision":"allow","group":"files"},
 {"method":"POST","path":"/api/files/convert","decision":"deny","group":"files"},

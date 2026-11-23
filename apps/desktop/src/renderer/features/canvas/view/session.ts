@@ -11,6 +11,7 @@ import { canvasPublicSyncUrl, canvasSyncUrl, createCanvasSync, type CanvasSync }
 import type { SocketLike } from '../../../lib/gateway/client';
 import { builtinStickerSrc } from '../../../lib/builtinStickers';
 import { canvasDocUserKey } from '../../../lib/canvas/docUser';
+import type { Point } from '../../../lib/canvas/geometry';
 import { CanvasEngine, type CanvasPalette, type ClipboardPort, type RefusedWhy } from '../engine';
 import { bindCanvasSync, type CanvasUser, type SyncBinding, type SyncEnginePort } from '../syncBinding';
 import type { PresenceStore } from './presenceStore';
@@ -38,6 +39,10 @@ export interface CanvasViewDeps {
    * which are bundled with the app.
    */
   mediaUrl?: (path: string) => Promise<string>;
+  /** Uploads a picture pasted or dropped on canvas `canvasId` (owner 23.11); absent (the public link): such pastes do nothing. */
+  uploadImage?: (canvasId: string, file: File) => Promise<{ path: string; width: number; height: number }>;
+  /** Opens an object's web link in the browser (platform.app.openExternal). */
+  openLink?: (url: string) => void;
 }
 
 export interface SessionOptions {
@@ -70,6 +75,8 @@ export interface SessionOptions {
   onTooLarge: (bytes: number) => void;
   /** An action was refused (EngineOptions.onRefused). */
   onRefused?: (why: RefusedWhy) => void;
+  /** A pasted or dropped picture did not upload (the server's refusal: too large, the quota, no right). */
+  onImageFailed?: (e: unknown) => void;
   onFatal: (code: number) => void;
 }
 
@@ -84,12 +91,33 @@ export interface CanvasSession {
   destroy(): void;
 }
 
+/** How far apart (world units) pictures dropped together land. */
+const IMAGE_STEP = 32;
+
 export function openCanvasSession(o: SessionOptions): CanvasSession {
   const ydoc = new Y.Doc();
   const awareness = new Awareness(ydoc);
   const me = o.deps.user();
   // What the document carries for me (votes, who started a vote or the timer): a key, not my id (docUser.ts).
   const docUser = o.publicCode ? '' : canvasDocUserKey(o.canvasId, me.id);
+  const upload = o.publicCode ? undefined : o.deps.uploadImage;
+  // Each picture lands as its upload finishes, the n-th a step down-right of the first (several dropped at once).
+  const pasteImages = (files: readonly File[], at: Point | null): void => {
+    if (!upload) return;
+    files.forEach((f, i) => {
+      upload(o.canvasId, f).then(
+        (r) => {
+          // The board may have closed while the picture was uploading: the engine and its document are gone.
+          if (closed) return;
+          const p = at ?? engine.viewCenter();
+          engine.insertImage(r.path, r.width, r.height, undefined, { x: p.x + i * IMAGE_STEP, y: p.y + i * IMAGE_STEP });
+        },
+        (e: unknown) => {
+          if (!closed) o.onImageFailed?.(e);
+        },
+      );
+    });
+  };
   const engine = new CanvasEngine({
     canvas: o.canvas,
     userId: docUser,
@@ -106,6 +134,8 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     ...(o.deps.clipboard ? { clipboard: o.deps.clipboard } : {}),
     ...(o.onRefused ? { onRefused: o.onRefused } : {}),
     imageUrl: (src) => builtinStickerSrc(src) ?? o.deps.mediaUrl?.(src) ?? null,
+    ...(upload ? { pasteImages: (files: readonly File[], at: Point | null) => pasteImages(files, at) } : {}),
+    ...(o.deps.openLink ? { openLink: o.deps.openLink } : {}),
   });
   const code = o.publicCode;
   const sync = createCanvasSync(ydoc, awareness, {

@@ -36,6 +36,7 @@ var planInactiveRoutes = map[string]string{
 	"POST /api/workspaces/{id}/office/convert": plans.RestrictedUpload,
 	"POST /api/workspaces/{id}/office/create":  plans.RestrictedUpload,
 	"POST /api/wiki/pages/{id}/files":          plans.RestrictedUpload, // ADR-0096
+	"POST /api/canvas/items/{id}/files":        plans.RestrictedUpload, // ADR-0127, 2026-11-23
 	// pictures made of an upload: backgrounds, achievement images (an edit that replaces the
 	// picture is refused inside achievements), sticker replacement, bot avatars
 	"POST /api/workspaces/{id}/backgrounds":         plans.RestrictedUpload,

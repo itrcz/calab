@@ -3,7 +3,7 @@ import { INK_MAX_WIDTH, INK_MIN_WIDTH, inkErase, inkPoints } from './ink';
 import { fmtFromDelta, type DeltaOp } from './richText';
 import type { Scene } from './scene';
 import { isFontToken } from './textLayout';
-import { DEFAULTS, MAX_OBJECTS, MAX_TEXT, SOFT_PREFIX, isImageSrc, type Endpoint, type InitExtras, type ObjectInit } from './types';
+import { DEFAULTS, MAX_OBJECTS, MAX_TEXT, SOFT_PREFIX, isImageSrc, isLinkUrl, type Endpoint, type InitExtras, type ObjectInit } from './types';
 
 /** Text-clipboard format: prefix + JSON (ADR-0126 §4). */
 export const CLIPBOARD_PREFIX = 'calaba-canvas:';
@@ -109,6 +109,7 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
     if ((o.kind === 'sticky' || o.kind === 'shape') && typeof o.fontPx === 'number') extras.fontPx = o.fontPx;
     if (o.kind !== 'connector' && o.kind !== 'frame' && typeof o.rot === 'number') extras.rot = o.rot;
     if (o.locked === true) extras.locked = true;
+    if ((o.kind === 'sticky' || o.kind === 'text' || o.kind === 'shape') && isLinkUrl(o.link)) extras.link = o.link;
     const g = isGroupId(o.group) ? groups.get(o.group) : undefined;
     if (g !== undefined) extras.group = g;
     const x = num(o.x, 0) + dx;

@@ -378,8 +378,11 @@ function layoutFor(owner: object, env: DrawEnv, text: string, fmt: Fmt | undefin
 /** How strongly a plaque shows its text color. */
 const PLAQUE_ALPHA = 0.4;
 
-/** Paints glyphs, or plaques when the zoom is too small to read them. */
-function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, fmt: Fmt | undefined, size: number, box: Rect, fg: string, align: 'left' | 'center', vcenter: boolean): void {
+/** Where a link's underline sits under the glyph top, in text sizes. */
+const UNDERLINE_AT = 1.02;
+
+/** Paints glyphs, or plaques when the zoom is too small to read them; `underline`: the object is a link. */
+function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, fmt: Fmt | undefined, size: number, box: Rect, fg: string, align: 'left' | 'center', vcenter: boolean, underline = false): void {
   if (text === '' || box.w <= 0) return;
   const lay = layoutFor(owner, env, text, fmt, size, box.w);
   const top = vcenter ? box.y + Math.max(0, (box.h - lay.height) / 2) : box.y;
@@ -412,21 +415,28 @@ function drawLines(ctx: Ctx2D, env: DrawEnv, owner: object, text: string, fmt: F
   ctx.fillStyle = fg;
   ctx.textBaseline = 'top';
   if (lay.segs) {
-    drawRich(ctx, env, lay, size, box, align, top, bottom);
+    drawRich(ctx, env, lay, size, box, align, top, bottom, underline);
     return;
   }
   ctx.textAlign = align;
   const x = align === 'center' ? box.x + box.w / 2 : box.x;
+  const bar = Math.max(size / 16, 1 / env.scale);
   for (let i = 0; i < lay.lines.length; i++) {
     const y = top + i * lay.lineHeight;
     if (y + lay.lineHeight > bottom) break;
     const line = lay.lines[i];
-    if (line) ctx.fillText(line, x, y + (lay.lineHeight - size) / 2);
+    if (!line) continue;
+    const ty = y + (lay.lineHeight - size) / 2;
+    ctx.fillText(line, x, ty);
+    if (underline) {
+      const w = lay.widths[i] ?? 0;
+      ctx.fillRect(align === 'center' ? x - w / 2 : x, ty + size * UNDERLINE_AT, w, bar);
+    }
   }
 }
 
 /** Formatted lines: each piece in its own font, strike-through as a bar, list markers in the regular font. */
-function drawRich(ctx: Ctx2D, env: DrawEnv, lay: TextLayout, size: number, box: Rect, align: 'left' | 'center', top: number, bottom: number): void {
+function drawRich(ctx: Ctx2D, env: DrawEnv, lay: TextLayout, size: number, box: Rect, align: 'left' | 'center', top: number, bottom: number, underline: boolean): void {
   ctx.textAlign = 'left';
   let current = -1;
   const setFont = (f: number): void => {
@@ -449,6 +459,7 @@ function drawRich(ctx: Ctx2D, env: DrawEnv, lay: TextLayout, size: number, box: 
       setFont(seg.f);
       ctx.fillText(seg.text, left + seg.x, ty);
       if (seg.f & F_STRIKE) ctx.fillRect(left + seg.x, ty + size * 0.56, seg.w, bar);
+      if (underline) ctx.fillRect(left + seg.x, ty + size * UNDERLINE_AT, seg.w, bar);
     }
   }
 }
@@ -518,12 +529,12 @@ function drawSticky(ctx: Ctx2D, o: TextBoxRec & { kind: 'sticky' }, env: DrawEnv
     ctx.restore();
   }
   // Centred both ways, as in Miro (owner 30.10); the lines wrap at the sticky's width.
-  if (env.hiddenText !== o.id) drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(band > 0 ? { ...o, h: o.h - band } : o), c.fg, 'center', true);
+  if (env.hiddenText !== o.id) drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(band > 0 ? { ...o, h: o.h - band } : o), c.fg, 'center', true, o.link !== undefined);
 }
 
 function drawText(ctx: Ctx2D, o: TextBoxRec & { kind: 'text' }, env: DrawEnv): void {
   if (env.hiddenText === o.id) return;
-  drawLines(ctx, env, o, o.text, o.fmt, o.size, contentRect(o), resolveColor(env.palette, o.color) ?? env.palette.ink, 'left', false);
+  drawLines(ctx, env, o, o.text, o.fmt, o.size, contentRect(o), resolveColor(env.palette, o.color) ?? env.palette.ink, 'left', false, o.link !== undefined);
 }
 
 function drawShape(ctx: Ctx2D, o: TextBoxRec & { kind: 'shape' }, env: DrawEnv): void {
@@ -543,7 +554,7 @@ function drawShape(ctx: Ctx2D, o: TextBoxRec & { kind: 'shape' }, env: DrawEnv):
   }
   if (env.hiddenText !== o.id) {
     const ink = resolveColor(env.palette, 'text') ?? env.palette.ink;
-    drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(o), fill && o.text ? readableInk(fill, ink) : ink, 'center', true);
+    drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(o), fill && o.text ? readableInk(fill, ink) : ink, 'center', true, o.link !== undefined);
   }
 }
 

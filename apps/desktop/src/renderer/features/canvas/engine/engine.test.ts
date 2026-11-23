@@ -5,10 +5,12 @@ import { MAX_SCALE } from '../../../lib/canvas/camera';
 import { anchorPoint } from '../../../lib/canvas/route';
 import { isBox, isConnector } from '../../../lib/canvas/types';
 import { defaultPalette } from './palette';
+import { PASTE_FALLBACK_MS } from './input';
 import { destroyRigs, rig, type Rig } from './testRig';
 
 const sticky = (x: number, y: number, extra: object = {}) => ({ init: { kind: 'sticky' as const, x, y, ...extra } });
 const objs = (r: Rig) => r.engine.doc;
+const macrotask = (): Promise<void> => new Promise((done) => setTimeout(done, PASTE_FALLBACK_MS + 20));
 const flush = async (): Promise<void> => {
   await Promise.resolve();
   await Promise.resolve();
@@ -104,10 +106,12 @@ describe('selection, move, resize', () => {
     r.click(120, 120, { shiftKey: true });
     expect(r.engine.getState().selectedId).toBe(a);
   });
-  it('a marquee selects what it touches', () => {
+  it('a marquee selects what it takes whole', () => {
     const r = rig();
     const [a, b, c] = r.make(sticky(0, 0), sticky(300, 0), sticky(700, 500));
-    r.drag([-20, -20], [350, 100]);
+    r.drag([-20, -20], [350, 200]);
+    expect([...r.engine.selection]).toEqual([a]); // b is only crossed
+    r.drag([-20, -20], [480, 180]);
     expect([...r.engine.selection].sort()).toEqual([a, b].sort());
     expect(r.engine.selection.has(c ?? '')).toBe(false);
     r.drag([-30, 900], [-10, 910]);
@@ -535,6 +539,7 @@ describe('keyboard', () => {
     await flush();
     expect(r.clip.text.startsWith('calaba-canvas:')).toBe(true);
     r.key('v', { metaKey: true });
+    await macrotask(); // ⌘V's fallback read runs when no `paste` event came
     await flush();
     expect(objs(r).count).toBe(4);
     expect(r.engine.getState().selectionCount).toBe(2);
@@ -580,6 +585,7 @@ describe('keyboard', () => {
     const r = rig();
     r.clip.text = 'just words';
     r.key('v', { metaKey: true });
+    await macrotask(); // ⌘V's fallback read runs when no `paste` event came
     await flush();
     const id = r.engine.getState().selectedId ?? '';
     expect(objs(r).snapshot(id)).toMatchObject({ kind: 'text', text: 'just words' });
@@ -591,6 +597,7 @@ describe('keyboard', () => {
     r.key('c', { metaKey: true });
     await flush();
     r.key('v', { metaKey: true });
+    await macrotask(); // ⌘V's fallback read runs when no `paste` event came
     await flush();
     const id = r.engine.getState().selectedId ?? '';
     const o = r.engine.scene.get(id);
@@ -1116,12 +1123,12 @@ describe('edge pan of a drag (frame, move, resize)', () => {
     const r = rig();
     const [a, b] = r.make(sticky(600, 300), sticky(1600, 300));
     r.down(500, 280);
-    r.move(800, 400);
-    r.move(995, 400); // 5 px from the right edge of a 1000 px view
+    r.move(800, 500);
+    r.move(995, 500); // 5 px from the right edge of a 1000 px view
     frames(r, 60);
     expect(r.engine.camera.tx).toBeLessThan(-600);
     expect(r.engine.selection.has(b ?? '')).toBe(true); // without a pointer move
-    r.up(995, 400);
+    r.up(995, 500);
     const tx = r.engine.camera.tx;
     frames(r, 10);
     expect(r.engine.camera.tx).toBe(tx);
@@ -1171,11 +1178,11 @@ describe('edge pan of a drag (frame, move, resize)', () => {
   });
   it('a frame follows its pointer when the camera moves under it (the wheel), with no pointer move', () => {
     const r = rig();
-    const [b] = r.make(sticky(600, 200));
+    const [b] = r.make(sticky(600, 120));
     r.down(100, 100);
     r.move(300, 300);
     expect(r.engine.selection.has(b ?? '')).toBe(false);
-    r.engine.steerPan(-400, 0);
+    r.engine.steerPan(-500, 0);
     frames(r, 1);
     expect(r.engine.selection.has(b ?? '')).toBe(true);
     r.up(300, 300);

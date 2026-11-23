@@ -1,6 +1,6 @@
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, Check, CopyPlus, Group, ListChecks, Lock, LockOpen, Minus, Palette, Pencil, Shapes, Trash2, Ungroup, type LucideIcon,
+  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, Check, CopyPlus, ExternalLink, Group, ListChecks, Lock, LockOpen, Minus, Palette, Pencil, Shapes, Trash2, Ungroup, type LucideIcon,
 } from 'lucide-react';
 import { memo, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { cx } from '../../../components/ui';
@@ -158,6 +158,11 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
         {m?.canUngroup ? (
           <PhoneBtn label={t('canvasBoard.props.ungroup')} onClick={run(() => engine.ungroupSelection())} testId="canvas-prop-ungroup">
             <Ungroup className={ICON} strokeWidth={1.75} aria-hidden />
+          </PhoneBtn>
+        ) : null}
+        {m?.link !== undefined ? (
+          <PhoneBtn label={t('canvasBoard.props.openLink')} onClick={() => engine.openLink(m.link ?? '')} testId="canvas-prop-open-link">
+            <ExternalLink className={ICON} strokeWidth={1.75} aria-hidden />
           </PhoneBtn>
         ) : null}
         {m ? (
