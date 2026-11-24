@@ -1,0 +1,161 @@
+package recording
+
+import (
+	"testing"
+
+	"github.com/google/uuid"
+)
+
+func TestMatchSpeakers(t *testing.T) {
+	a, b, n := uuid.New(), uuid.New(), uuid.New()
+	sp := func(u uuid.UUID, s, e int64) speechSpan { return speechSpan{User: u, Start: s * 100, End: e * 100} }
+	sg := func(k int, s, e int64) matchSegment { return matchSegment{Speaker: k, Start: s * 100, End: e * 100} }
+	// Alternating short remarks of A and B (tenths of a second): 1.5 s each, 0.5 s apart.
+	var altSegs []matchSegment
+	var altSpeech []speechSpan
+	for i := range int64(12) {
+		u, k := a, 0
+		if i%2 == 1 {
+			u, k = b, 1
+		}
+		altSegs = append(altSegs, sg(k, i*20, i*20+15))
+		altSpeech = append(altSpeech, sp(u, i*20+12, i*20+27)) // the reports 1.2 s late
+	}
+	tests := []struct {
+		name       string
+		in         matchInput
+		speakers   map[int]speakerMatch
+		segments   []uuid.UUID // nil = not checked
+		wantOffset *int64
+	}{
+		{
+			name: "clean 1:1",
+			in: matchInput{
+				Segments: []matchSegment{sg(0, 0, 50), sg(1, 60, 100), sg(0, 110, 150), sg(1, 160, 200)},
+				Speech:   []speechSpan{sp(a, 0, 50), sp(b, 61, 100), sp(a, 110, 149), sp(b, 160, 200)},
+			},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}},
+			segments: []uuid.UUID{a, b, a, b},
+		},
+		{
+			name: "one voice split into two numbers",
+			in: matchInput{
+				Segments: []matchSegment{sg(0, 0, 50), sg(2, 55, 90), sg(1, 100, 150), sg(0, 160, 200)},
+				Speech:   []speechSpan{sp(a, 0, 90), sp(b, 100, 150), sp(a, 160, 200)},
+			},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}, 2: {User: a}},
+		},
+		{
+			name: "two people merged into one number: per remark",
+			in: matchInput{
+				Segments: []matchSegment{sg(0, 0, 50), sg(0, 60, 100), sg(0, 110, 150), sg(0, 160, 200)},
+				Speech:   []speechSpan{sp(a, 0, 50), sp(b, 60, 100), sp(a, 110, 150), sp(b, 160, 200)},
+			},
+			speakers: map[int]speakerMatch{},
+			segments: []uuid.UUID{a, b, a, b},
+		},
+		{
+			name: "remarks without a number",
+			in: matchInput{
+				Segments: []matchSegment{sg(0, 0, 50), sg(-1, 60, 70), sg(1, 80, 120), sg(-1, 130, 135)},
+				Speech:   []speechSpan{sp(a, 0, 50), sp(b, 60, 70), sp(b, 80, 120)},
+			},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}},
+			segments: []uuid.UUID{a, b, b, uuid.Nil},
+		},
+		{
+			name: "an always-on client does not take others' numbers",
+			in: matchInput{
+				Segments: []matchSegment{sg(0, 20, 100), sg(1, 150, 250), sg(0, 300, 380), sg(1, 450, 550)},
+				Speech:   []speechSpan{sp(n, 0, 600), sp(a, 20, 100), sp(b, 150, 250), sp(a, 300, 380), sp(b, 450, 550)},
+			},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}},
+		},
+		{
+			name: "two devices of one user",
+			in: matchInput{
+				Segments: []matchSegment{sg(0, 0, 50), sg(1, 60, 100), sg(0, 110, 150)},
+				Speech:   []speechSpan{sp(a, 0, 50), sp(a, 10, 40), sp(b, 60, 100), sp(a, 108, 150), sp(a, 110, 152)},
+			},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}},
+		},
+		{
+			name:       "a 1.2 s shift is found",
+			in:         matchInput{Segments: altSegs, Speech: altSpeech},
+			speakers:   map[int]speakerMatch{0: {User: a}, 1: {User: b}},
+			wantOffset: new(int64(-1200)),
+		},
+		{
+			name: "unmatched stays numbered",
+			in: matchInput{
+				Segments: []matchSegment{sg(0, 0, 50), sg(1, 60, 100), sg(2, 110, 150)},
+				Speech:   []speechSpan{sp(a, 0, 50), sp(b, 60, 100)},
+			},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}},
+			segments: []uuid.UUID{a, b, uuid.Nil},
+		},
+		{
+			name: "the one client-less participant gets the one notable number left",
+			in: matchInput{
+				Segments:   []matchSegment{sg(0, 0, 50), sg(1, 60, 100), sg(2, 110, 150), sg(3, 151, 152)},
+				Speech:     []speechSpan{sp(a, 0, 50), sp(b, 60, 100)},
+				DurationMs: 15000, Clientless: "+79990000000",
+			},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}, 2: {Name: "+79990000000"}},
+			segments: []uuid.UUID{a, b, uuid.Nil, uuid.Nil},
+		},
+		{
+			name: "two notable numbers left: the client-less rule does not guess",
+			in: matchInput{
+				Segments:   []matchSegment{sg(0, 0, 50), sg(1, 60, 100), sg(2, 110, 150)},
+				Speech:     []speechSpan{sp(a, 0, 50)},
+				DurationMs: 15000, Clientless: "+79990000000",
+			},
+			speakers: map[int]speakerMatch{0: {User: a}},
+		},
+		{
+			name: "no reports at all: the client-less participant alone",
+			in: matchInput{
+				Segments:   []matchSegment{sg(0, 0, 50)},
+				DurationMs: 6000, Clientless: "+79990000000",
+			},
+			speakers: map[int]speakerMatch{0: {Name: "+79990000000"}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := matchSpeakers(tc.in)
+			if len(got.Speakers) != len(tc.speakers) {
+				t.Fatalf("speakers: got %v, want %v", got.Speakers, tc.speakers)
+			}
+			for k, want := range tc.speakers {
+				if got.Speakers[k] != want {
+					t.Fatalf("speaker %d: got %v, want %v (all %v)", k, got.Speakers[k], want, got.Speakers)
+				}
+			}
+			if tc.segments != nil {
+				for i, want := range tc.segments {
+					if got.Segments[i] != want {
+						t.Fatalf("segment %d: got %v, want %v", i, got.Segments[i], want)
+					}
+				}
+			}
+			if tc.wantOffset != nil && got.OffsetMs != *tc.wantOffset {
+				t.Fatalf("offset: got %d, want %d", got.OffsetMs, *tc.wantOffset)
+			}
+		})
+	}
+}
+
+func TestMergeSpeech(t *testing.T) {
+	got := mergeSpeech([][2]int64{{5000, 6000}, {0, 1000}, {1300, 2000}, {2600, 3000}, {2900, 3500}, {-500, -100}, {9000, 9000}}, 0, 8000)
+	want := [][2]int64{{0, 2000}, {2600, 3500}, {5000, 6000}}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}

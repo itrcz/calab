@@ -42,6 +42,9 @@ type FileResult struct {
 	Filename string
 	Size     int64
 	Duration time.Duration
+	// StartedAt: when the file's audio starts (FileInfo.started_at, unix ns); zero = unknown.
+	// The transcript's times count from it (ADR-0169 §3).
+	StartedAt time.Time
 }
 
 // EgressInfo is livekit.EgressInfo (subset).
@@ -101,11 +104,15 @@ func (e *EgressInfo) UnmarshalJSON(b []byte) error {
 		}
 	}
 	for _, f := range files {
-		e.Files = append(e.Files, FileResult{
+		fr := FileResult{
 			Filename: jsonString(pick(f, "filename")),
 			Size:     jsonInt(pick(f, "size")),
 			Duration: time.Duration(jsonInt(pick(f, "duration"))),
-		})
+		}
+		if ns := jsonInt(pick(f, "started_at", "startedAt")); ns > 0 {
+			fr.StartedAt = time.Unix(0, ns)
+		}
+		e.Files = append(e.Files, fr)
 	}
 	return nil
 }

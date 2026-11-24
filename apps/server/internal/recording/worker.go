@@ -64,13 +64,18 @@ func (s *Service) finish(ctx context.Context, rec sqlc.RoomRecording, info *rtc.
 		})
 	} else if size > 0 {
 		dur := s.Now().Sub(rec.StartedAt)
-		if f := info.File(); f.Duration > 0 {
+		f := info.File()
+		if f.Duration > 0 {
 			dur = f.Duration
+		}
+		var fileStart *time.Time // the transcript's zero (ADR-0169 §3); NULL = started_at
+		if !f.StartedAt.IsZero() {
+			fileStart = &f.StartedAt
 		}
 		upd, err = db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
 			return guarded.MarkRecordingEnded(ctx, sqlc.MarkRecordingEndedParams{
 				ID: rec.ID, SizeBytes: size, DurationSec: int32(min(max(dur.Round(time.Second)/time.Second, 1), 1<<30)), //nolint:gosec // bounded
-				StopReason: reason,
+				StopReason: reason, FileStartedAt: fileStart,
 			})
 		})
 	} else {

@@ -410,6 +410,7 @@ func New(d Deps) *App {
 	}, d.DB, d.Redis, authSvc, pub)
 
 	authSvc.OnBotRequest = hub.TouchBot
+	hub.RecordingSpeech = recSvc.ReportSpeech // on-air reports for speaker names (ADR-0169)
 
 	// One-to-one calls (ADR-0034): signalling here, media through rtc (DM voice sessions).
 	callSvc := calls.New(d.DB, d.Redis, pub,
