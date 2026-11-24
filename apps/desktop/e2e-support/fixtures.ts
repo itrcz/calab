@@ -263,6 +263,19 @@ export const RECORDING_RESULT = {
 } as const;
 
 /**
+ * Speaker names of RECORDING_RESULT's transcript (ADR-0169): 0 — Анна, 1 — Борис, 3 — a phone
+ * caller (named by the server), 2 stays «Спикер 3»; the remark without a number is Борис's.
+ */
+export const RECORDING_SPEAKERS = {
+  speakers: [
+    { speaker: 0, userId: IDS.users.anna, name: '' },
+    { speaker: 1, userId: IDS.users.boris, name: '' },
+    { speaker: 3, userId: '', name: '+7 999 123-45-67' },
+  ],
+  segmentUsers: { 0: IDS.users.anna, 1: IDS.users.boris, [-1]: IDS.users.boris } as Readonly<Record<number, string>>,
+} as const;
+
+/**
  * Code blocks (docs/09 #45, docs/08 «Код в сообщениях»): a highlighted js block and a log longer
  * than 400 lines (collapsed behind «Показать всё»; unknown language — no highlighting). Deterministic.
  */
@@ -473,6 +486,8 @@ export interface MockState {
   gptunnel: Map<string, GptunnelIntegration>;
   /** Rooms being recorded now (state ACTIVE), by room id. */
   recordings: Map<string, RoomRecording>;
+  /** The transcript names its speakers (ADR-0169, RECORDING_SPEAKERS); off = numbers only. */
+  transcriptSpeakers: boolean;
   /** SIP account per workspace (ADR-0046); absent = never saved (the defaults). */
   sipSettings: Map<string, SipSettings>;
   /** SIP password per workspace (write-only in the API). */
@@ -872,6 +887,7 @@ export function buildState(scenario: Scenario): MockState {
     emailInvites: new Map(),
     gptunnel: new Map(),
     recordings: new Map(),
+    transcriptSpeakers: false,
     sipSettings: new Map(),
     sipPasswords: new Map(),
     sipCalls: new Map(),

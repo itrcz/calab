@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest';
 import {
   mayDeleteRecording,
   recordingAudio,
+  remarkSpeaker,
   searchSegments,
   segmentAt,
   speakerNumber,
+  speakersByNumber,
   stamp,
   summaryBlocks,
   summaryFoldsUpfront,
@@ -105,6 +107,21 @@ describe('transcript', () => {
     expect(searchSegments(segs, 'РЕЛИЗА коллеги')).toEqual([0]);
     expect(searchSegments(segs, 'эталоны релиз')).toEqual([]);
   });
+  it('named speakers (ADR-0169): the remark\'s own person, then its number\'s, then the number', () => {
+    const by = speakersByNumber([
+      { speaker: 0, userId: 'u-anna', name: '' },
+      { speaker: 2, userId: '', name: '+79990000000' },
+    ]);
+    expect(remarkSpeaker({ speaker: 0, userId: '' }, by)).toEqual({ userId: 'u-anna', n: 1 });
+    expect(remarkSpeaker({ speaker: 1, userId: 'u-boris' }, by)).toEqual({ userId: 'u-boris', n: 2 });
+    expect(remarkSpeaker({ speaker: 2, userId: '' }, by)).toEqual({ name: '+79990000000', n: 3 });
+    expect(remarkSpeaker({ speaker: 3, userId: '' }, by)).toEqual({ n: 4 });
+    expect(remarkSpeaker({ speaker: -1, userId: '' }, by)).toBeNull();
+    expect(remarkSpeaker({ speaker: -1, userId: 'u-anna' }, by)).toEqual({ userId: 'u-anna', n: null });
+    const names: Record<number, string> = { 0: 'Анна', 1: 'Борис' };
+    expect(searchSegments(segs, 'борис', (s) => names[s.speaker] ?? '')).toEqual([1]);
+    expect(transcriptText(segs, (s) => names[s.speaker] ?? '')).toBe('[0:00] Анна: Коллеги, начнём с релиза\n[0:07] Борис: Эталоны пересняли\n[1:02:05] Угу\n');
+  });
   it('the remark under the player', () => {
     expect(segmentAt(segs, 0)).toBe(-1);
     expect(segmentAt(segs, 1)).toBe(0);
@@ -115,7 +132,7 @@ describe('transcript', () => {
     expect(segmentAt([], 3)).toBe(-1);
   });
   it('plain text and file name', () => {
-    expect(transcriptText(segs, (n) => `Спикер ${n}`, 'Встреча')).toBe(
+    expect(transcriptText(segs, (s) => (s.speaker >= 0 ? `Спикер ${s.speaker + 1}` : ''), 'Встреча')).toBe(
       'Встреча\n\n[0:00] Спикер 1: Коллеги, начнём с релиза\n[0:07] Спикер 2: Эталоны пересняли\n[1:02:05] Угу\n',
     );
     expect(transcriptFileName('Транскрипт: a/b', new Date(2026, 8, 27, 15, 4))).toBe('Транскрипт a b 2026-09-27 15-04.txt');

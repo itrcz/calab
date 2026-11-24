@@ -1,4 +1,4 @@
-import { RecordingStatus, type FileMeta, type RecordingCard, type TranscriptSegment } from '@calaba/protocol';
+import { RecordingStatus, type FileMeta, type RecordingCard, type TranscriptSegment, type TranscriptSpeaker } from '@calaba/protocol';
 import { mediaKind } from './chatMedia';
 import { parseMarkdown, type MdNode } from './markdown/parse';
 
@@ -151,13 +151,38 @@ export function stamp(ms: number): string {
 /** The speaker's number for people: recognition counts from 0, people from 1; -1 = unknown. */
 export const speakerNumber = (speaker: number): number | null => (speaker >= 0 ? speaker + 1 : null);
 
-/** Indexes of the segments that contain every word of the query (case-insensitive). */
-export function searchSegments(segments: readonly Pick<TranscriptSegment, 'text'>[], query: string): number[] {
+/**
+ * Who said a remark (ADR-0169): a person of the workspace (the client shows their name and
+ * avatar), someone named by the server (a phone caller), or the recognition's number (from 1);
+ * null = nobody known.
+ */
+export type RemarkSpeaker = { userId: string; n: number | null } | { name: string; n: number | null } | { n: number };
+
+/** The speakers of a transcript by number (GetRecordingTranscriptResponse.speakers). */
+export function speakersByNumber(speakers: readonly Pick<TranscriptSpeaker, 'speaker' | 'userId' | 'name'>[]): ReadonlyMap<number, { userId: string; name: string }> {
+  return new Map(speakers.map((s) => [s.speaker, { userId: s.userId, name: s.name }]));
+}
+
+/** The remark's own person first (a merged number is decided per remark), then its number's. */
+export function remarkSpeaker(s: Pick<TranscriptSegment, 'speaker' | 'userId'>, byNumber: ReadonlyMap<number, { userId: string; name: string }>): RemarkSpeaker | null {
+  const n = speakerNumber(s.speaker);
+  if (s.userId) return { userId: s.userId, n };
+  const known = byNumber.get(s.speaker);
+  if (known?.userId) return { userId: known.userId, n };
+  if (known?.name) return { name: known.name, n };
+  return n === null ? null : { n };
+}
+
+/**
+ * Indexes of the segments that contain every word of the query (case-insensitive) in the text
+ * or, given `label`, in the speaker's name.
+ */
+export function searchSegments<S extends Pick<TranscriptSegment, 'text'>>(segments: readonly S[], query: string, label?: (s: S) => string): number[] {
   const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return segments.map((_, i) => i);
   const out: number[] = [];
   segments.forEach((s, i) => {
-    const text = s.text.toLocaleLowerCase();
+    const text = (label ? `${label(s)} ${s.text}` : s.text).toLocaleLowerCase();
     if (words.every((w) => text.includes(w))) out.push(i);
   });
   return out;
@@ -181,15 +206,14 @@ export function segmentAt(segments: readonly Pick<TranscriptSegment, 'startMs' |
   return found;
 }
 
-/** The transcript as plain text for «Копировать» / «Скачать .txt»: «[1:05] Спикер 2: …». */
-export function transcriptText(
-  segments: readonly Pick<TranscriptSegment, 'speaker' | 'startMs' | 'text'>[],
-  speaker: (n: number) => string,
-  header = '',
-): string {
+/**
+ * The transcript as plain text for «Копировать» / «Скачать .txt»: «[1:05] Анна: …», «[1:07]
+ * Спикер 2: …»; `label` names the remark's speaker ('' = nobody known).
+ */
+export function transcriptText<S extends Pick<TranscriptSegment, 'startMs' | 'text'>>(segments: readonly S[], label: (s: S) => string, header = ''): string {
   const lines = segments.map((s) => {
-    const n = speakerNumber(s.speaker);
-    return `[${stamp(s.startMs)}] ${n === null ? '' : `${speaker(n)}: `}${s.text}`;
+    const who = label(s);
+    return `[${stamp(s.startMs)}] ${who ? `${who}: ` : ''}${s.text}`;
   });
   return (header ? `${header}\n\n` : '') + lines.join('\n') + '\n';
 }

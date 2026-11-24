@@ -236,7 +236,7 @@ export type TranscriptSegment = Message<"calaba.v1.TranscriptSegment"> & {
 
   /**
    * Who said it (ADR-0169): matched from the participants' own on-air reports; "" = not
-   * identified (then `speakers` may still name the speaker number, else «Участник N»).
+   * identified (then `speakers` may still name the speaker number, else «Спикер N»).
    *
    * @generated from field: string user_id = 5;
    */

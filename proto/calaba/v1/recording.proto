@@ -93,7 +93,7 @@ message TranscriptSegment {
   uint32 end_ms = 3;
   string text = 4;
   // Who said it (ADR-0169): matched from the participants' own on-air reports; "" = not
-  // identified (then `speakers` may still name the speaker number, else «Участник N»).
+  // identified (then `speakers` may still name the speaker number, else «Спикер N»).
   string user_id = 5;
 }
 

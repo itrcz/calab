@@ -493,6 +493,26 @@ describe('GatewayClient', () => {
     expect(typingSent()).toBe(OUT_BURST + 2);
   });
 
+  it('a recording speech report goes now or not at all (ADR-0169)', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t);
+    s.deliver(ready(1));
+    const reports = (): number => s.sent.filter((f) => f.op === GatewayOpcode.RECORDING_SPEECH).length;
+    let built = 0;
+    const ivs = (): { agoStartMs: number; agoEndMs: number }[] => {
+      built++;
+      return [{ agoStartMs: 3000, agoEndMs: 1000 }];
+    };
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(true);
+    const f = s.sent.find((x) => x.payload.case === 'recordingSpeech');
+    expect(f?.payload.case === 'recordingSpeech' && f.payload.value.intervals.map((i) => [i.agoStartMs, i.agoEndMs])).toEqual([[3000, 1000]]);
+    for (let i = 0; i < OUT_BURST; i++) t.client.sendTyping('r'); // use up the burst
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(false); // the caller keeps its intervals
+    expect(reports()).toBe(1);
+    expect(built).toBe(1); // times are taken only when the frame goes
+  });
+
   it('presence over the limit is deferred and coalesced to the newest value', async () => {
     const t = setup();
     t.client.start();

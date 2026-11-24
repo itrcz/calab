@@ -123,6 +123,11 @@ export function sendTyping(roomId: string): void {
   client?.sendTyping(roomId);
 }
 
+/** On-air report of a recorded meeting (ADR-0169); false = not sent now, try again later. */
+export function sendRecordingSpeech(roomId: string, recordingId: string, intervals: () => { agoStartMs: number; agoEndMs: number }[]): boolean {
+  return client?.sendRecordingSpeech(roomId, recordingId, intervals) ?? false;
+}
+
 /** `untilMs` given = a manual status for all devices (0 = no end), else this session's AFK status. */
 export function setPresence(status: PresenceStatus, untilMs?: number): void {
   client?.setPresence(status, untilMs);

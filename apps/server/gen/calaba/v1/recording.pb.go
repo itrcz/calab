@@ -428,7 +428,7 @@ type TranscriptSegment struct {
 	EndMs   uint32                 `protobuf:"varint,3,opt,name=end_ms,json=endMs,proto3" json:"end_ms,omitempty"`
 	Text    string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
 	// Who said it (ADR-0169): matched from the participants' own on-air reports; "" = not
-	// identified (then `speakers` may still name the speaker number, else «Участник N»).
+	// identified (then `speakers` may still name the speaker number, else «Спикер N»).
 	UserId        string `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

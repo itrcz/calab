@@ -8,8 +8,10 @@ import {
   HeartbeatSchema,
   IdentifySchema,
   PresenceStatus,
+  RecordingSpeechSchema,
   ResumeSchema,
   SetPresenceSchema,
+  SpeechIntervalSchema,
   SubscribeSchema,
   TypingSchema,
   type DispatchEvent,
@@ -278,6 +280,18 @@ export class GatewayClient {
   setPresence(status: PresenceStatus, untilMs?: number): void {
     const until = untilMs === undefined ? undefined : timestampFromMs(untilMs);
     this.sendLimited(GatewayOpcode.PRESENCE_UPDATE, { case: 'setPresence', value: create(SetPresenceSchema, { status, until }) }, until ? 'presence:manual' : 'presence');
+  }
+
+  /**
+   * My on-air intervals of a recorded meeting (ADR-0169). `intervals` is called at the moment of
+   * sending (its times are «ms ago»). Sent now or not at all: false = no free token or no open
+   * socket, the caller keeps the intervals for its next attempt.
+   */
+  sendRecordingSpeech(roomId: string, recordingId: string, intervals: () => { agoStartMs: number; agoEndMs: number }[]): boolean {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== OPEN || !this.takeToken()) return false;
+    const value = create(RecordingSpeechSchema, { roomId, recordingId, intervals: intervals().map((iv) => create(SpeechIntervalSchema, iv)) });
+    return this.sendFrame(GatewayOpcode.RECORDING_SPEECH, { case: 'recordingSpeech', value });
   }
 
   subscribe(roomIds: string[]): void {

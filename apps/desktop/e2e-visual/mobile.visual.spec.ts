@@ -745,6 +745,16 @@ test('m-chat-recording', async ({ page }) => {
   await page.mouse.move(0, 0);
   await expectFeedFits(page);
   await checkpoint(page, 'm-chat-recording', { main: true });
+  // The transcript sheet with speakers by name (ADR-0169): avatar + name, a caller's number, «Спикер 3».
+  mock.state.transcriptSpeakers = true;
+  await feedToBottom(page);
+  await card.getByRole('button', { name: 'Полный транскрипт' }).tap();
+  const sheet = page.getByRole('dialog', { name: 'Транскрипт встречи' });
+  await expect(sheet.getByTestId('recording-transcript-row').first()).toContainText('Анна Смирнова');
+  await checkpoint(page, 'm-recording-transcript-speakers');
+  mock.state.transcriptSpeakers = false;
+  await sheet.getByRole('button', { name: 'Закрыть' }).tap();
+  await expect(sheet).toHaveCount(0);
   await card.getByRole('button', { name: 'Ответить', exact: true }).tap();
   const composer = page.getByTestId('composer');
   await expect(composer).toContainText('Встреча записана · 42 мин');

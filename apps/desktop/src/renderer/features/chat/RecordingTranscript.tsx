@@ -1,20 +1,25 @@
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Download, Search } from 'lucide-react';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { Avatar } from '../../components/Avatar';
 import { Button, Input, Modal, Spinner, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { api } from '../../lib/api/endpoints';
 import { fmt } from '../../lib/format';
 import { searchWords, splitHits } from '../../lib/markdown/highlight';
-import { searchSegments, segmentAt, speakerNumber, stamp, transcriptFileName, transcriptText } from '../../lib/meetingResult';
+import { remarkSpeaker, searchSegments, segmentAt, speakersByNumber, stamp, transcriptFileName, transcriptText, type RemarkSpeaker } from '../../lib/meetingResult';
 import { usePlayer, type Track } from '../../stores/player';
+import { useRooms } from '../../stores/rooms';
 import { toast } from '../../stores/toasts';
+import { memberName, useMemberName, useWorkspaces } from '../../stores/workspaces';
 
 /**
  * «Полный транскрипт» of a meeting recording (docs/09 #47, docs/08 «Запись встреч»): a wide
  * dialog (a sheet on phones) with the remarks — time, speaker, text — read from our server
- * (GET …/recordings/{rid}/transcript); a search that keeps the matching remarks and marks the
+ * (the speaker by name and avatar when the server matched them to a person, ADR-0169; else
+ * «Спикер N»)
+ * — GET …/recordings/{rid}/transcript; a search that keeps the matching remarks and marks the
  * words; a click on a remark plays the recording from there (the chat's player; the remark
  * being played is highlighted); «Копировать» and «Скачать .txt». The list is virtualised: a
  * 4-hour meeting has thousands of remarks.
@@ -50,14 +55,28 @@ export default function RecordingTranscript({
   });
   const [query, setQuery] = useState('');
   const segments = useMemo(() => q.data?.segments ?? [], [q.data]);
-  const shown = useMemo(() => searchSegments(segments, query), [segments, query]);
+  const byNumber = useMemo(() => speakersByNumber(q.data?.speakers ?? []), [q.data]);
+  // A forwarded card may sit in a DM: names then come from the global user cache.
+  const workspaceId = useRooms((s) => s.byId[roomId]?.workspaceId ?? null);
+  const who = useCallback((s: (typeof segments)[number]): RemarkSpeaker | null => remarkSpeaker(s, byNumber), [byNumber]);
+  // Plain labels for search, «Копировать» and «.txt» (read when used, not subscribed).
+  const label = useCallback(
+    (s: (typeof segments)[number]): string => {
+      const w = who(s);
+      if (!w) return '';
+      if ('userId' in w) return memberName(workspaceId, w.userId);
+      if ('name' in w) return w.name;
+      return t('rec.tr.speaker', { n: w.n });
+    },
+    [who, workspaceId],
+  );
+  const shown = useMemo(() => searchSegments(segments, query, label), [segments, query, label]);
   const words = useMemo(() => searchWords(query), [query]);
   // Only the index of the remark under the player re-renders the list, not every time tick.
   const playing = usePlayer((s) => (track && s.track?.fileId === track.fileId && s.track.messageId === track.messageId ? segmentAt(segments, s.position) : -1));
   const list = useRef<VirtuosoHandle>(null);
   const focus = useMemo(() => (initialMs === undefined || !segments.length ? -1 : segmentAt(segments, initialMs / 1000)), [initialMs, segments]);
-  const speaker = (n: number): string => t('rec.tr.speaker', { n });
-  const text = (): string => transcriptText(segments, speaker, `${title} — ${fmt.dateTime(started)}`);
+  const text = (): string => transcriptText(segments, label, `${title} — ${fmt.dateTime(started)}`);
 
   const copy = (): void => {
     navigator.clipboard.writeText(text()).then(
@@ -126,16 +145,12 @@ export default function RecordingTranscript({
             itemContent={(_i, idx) => {
               const s = segments[idx];
               if (!s) return null;
-              const n = speakerNumber(s.speaker);
+              const w = who(s);
               const body = (
                 <>
                   <span className="w-14 shrink-0 pt-px text-caption tabular-nums text-muted">{stamp(s.startMs)}</span>
                   <span className="min-w-0 flex-1">
-                    {n !== null ? (
-                      <span className="mr-1.5 text-caption font-semibold" style={{ color: `var(--name-${((n - 1) % 8) + 1})` }}>
-                        {speaker(n)}
-                      </span>
-                    ) : null}
+                    {w ? <SpeakerTag who={w} workspaceId={workspaceId} /> : null}
                     <span className="break-words text-body text-fg">
                       {words.length
                         ? splitHits(s.text, words).map((p, i) =>
@@ -167,5 +182,30 @@ export default function RecordingTranscript({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Number → one of the 8 name colours, so a speaker keeps a colour through the transcript. */
+const nameColor = (n: number | null): string | undefined => (n === null ? undefined : `var(--name-${((n - 1) % 8) + 1})`);
+
+/** The speaker of a remark: a person (avatar and name), a named caller, or «Спикер N». */
+const SpeakerTag = memo(function SpeakerTag({ who, workspaceId }: { who: RemarkSpeaker; workspaceId: string | null }): ReactNode {
+  if ('userId' in who) return <PersonTag userId={who.userId} n={who.n} workspaceId={workspaceId} />;
+  return (
+    <span className="mr-1.5 text-caption font-semibold" style={{ color: nameColor(who.n) }}>
+      {'name' in who ? who.name : t('rec.tr.speaker', { n: who.n })}
+    </span>
+  );
+});
+
+function PersonTag({ userId, n, workspaceId }: { userId: string; n: number | null; workspaceId: string | null }): ReactNode {
+  const name = useMemberName(workspaceId, userId);
+  const fileId = useWorkspaces((s) => (workspaceId ? s.byId[workspaceId]?.members[userId]?.user?.avatarFileId : undefined) || s.users[userId]?.avatarFileId || '');
+  return (
+    <span className="mr-1.5 text-caption font-semibold" style={{ color: nameColor(n) }} data-testid="recording-transcript-speaker">
+      {/* Inline, not flex: the name stays on the text's baseline and the row keeps its height. */}
+      <Avatar userId={userId} name={name} size={16} className="mr-1 align-middle" {...(fileId ? { fileId } : {})} />
+      {name}
+    </span>
   );
 }
