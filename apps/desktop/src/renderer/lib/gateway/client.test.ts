@@ -497,13 +497,15 @@ describe('GatewayClient', () => {
     const t = setup();
     t.client.start();
     const s = await handshake(t);
-    s.deliver(ready(1));
     const reports = (): number => s.sent.filter((f) => f.op === GatewayOpcode.RECORDING_SPEECH).length;
     let built = 0;
     const ivs = (): { agoStartMs: number; agoEndMs: number }[] => {
       built++;
       return [{ agoStartMs: 3000, agoEndMs: 1000 }];
     };
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(false); // socket open, not READY yet
+    expect(built).toBe(0);
+    s.deliver(ready(1));
     expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(true);
     const f = s.sent.find((x) => x.payload.case === 'recordingSpeech');
     expect(f?.payload.case === 'recordingSpeech' && f.payload.value.intervals.map((i) => [i.agoStartMs, i.agoEndMs])).toEqual([[3000, 1000]]);
