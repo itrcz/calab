@@ -620,6 +620,8 @@ class VoiceEngine {
     // is not sent to the previously open room by mistake; an open task / mail / DM is not taken
     // away (lib/chatFollow.ts). A click on another room still opens it.
     followVoiceChat({ kind: 'join', workspaceId, roomId, resumed: opts.resumed, call: opts.call });
+    const from = useVoice.getState().roomId;
+    if (from && from !== roomId) this.runBeforeLeave(); // a switch leaves the old room
     this.announceJoin();
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
@@ -1818,6 +1820,27 @@ class VoiceEngine {
     }, SEAT_SELF_GRACE_MS);
   }
 
+  private readonly beforeLeave: (() => void)[] = [];
+
+  /**
+   * `fn` runs right before this device leaves its room on purpose (leave, a switch to another
+   * room), while the connection and the server seat are still there: the last on-air report of
+   * a recorded meeting (ADR-0169) must reach the server before the seat goes.
+   */
+  onBeforeLeave(fn: () => void): void {
+    this.beforeLeave.push(fn);
+  }
+
+  private runBeforeLeave(): void {
+    for (const fn of this.beforeLeave) {
+      try {
+        fn();
+      } catch (err) {
+        log.warn('voice: before-leave hook failed', err);
+      }
+    }
+  }
+
   /**
    * User intent: leave voice (also stops a pending rejoin). `tellServer` false: another tab of
    * this auth session took the voice seat over (#40) — the seat is its now, a /voice/leave
@@ -1836,6 +1859,7 @@ class VoiceEngine {
     // /join already recorded it as pending), or the old call while a switch tears it down.
     const v = useVoice.getState();
     const seat = v.roomId ?? this.roomId ?? v.joining?.roomId ?? null;
+    this.runBeforeLeave();
     setVoice({ joining: null });
     await this.teardown(sound);
     // After room.disconnect(): tell the server at once (a pending /join would otherwise stay
