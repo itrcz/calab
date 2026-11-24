@@ -61,6 +61,8 @@ func opOf(f *v1.GatewayFrame) v1.GatewayOpcode {
 		return v1.GatewayOpcode_GATEWAY_OPCODE_TYPING
 	case *v1.GatewayFrame_Subscribe:
 		return v1.GatewayOpcode_GATEWAY_OPCODE_SUBSCRIBE
+	case *v1.GatewayFrame_RecordingSpeech:
+		return v1.GatewayOpcode_GATEWAY_OPCODE_RECORDING_SPEECH
 	case *v1.GatewayFrame_Hello:
 		return v1.GatewayOpcode_GATEWAY_OPCODE_HELLO
 	case *v1.GatewayFrame_HeartbeatAck:

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file calaba/v1/recording.proto.
  */
 export const file_calaba_v1_recording: GenFile = /*@__PURE__*/
-  fileDesc("ChljYWxhYmEvdjEvcmVjb3JkaW5nLnByb3RvEgljYWxhYmEudjEi4gEKDVJvb21SZWNvcmRpbmcSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSFAoMcmVjb3JkaW5nX2lkGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uY2FsYWJhLnYxLlJvb21SZWNvcmRpbmdTdGF0ZRISCgpieV91c2VyX2lkGAUgASgJEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtzdG9wX3JlYXNvbhgHIAEoCRISCgpzdG9wcGVkX2J5GAggASgJIqoDCg1SZWNvcmRpbmdDYXJkEhQKDHJlY29yZGluZ19pZBgBIAEoCRISCgpzdGFydGVkX2J5GAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGR1cmF0aW9uX3NlYxgEIAEoDRIqCgZzdGF0dXMYBSABKA4yGi5jYWxhYmEudjEuUmVjb3JkaW5nU3RhdHVzEg8KB3dlYl91cmwYBiABKAkSDQoFZXJyb3IYByABKAkSEQoJZmlsZV9nb25lGAggASgIEhQKDG5vdF91cGxvYWRlZBgJIAEoCBIPCgdzdW1tYXJ5GAogASgJEhYKDmhhc190cmFuc2NyaXB0GAsgASgIEhYKDnJlc3VsdF9wZW5kaW5nGAwgASgIEi8KC2F1ZGlvX3VudGlsGA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpkZWxldGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpkZWxldGVkX2J5GA8gASgJIlQKEVRyYW5zY3JpcHRTZWdtZW50Eg8KB3NwZWFrZXIYASABKAUSEAoIc3RhcnRfbXMYAiABKA0SDgoGZW5kX21zGAMgASgNEgwKBHRleHQYBCABKAkieAoeR2V0UmVjb3JkaW5nVHJhbnNjcmlwdFJlc3BvbnNlEhQKDHJlY29yZGluZ19pZBgBIAEoCRIQCghsYW5ndWFnZRgCIAEoCRIuCghzZWdtZW50cxgDIAMoCzIcLmNhbGFiYS52MS5UcmFuc2NyaXB0U2VnbWVudCKeAQoTR3B0dW5uZWxJbnRlZ3JhdGlvbhIOCgZwYWlyZWQYASABKAgSEwoLZGV2aWNlX25hbWUYAiABKAkSDwoHYWNjb3VudBgDIAEoCRIRCglwYWlyZWRfYnkYBCABKAkSLQoJcGFpcmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgd3ZWJfdXJsGAYgASgJIlUKHkdldEdwdHVubmVsSW50ZWdyYXRpb25SZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIiMKE1BhaXJHcHR1bm5lbFJlcXVlc3QSDAoEY29kZRgBIAEoCSJLChRQYWlyR3B0dW5uZWxSZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIkUKFlN0YXJ0UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJvb21SZWNvcmRpbmciRAoVU3RvcFJlY29yZGluZ1Jlc3BvbnNlEisKCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5Sb29tUmVjb3JkaW5nIkUKFlJldHJ5UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJlY29yZGluZ0NhcmQqfQoSUm9vbVJlY29yZGluZ1N0YXRlEiQKIFJPT01fUkVDT1JESU5HX1NUQVRFX1VOU1BFQ0lGSUVEEAASHwobUk9PTV9SRUNPUkRJTkdfU1RBVEVfQUNUSVZFEAESIAocUk9PTV9SRUNPUkRJTkdfU1RBVEVfU1RPUFBFRBACKswBCg9SZWNvcmRpbmdTdGF0dXMSIAocUkVDT1JESU5HX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGlJFQ09SRElOR19TVEFUVVNfUkVDT1JESU5HEAESHgoaUkVDT1JESU5HX1NUQVRVU19VUExPQURJTkcQAhIfChtSRUNPUkRJTkdfU1RBVFVTX1BST0NFU1NJTkcQAxIZChVSRUNPUkRJTkdfU1RBVFVTX0RPTkUQBBIbChdSRUNPUkRJTkdfU1RBVFVTX0ZBSUxFRBAFQpwBCg1jb20uY2FsYWJhLnYxQg5SZWNvcmRpbmdQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChljYWxhYmEvdjEvcmVjb3JkaW5nLnByb3RvEgljYWxhYmEudjEi4gEKDVJvb21SZWNvcmRpbmcSFAoMd29ya3NwYWNlX2lkGAEgASgJEg8KB3Jvb21faWQYAiABKAkSFAoMcmVjb3JkaW5nX2lkGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uY2FsYWJhLnYxLlJvb21SZWNvcmRpbmdTdGF0ZRISCgpieV91c2VyX2lkGAUgASgJEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtzdG9wX3JlYXNvbhgHIAEoCRISCgpzdG9wcGVkX2J5GAggASgJIqoDCg1SZWNvcmRpbmdDYXJkEhQKDHJlY29yZGluZ19pZBgBIAEoCRISCgpzdGFydGVkX2J5GAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGR1cmF0aW9uX3NlYxgEIAEoDRIqCgZzdGF0dXMYBSABKA4yGi5jYWxhYmEudjEuUmVjb3JkaW5nU3RhdHVzEg8KB3dlYl91cmwYBiABKAkSDQoFZXJyb3IYByABKAkSEQoJZmlsZV9nb25lGAggASgIEhQKDG5vdF91cGxvYWRlZBgJIAEoCBIPCgdzdW1tYXJ5GAogASgJEhYKDmhhc190cmFuc2NyaXB0GAsgASgIEhYKDnJlc3VsdF9wZW5kaW5nGAwgASgIEi8KC2F1ZGlvX3VudGlsGA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpkZWxldGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpkZWxldGVkX2J5GA8gASgJImUKEVRyYW5zY3JpcHRTZWdtZW50Eg8KB3NwZWFrZXIYASABKAUSEAoIc3RhcnRfbXMYAiABKA0SDgoGZW5kX21zGAMgASgNEgwKBHRleHQYBCABKAkSDwoHdXNlcl9pZBgFIAEoCSJDChFUcmFuc2NyaXB0U3BlYWtlchIPCgdzcGVha2VyGAEgASgFEg8KB3VzZXJfaWQYAiABKAkSDAoEbmFtZRgDIAEoCSKoAQoeR2V0UmVjb3JkaW5nVHJhbnNjcmlwdFJlc3BvbnNlEhQKDHJlY29yZGluZ19pZBgBIAEoCRIQCghsYW5ndWFnZRgCIAEoCRIuCghzZWdtZW50cxgDIAMoCzIcLmNhbGFiYS52MS5UcmFuc2NyaXB0U2VnbWVudBIuCghzcGVha2VycxgEIAMoCzIcLmNhbGFiYS52MS5UcmFuc2NyaXB0U3BlYWtlciKeAQoTR3B0dW5uZWxJbnRlZ3JhdGlvbhIOCgZwYWlyZWQYASABKAgSEwoLZGV2aWNlX25hbWUYAiABKAkSDwoHYWNjb3VudBgDIAEoCRIRCglwYWlyZWRfYnkYBCABKAkSLQoJcGFpcmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgd3ZWJfdXJsGAYgASgJIlUKHkdldEdwdHVubmVsSW50ZWdyYXRpb25SZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIiMKE1BhaXJHcHR1bm5lbFJlcXVlc3QSDAoEY29kZRgBIAEoCSJLChRQYWlyR3B0dW5uZWxSZXNwb25zZRIzCgtpbnRlZ3JhdGlvbhgBIAEoCzIeLmNhbGFiYS52MS5HcHR1bm5lbEludGVncmF0aW9uIkUKFlN0YXJ0UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJvb21SZWNvcmRpbmciRAoVU3RvcFJlY29yZGluZ1Jlc3BvbnNlEisKCXJlY29yZGluZxgBIAEoCzIYLmNhbGFiYS52MS5Sb29tUmVjb3JkaW5nIkUKFlJldHJ5UmVjb3JkaW5nUmVzcG9uc2USKwoJcmVjb3JkaW5nGAEgASgLMhguY2FsYWJhLnYxLlJlY29yZGluZ0NhcmQqfQoSUm9vbVJlY29yZGluZ1N0YXRlEiQKIFJPT01fUkVDT1JESU5HX1NUQVRFX1VOU1BFQ0lGSUVEEAASHwobUk9PTV9SRUNPUkRJTkdfU1RBVEVfQUNUSVZFEAESIAocUk9PTV9SRUNPUkRJTkdfU1RBVEVfU1RPUFBFRBACKswBCg9SZWNvcmRpbmdTdGF0dXMSIAocUkVDT1JESU5HX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGlJFQ09SRElOR19TVEFUVVNfUkVDT1JESU5HEAESHgoaUkVDT1JESU5HX1NUQVRVU19VUExPQURJTkcQAhIfChtSRUNPUkRJTkdfU1RBVFVTX1BST0NFU1NJTkcQAxIZChVSRUNPUkRJTkdfU1RBVFVTX0RPTkUQBBIbChdSRUNPUkRJTkdfU1RBVFVTX0ZBSUxFRBAFQpwBCg1jb20uY2FsYWJhLnYxQg5SZWNvcmRpbmdQcm90b1ABWjZnaXRodWIuY29tL2NhbGFiYS9jYWxhYmEvc2VydmVyL2dlbi9jYWxhYmEvdjE7Y2FsYWJhdjGiAgNDWFiqAglDYWxhYmEuVjHKAglDYWxhYmFcVjHiAhVDYWxhYmFcVjFcR1BCTWV0YWRhdGHqAgpDYWxhYmE6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * The recording of a voice room. In WorkspaceSnapshot.recordings (active ones, READY /
@@ -233,6 +233,14 @@ export type TranscriptSegment = Message<"calaba.v1.TranscriptSegment"> & {
    * @generated from field: string text = 4;
    */
   text: string;
+
+  /**
+   * Who said it (ADR-0169): matched from the participants' own on-air reports; "" = not
+   * identified (then `speakers` may still name the speaker number, else «Участник N»).
+   *
+   * @generated from field: string user_id = 5;
+   */
+  userId: string;
 };
 
 /**
@@ -241,6 +249,37 @@ export type TranscriptSegment = Message<"calaba.v1.TranscriptSegment"> & {
  */
 export const TranscriptSegmentSchema: GenMessage<TranscriptSegment> = /*@__PURE__*/
   messageDesc(file_calaba_v1_recording, 2);
+
+/**
+ * A speaker number of the transcript and who it is (ADR-0169). user_id = a person of the
+ * workspace: the client shows their name and avatar from its directory. name = someone not in
+ * the directory (a phone caller: the number). Both empty = not identified.
+ *
+ * @generated from message calaba.v1.TranscriptSpeaker
+ */
+export type TranscriptSpeaker = Message<"calaba.v1.TranscriptSpeaker"> & {
+  /**
+   * @generated from field: int32 speaker = 1;
+   */
+  speaker: number;
+
+  /**
+   * @generated from field: string user_id = 2;
+   */
+  userId: string;
+
+  /**
+   * @generated from field: string name = 3;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message calaba.v1.TranscriptSpeaker.
+ * Use `create(TranscriptSpeakerSchema)` to create a new message.
+ */
+export const TranscriptSpeakerSchema: GenMessage<TranscriptSpeaker> = /*@__PURE__*/
+  messageDesc(file_calaba_v1_recording, 3);
 
 /**
  * GET /api/rooms/{id}/recordings/{rid}/transcript (VIEW_ROOM in the room; in a restricted room
@@ -266,6 +305,13 @@ export type GetRecordingTranscriptResponse = Message<"calaba.v1.GetRecordingTran
    * @generated from field: repeated calaba.v1.TranscriptSegment segments = 3;
    */
   segments: TranscriptSegment[];
+
+  /**
+   * the numbers that were identified (ADR-0169)
+   *
+   * @generated from field: repeated calaba.v1.TranscriptSpeaker speakers = 4;
+   */
+  speakers: TranscriptSpeaker[];
 };
 
 /**
@@ -273,7 +319,7 @@ export type GetRecordingTranscriptResponse = Message<"calaba.v1.GetRecordingTran
  * Use `create(GetRecordingTranscriptResponseSchema)` to create a new message.
  */
 export const GetRecordingTranscriptResponseSchema: GenMessage<GetRecordingTranscriptResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 3);
+  messageDesc(file_calaba_v1_recording, 4);
 
 /**
  * The GPTunneL connection of a workspace. GET/POST/DELETE /api/workspaces/{id}/integrations/gptunnel.
@@ -325,7 +371,7 @@ export type GptunnelIntegration = Message<"calaba.v1.GptunnelIntegration"> & {
  * Use `create(GptunnelIntegrationSchema)` to create a new message.
  */
 export const GptunnelIntegrationSchema: GenMessage<GptunnelIntegration> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 4);
+  messageDesc(file_calaba_v1_recording, 5);
 
 /**
  * GET /api/workspaces/{id}/integrations/gptunnel (any member except guests).
@@ -346,7 +392,7 @@ export type GetGptunnelIntegrationResponse = Message<"calaba.v1.GetGptunnelInteg
  * Use `create(GetGptunnelIntegrationResponseSchema)` to create a new message.
  */
 export const GetGptunnelIntegrationResponseSchema: GenMessage<GetGptunnelIntegrationResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 5);
+  messageDesc(file_calaba_v1_recording, 6);
 
 /**
  * POST /api/workspaces/{id}/integrations/gptunnel (MANAGE_INTEGRATIONS, ADR-0048): pair with a code shown
@@ -368,7 +414,7 @@ export type PairGptunnelRequest = Message<"calaba.v1.PairGptunnelRequest"> & {
  * Use `create(PairGptunnelRequestSchema)` to create a new message.
  */
 export const PairGptunnelRequestSchema: GenMessage<PairGptunnelRequest> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 6);
+  messageDesc(file_calaba_v1_recording, 7);
 
 /**
  * @generated from message calaba.v1.PairGptunnelResponse
@@ -385,7 +431,7 @@ export type PairGptunnelResponse = Message<"calaba.v1.PairGptunnelResponse"> & {
  * Use `create(PairGptunnelResponseSchema)` to create a new message.
  */
 export const PairGptunnelResponseSchema: GenMessage<PairGptunnelResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 7);
+  messageDesc(file_calaba_v1_recording, 8);
 
 /**
  * POST /api/rooms/{id}/recording/start (voice room; a member of the workspace — not a guest —
@@ -408,7 +454,7 @@ export type StartRecordingResponse = Message<"calaba.v1.StartRecordingResponse">
  * Use `create(StartRecordingResponseSchema)` to create a new message.
  */
 export const StartRecordingResponseSchema: GenMessage<StartRecordingResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 8);
+  messageDesc(file_calaba_v1_recording, 9);
 
 /**
  * POST /api/rooms/{id}/recording/stop (the same people as start) → the stopped recording;
@@ -428,7 +474,7 @@ export type StopRecordingResponse = Message<"calaba.v1.StopRecordingResponse"> &
  * Use `create(StopRecordingResponseSchema)` to create a new message.
  */
 export const StopRecordingResponseSchema: GenMessage<StopRecordingResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 9);
+  messageDesc(file_calaba_v1_recording, 10);
 
 /**
  * Retry of a FAILED recording (backlog 40); the same people as start (a member, not a guest,
@@ -457,7 +503,7 @@ export type RetryRecordingResponse = Message<"calaba.v1.RetryRecordingResponse">
  * Use `create(RetryRecordingResponseSchema)` to create a new message.
  */
 export const RetryRecordingResponseSchema: GenMessage<RetryRecordingResponse> = /*@__PURE__*/
-  messageDesc(file_calaba_v1_recording, 10);
+  messageDesc(file_calaba_v1_recording, 11);
 
 /**
  * Whether a room is being recorded (the "REC" indicator).

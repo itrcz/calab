@@ -92,6 +92,18 @@ message TranscriptSegment {
   uint32 start_ms = 2; // from the start of the recording
   uint32 end_ms = 3;
   string text = 4;
+  // Who said it (ADR-0169): matched from the participants' own on-air reports; "" = not
+  // identified (then `speakers` may still name the speaker number, else «Участник N»).
+  string user_id = 5;
+}
+
+// A speaker number of the transcript and who it is (ADR-0169). user_id = a person of the
+// workspace: the client shows their name and avatar from its directory. name = someone not in
+// the directory (a phone caller: the number). Both empty = not identified.
+message TranscriptSpeaker {
+  int32 speaker = 1;
+  string user_id = 2;
+  string name = 3;
 }
 
 // GET /api/rooms/{id}/recordings/{rid}/transcript (VIEW_ROOM in the room; in a restricted room
@@ -101,6 +113,7 @@ message GetRecordingTranscriptResponse {
   string recording_id = 1;
   string language = 2; // "ru", "en", … ("" = unknown)
   repeated TranscriptSegment segments = 3;
+  repeated TranscriptSpeaker speakers = 4; // the numbers that were identified (ADR-0169)
 }
 
 // DELETE /api/rooms/{id}/recordings/{rid} → 204 (docs/09 #50): who started the recording, the

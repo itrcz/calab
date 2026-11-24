@@ -1589,6 +1589,15 @@ type RoomRecording struct {
 	DeletedAt       *time.Time
 	DeletedBy       *uuid.UUID
 	TranscriptText  *string
+	FileStartedAt   *time.Time
+	SpeakersJson    []byte
+}
+
+type RoomRecordingSpeech struct {
+	RecordingID uuid.UUID
+	UserID      uuid.UUID
+	StartMs     int32
+	EndMs       int32
 }
 
 type Session struct {

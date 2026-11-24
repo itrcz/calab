@@ -422,11 +422,14 @@ func (x *RecordingCard) GetDeletedBy() string {
 
 // One remark of a transcript (GPTunneL's MeetingTranscriptSegment).
 type TranscriptSegment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Speaker       int32                  `protobuf:"varint,1,opt,name=speaker,proto3" json:"speaker,omitempty"`                // the speaker's number from recognition (0, 1, …); -1 = unknown
-	StartMs       uint32                 `protobuf:"varint,2,opt,name=start_ms,json=startMs,proto3" json:"start_ms,omitempty"` // from the start of the recording
-	EndMs         uint32                 `protobuf:"varint,3,opt,name=end_ms,json=endMs,proto3" json:"end_ms,omitempty"`
-	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Speaker int32                  `protobuf:"varint,1,opt,name=speaker,proto3" json:"speaker,omitempty"`                // the speaker's number from recognition (0, 1, …); -1 = unknown
+	StartMs uint32                 `protobuf:"varint,2,opt,name=start_ms,json=startMs,proto3" json:"start_ms,omitempty"` // from the start of the recording
+	EndMs   uint32                 `protobuf:"varint,3,opt,name=end_ms,json=endMs,proto3" json:"end_ms,omitempty"`
+	Text    string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	// Who said it (ADR-0169): matched from the participants' own on-air reports; "" = not
+	// identified (then `speakers` may still name the speaker number, else «Участник N»).
+	UserId        string `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -489,6 +492,76 @@ func (x *TranscriptSegment) GetText() string {
 	return ""
 }
 
+func (x *TranscriptSegment) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+// A speaker number of the transcript and who it is (ADR-0169). user_id = a person of the
+// workspace: the client shows their name and avatar from its directory. name = someone not in
+// the directory (a phone caller: the number). Both empty = not identified.
+type TranscriptSpeaker struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Speaker       int32                  `protobuf:"varint,1,opt,name=speaker,proto3" json:"speaker,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TranscriptSpeaker) Reset() {
+	*x = TranscriptSpeaker{}
+	mi := &file_calaba_v1_recording_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TranscriptSpeaker) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TranscriptSpeaker) ProtoMessage() {}
+
+func (x *TranscriptSpeaker) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_recording_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TranscriptSpeaker.ProtoReflect.Descriptor instead.
+func (*TranscriptSpeaker) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *TranscriptSpeaker) GetSpeaker() int32 {
+	if x != nil {
+		return x.Speaker
+	}
+	return 0
+}
+
+func (x *TranscriptSpeaker) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *TranscriptSpeaker) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 // GET /api/rooms/{id}/recordings/{rid}/transcript (VIEW_ROOM in the room; in a restricted room
 // only its members, ADR-0029): the whole transcript kept on the server. 404 NOT_FOUND: no such
 // recording in this room, deleted, or no transcript (RecordingCard.has_transcript = false).
@@ -497,13 +570,14 @@ type GetRecordingTranscriptResponse struct {
 	RecordingId   string                 `protobuf:"bytes,1,opt,name=recording_id,json=recordingId,proto3" json:"recording_id,omitempty"`
 	Language      string                 `protobuf:"bytes,2,opt,name=language,proto3" json:"language,omitempty"` // "ru", "en", … ("" = unknown)
 	Segments      []*TranscriptSegment   `protobuf:"bytes,3,rep,name=segments,proto3" json:"segments,omitempty"`
+	Speakers      []*TranscriptSpeaker   `protobuf:"bytes,4,rep,name=speakers,proto3" json:"speakers,omitempty"` // the numbers that were identified (ADR-0169)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetRecordingTranscriptResponse) Reset() {
 	*x = GetRecordingTranscriptResponse{}
-	mi := &file_calaba_v1_recording_proto_msgTypes[3]
+	mi := &file_calaba_v1_recording_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -515,7 +589,7 @@ func (x *GetRecordingTranscriptResponse) String() string {
 func (*GetRecordingTranscriptResponse) ProtoMessage() {}
 
 func (x *GetRecordingTranscriptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_recording_proto_msgTypes[3]
+	mi := &file_calaba_v1_recording_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -528,7 +602,7 @@ func (x *GetRecordingTranscriptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRecordingTranscriptResponse.ProtoReflect.Descriptor instead.
 func (*GetRecordingTranscriptResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetRecordingTranscriptResponse) GetRecordingId() string {
@@ -552,6 +626,13 @@ func (x *GetRecordingTranscriptResponse) GetSegments() []*TranscriptSegment {
 	return nil
 }
 
+func (x *GetRecordingTranscriptResponse) GetSpeakers() []*TranscriptSpeaker {
+	if x != nil {
+		return x.Speakers
+	}
+	return nil
+}
+
 // The GPTunneL connection of a workspace. GET/POST/DELETE /api/workspaces/{id}/integrations/gptunnel.
 type GptunnelIntegration struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -567,7 +648,7 @@ type GptunnelIntegration struct {
 
 func (x *GptunnelIntegration) Reset() {
 	*x = GptunnelIntegration{}
-	mi := &file_calaba_v1_recording_proto_msgTypes[4]
+	mi := &file_calaba_v1_recording_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -579,7 +660,7 @@ func (x *GptunnelIntegration) String() string {
 func (*GptunnelIntegration) ProtoMessage() {}
 
 func (x *GptunnelIntegration) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_recording_proto_msgTypes[4]
+	mi := &file_calaba_v1_recording_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -592,7 +673,7 @@ func (x *GptunnelIntegration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GptunnelIntegration.ProtoReflect.Descriptor instead.
 func (*GptunnelIntegration) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GptunnelIntegration) GetPaired() bool {
@@ -647,7 +728,7 @@ type GetGptunnelIntegrationResponse struct {
 
 func (x *GetGptunnelIntegrationResponse) Reset() {
 	*x = GetGptunnelIntegrationResponse{}
-	mi := &file_calaba_v1_recording_proto_msgTypes[5]
+	mi := &file_calaba_v1_recording_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -659,7 +740,7 @@ func (x *GetGptunnelIntegrationResponse) String() string {
 func (*GetGptunnelIntegrationResponse) ProtoMessage() {}
 
 func (x *GetGptunnelIntegrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_recording_proto_msgTypes[5]
+	mi := &file_calaba_v1_recording_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -672,7 +753,7 @@ func (x *GetGptunnelIntegrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGptunnelIntegrationResponse.ProtoReflect.Descriptor instead.
 func (*GetGptunnelIntegrationResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetGptunnelIntegrationResponse) GetIntegration() *GptunnelIntegration {
@@ -695,7 +776,7 @@ type PairGptunnelRequest struct {
 
 func (x *PairGptunnelRequest) Reset() {
 	*x = PairGptunnelRequest{}
-	mi := &file_calaba_v1_recording_proto_msgTypes[6]
+	mi := &file_calaba_v1_recording_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -707,7 +788,7 @@ func (x *PairGptunnelRequest) String() string {
 func (*PairGptunnelRequest) ProtoMessage() {}
 
 func (x *PairGptunnelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_recording_proto_msgTypes[6]
+	mi := &file_calaba_v1_recording_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -720,7 +801,7 @@ func (x *PairGptunnelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairGptunnelRequest.ProtoReflect.Descriptor instead.
 func (*PairGptunnelRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PairGptunnelRequest) GetCode() string {
@@ -739,7 +820,7 @@ type PairGptunnelResponse struct {
 
 func (x *PairGptunnelResponse) Reset() {
 	*x = PairGptunnelResponse{}
-	mi := &file_calaba_v1_recording_proto_msgTypes[7]
+	mi := &file_calaba_v1_recording_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -751,7 +832,7 @@ func (x *PairGptunnelResponse) String() string {
 func (*PairGptunnelResponse) ProtoMessage() {}
 
 func (x *PairGptunnelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_recording_proto_msgTypes[7]
+	mi := &file_calaba_v1_recording_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -764,7 +845,7 @@ func (x *PairGptunnelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PairGptunnelResponse.ProtoReflect.Descriptor instead.
 func (*PairGptunnelResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PairGptunnelResponse) GetIntegration() *GptunnelIntegration {
@@ -788,7 +869,7 @@ type StartRecordingResponse struct {
 
 func (x *StartRecordingResponse) Reset() {
 	*x = StartRecordingResponse{}
-	mi := &file_calaba_v1_recording_proto_msgTypes[8]
+	mi := &file_calaba_v1_recording_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -800,7 +881,7 @@ func (x *StartRecordingResponse) String() string {
 func (*StartRecordingResponse) ProtoMessage() {}
 
 func (x *StartRecordingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_recording_proto_msgTypes[8]
+	mi := &file_calaba_v1_recording_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -813,7 +894,7 @@ func (x *StartRecordingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRecordingResponse.ProtoReflect.Descriptor instead.
 func (*StartRecordingResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{8}
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *StartRecordingResponse) GetRecording() *RoomRecording {
@@ -834,7 +915,7 @@ type StopRecordingResponse struct {
 
 func (x *StopRecordingResponse) Reset() {
 	*x = StopRecordingResponse{}
-	mi := &file_calaba_v1_recording_proto_msgTypes[9]
+	mi := &file_calaba_v1_recording_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -846,7 +927,7 @@ func (x *StopRecordingResponse) String() string {
 func (*StopRecordingResponse) ProtoMessage() {}
 
 func (x *StopRecordingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_recording_proto_msgTypes[9]
+	mi := &file_calaba_v1_recording_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -859,7 +940,7 @@ func (x *StopRecordingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRecordingResponse.ProtoReflect.Descriptor instead.
 func (*StopRecordingResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StopRecordingResponse) GetRecording() *RoomRecording {
@@ -889,7 +970,7 @@ type RetryRecordingResponse struct {
 
 func (x *RetryRecordingResponse) Reset() {
 	*x = RetryRecordingResponse{}
-	mi := &file_calaba_v1_recording_proto_msgTypes[10]
+	mi := &file_calaba_v1_recording_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -901,7 +982,7 @@ func (x *RetryRecordingResponse) String() string {
 func (*RetryRecordingResponse) ProtoMessage() {}
 
 func (x *RetryRecordingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_recording_proto_msgTypes[10]
+	mi := &file_calaba_v1_recording_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -914,7 +995,7 @@ func (x *RetryRecordingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryRecordingResponse.ProtoReflect.Descriptor instead.
 func (*RetryRecordingResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{10}
+	return file_calaba_v1_recording_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RetryRecordingResponse) GetRecording() *RecordingCard {
@@ -962,16 +1043,22 @@ const file_calaba_v1_recording_proto_rawDesc = "" +
 	"\n" +
 	"deleted_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\x12\x1d\n" +
 	"\n" +
-	"deleted_by\x18\x0f \x01(\tR\tdeletedBy\"s\n" +
+	"deleted_by\x18\x0f \x01(\tR\tdeletedBy\"\x8c\x01\n" +
 	"\x11TranscriptSegment\x12\x18\n" +
 	"\aspeaker\x18\x01 \x01(\x05R\aspeaker\x12\x19\n" +
 	"\bstart_ms\x18\x02 \x01(\rR\astartMs\x12\x15\n" +
 	"\x06end_ms\x18\x03 \x01(\rR\x05endMs\x12\x12\n" +
-	"\x04text\x18\x04 \x01(\tR\x04text\"\x99\x01\n" +
+	"\x04text\x18\x04 \x01(\tR\x04text\x12\x17\n" +
+	"\auser_id\x18\x05 \x01(\tR\x06userId\"Z\n" +
+	"\x11TranscriptSpeaker\x12\x18\n" +
+	"\aspeaker\x18\x01 \x01(\x05R\aspeaker\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\xd3\x01\n" +
 	"\x1eGetRecordingTranscriptResponse\x12!\n" +
 	"\frecording_id\x18\x01 \x01(\tR\vrecordingId\x12\x1a\n" +
 	"\blanguage\x18\x02 \x01(\tR\blanguage\x128\n" +
-	"\bsegments\x18\x03 \x03(\v2\x1c.calaba.v1.TranscriptSegmentR\bsegments\"\xd7\x01\n" +
+	"\bsegments\x18\x03 \x03(\v2\x1c.calaba.v1.TranscriptSegmentR\bsegments\x128\n" +
+	"\bspeakers\x18\x04 \x03(\v2\x1c.calaba.v1.TranscriptSpeakerR\bspeakers\"\xd7\x01\n" +
 	"\x13GptunnelIntegration\x12\x16\n" +
 	"\x06paired\x18\x01 \x01(\bR\x06paired\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +
@@ -1019,42 +1106,44 @@ func file_calaba_v1_recording_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_recording_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_recording_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_calaba_v1_recording_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_calaba_v1_recording_proto_goTypes = []any{
 	(RoomRecordingState)(0),                // 0: calaba.v1.RoomRecordingState
 	(RecordingStatus)(0),                   // 1: calaba.v1.RecordingStatus
 	(*RoomRecording)(nil),                  // 2: calaba.v1.RoomRecording
 	(*RecordingCard)(nil),                  // 3: calaba.v1.RecordingCard
 	(*TranscriptSegment)(nil),              // 4: calaba.v1.TranscriptSegment
-	(*GetRecordingTranscriptResponse)(nil), // 5: calaba.v1.GetRecordingTranscriptResponse
-	(*GptunnelIntegration)(nil),            // 6: calaba.v1.GptunnelIntegration
-	(*GetGptunnelIntegrationResponse)(nil), // 7: calaba.v1.GetGptunnelIntegrationResponse
-	(*PairGptunnelRequest)(nil),            // 8: calaba.v1.PairGptunnelRequest
-	(*PairGptunnelResponse)(nil),           // 9: calaba.v1.PairGptunnelResponse
-	(*StartRecordingResponse)(nil),         // 10: calaba.v1.StartRecordingResponse
-	(*StopRecordingResponse)(nil),          // 11: calaba.v1.StopRecordingResponse
-	(*RetryRecordingResponse)(nil),         // 12: calaba.v1.RetryRecordingResponse
-	(*timestamppb.Timestamp)(nil),          // 13: google.protobuf.Timestamp
+	(*TranscriptSpeaker)(nil),              // 5: calaba.v1.TranscriptSpeaker
+	(*GetRecordingTranscriptResponse)(nil), // 6: calaba.v1.GetRecordingTranscriptResponse
+	(*GptunnelIntegration)(nil),            // 7: calaba.v1.GptunnelIntegration
+	(*GetGptunnelIntegrationResponse)(nil), // 8: calaba.v1.GetGptunnelIntegrationResponse
+	(*PairGptunnelRequest)(nil),            // 9: calaba.v1.PairGptunnelRequest
+	(*PairGptunnelResponse)(nil),           // 10: calaba.v1.PairGptunnelResponse
+	(*StartRecordingResponse)(nil),         // 11: calaba.v1.StartRecordingResponse
+	(*StopRecordingResponse)(nil),          // 12: calaba.v1.StopRecordingResponse
+	(*RetryRecordingResponse)(nil),         // 13: calaba.v1.RetryRecordingResponse
+	(*timestamppb.Timestamp)(nil),          // 14: google.protobuf.Timestamp
 }
 var file_calaba_v1_recording_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.RoomRecording.state:type_name -> calaba.v1.RoomRecordingState
-	13, // 1: calaba.v1.RoomRecording.since:type_name -> google.protobuf.Timestamp
-	13, // 2: calaba.v1.RecordingCard.started_at:type_name -> google.protobuf.Timestamp
+	14, // 1: calaba.v1.RoomRecording.since:type_name -> google.protobuf.Timestamp
+	14, // 2: calaba.v1.RecordingCard.started_at:type_name -> google.protobuf.Timestamp
 	1,  // 3: calaba.v1.RecordingCard.status:type_name -> calaba.v1.RecordingStatus
-	13, // 4: calaba.v1.RecordingCard.audio_until:type_name -> google.protobuf.Timestamp
-	13, // 5: calaba.v1.RecordingCard.deleted_at:type_name -> google.protobuf.Timestamp
+	14, // 4: calaba.v1.RecordingCard.audio_until:type_name -> google.protobuf.Timestamp
+	14, // 5: calaba.v1.RecordingCard.deleted_at:type_name -> google.protobuf.Timestamp
 	4,  // 6: calaba.v1.GetRecordingTranscriptResponse.segments:type_name -> calaba.v1.TranscriptSegment
-	13, // 7: calaba.v1.GptunnelIntegration.paired_at:type_name -> google.protobuf.Timestamp
-	6,  // 8: calaba.v1.GetGptunnelIntegrationResponse.integration:type_name -> calaba.v1.GptunnelIntegration
-	6,  // 9: calaba.v1.PairGptunnelResponse.integration:type_name -> calaba.v1.GptunnelIntegration
-	2,  // 10: calaba.v1.StartRecordingResponse.recording:type_name -> calaba.v1.RoomRecording
-	2,  // 11: calaba.v1.StopRecordingResponse.recording:type_name -> calaba.v1.RoomRecording
-	3,  // 12: calaba.v1.RetryRecordingResponse.recording:type_name -> calaba.v1.RecordingCard
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	5,  // 7: calaba.v1.GetRecordingTranscriptResponse.speakers:type_name -> calaba.v1.TranscriptSpeaker
+	14, // 8: calaba.v1.GptunnelIntegration.paired_at:type_name -> google.protobuf.Timestamp
+	7,  // 9: calaba.v1.GetGptunnelIntegrationResponse.integration:type_name -> calaba.v1.GptunnelIntegration
+	7,  // 10: calaba.v1.PairGptunnelResponse.integration:type_name -> calaba.v1.GptunnelIntegration
+	2,  // 11: calaba.v1.StartRecordingResponse.recording:type_name -> calaba.v1.RoomRecording
+	2,  // 12: calaba.v1.StopRecordingResponse.recording:type_name -> calaba.v1.RoomRecording
+	3,  // 13: calaba.v1.RetryRecordingResponse.recording:type_name -> calaba.v1.RecordingCard
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_recording_proto_init() }
@@ -1068,7 +1157,7 @@ func file_calaba_v1_recording_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_recording_proto_rawDesc), len(file_calaba_v1_recording_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

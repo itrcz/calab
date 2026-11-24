@@ -17,7 +17,7 @@ import (
 func TestEgressInfoWireFormats(t *testing.T) {
 	src := &livekit.EgressInfo{
 		EgressId: "EG_1", RoomName: "ws_a_room_b", Status: livekit.EgressStatus_EGRESS_COMPLETE, Error: "",
-		FileResults: []*livekit.FileInfo{{Filename: "/out/a/b.mp4", Size: 123456789012, Duration: int64(95 * time.Second)}},
+		FileResults: []*livekit.FileInfo{{Filename: "/out/a/b.mp4", Size: 123456789012, Duration: int64(95 * time.Second), StartedAt: 1764000000123456789}},
 	}
 	webhookJSON, err := lkjson.Marshal(&livekit.WebhookEvent{Event: "egress_ended", EgressInfo: src})
 	if err != nil {
@@ -37,7 +37,8 @@ func TestEgressInfoWireFormats(t *testing.T) {
 	}
 	for name, got := range map[string]*EgressInfo{"webhook": ev.Egress(), "twirp": &fromTwirp} {
 		if got == nil || got.EgressID != "EG_1" || got.RoomName != "ws_a_room_b" || got.Status != EgressComplete || !got.Ended() ||
-			got.File().Size != 123456789012 || got.File().Duration != 95*time.Second || got.File().Filename != "/out/a/b.mp4" {
+			got.File().Size != 123456789012 || got.File().Duration != 95*time.Second || got.File().Filename != "/out/a/b.mp4" ||
+			!got.File().StartedAt.Equal(time.Unix(0, 1764000000123456789)) {
 			t.Fatalf("%s: %+v", name, got)
 		}
 	}
@@ -45,7 +46,7 @@ func TestEgressInfoWireFormats(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"egressId":"EG_2","status":1,"file":{"size":5,"duration":"7"}}`), &numeric); err != nil {
 		t.Fatal(err)
 	}
-	if numeric.Status != EgressActive || numeric.Ended() || numeric.File().Size != 5 || numeric.File().Duration != 7 {
+	if numeric.Status != EgressActive || numeric.Ended() || numeric.File().Size != 5 || numeric.File().Duration != 7 || !numeric.File().StartedAt.IsZero() {
 		t.Fatalf("numeric / legacy file: %+v", numeric)
 	}
 }

@@ -67,6 +67,7 @@ UPDATE room_recordings SET empty_since = $2 WHERE id = $1 AND status = 'recordin
 -- The recorder finished with a file: queue the upload.
 UPDATE room_recordings SET status = 'uploading', size_bytes = $2, duration_sec = $3,
     stopped_at = coalesce(stopped_at, now()), stop_reason = CASE WHEN stop_reason = '' THEN $4 ELSE stop_reason END,
+    file_started_at = sqlc.narg('file_started_at')::timestamptz,
     next_at = now(), attempts = 0, error = '', updated_at = now()
 WHERE id = $1 AND status IN ('pending', 'recording')
 RETURNING *;
@@ -173,7 +174,7 @@ RETURNING *;
 -- the segments' texts one per line (unified search, ADR-0062; same expression as
 -- BackfillTranscriptText); NULL without a transcript.
 UPDATE room_recordings SET summary = sqlc.arg('summary'), language = sqlc.arg('language'),
-    transcript_json = sqlc.narg('transcript_json')::jsonb,
+    transcript_json = sqlc.narg('transcript_json')::jsonb, speakers_json = sqlc.narg('speakers_json')::jsonb,
     transcript_text = CASE WHEN sqlc.narg('transcript_json')::jsonb IS NULL THEN NULL ELSE coalesce((
         SELECT string_agg(s.seg->>'text', E'\n' ORDER BY s.ord)
         FROM jsonb_array_elements(CASE WHEN jsonb_typeof(sqlc.narg('transcript_json')::jsonb) = 'array'
@@ -204,7 +205,7 @@ UPDATE room_recordings SET result_attempts = result_attempts + 1, result_next_at
 WHERE id = $1 AND result_state = 'pending';
 
 -- name: GetRecordingTranscript :one
-SELECT language, transcript_json FROM room_recordings
+SELECT language, transcript_json, speakers_json FROM room_recordings
 WHERE id = $1 AND room_id = $2 AND deleted_at IS NULL AND transcript_json IS NOT NULL;
 
 -- name: ListExpiredRecordingAudio :many
@@ -221,14 +222,19 @@ RETURNING *;
 
 -- name: DeleteRecording :one
 -- «Удалить запись» (docs/09 #50): the row stays for its card; the result, the audio link and any
--- pending work go. An upload / poll in flight is ended as failed ('deleted').
+-- pending work go. An upload / poll in flight is ended as failed ('deleted'). The speech
+-- timeline and the matched speakers go too (ADR-0169).
+WITH speech AS (
+    DELETE FROM room_recording_speech WHERE recording_id = $1 AND EXISTS (
+        SELECT 1 FROM room_recordings x WHERE x.id = $1 AND x.deleted_at IS NULL AND x.status NOT IN ('pending', 'recording'))
+)
 UPDATE room_recordings SET deleted_at = now(), deleted_by = sqlc.narg('deleted_by')::uuid,
     status = CASE WHEN status IN ('uploading', 'processing') THEN 'failed' ELSE status END,
     error = CASE WHEN status IN ('uploading', 'processing') THEN 'deleted' ELSE error END,
-    next_at = NULL, summary = '', language = '', transcript_json = NULL, transcript_text = NULL,
+    next_at = NULL, summary = '', language = '', transcript_json = NULL, transcript_text = NULL, speakers_json = NULL,
     result_state = CASE WHEN result_state = 'pending' THEN 'unavailable' ELSE result_state END,
     result_next_at = NULL, file_id = NULL, updated_at = now()
-WHERE id = $1 AND deleted_at IS NULL AND status NOT IN ('pending', 'recording')
+WHERE room_recordings.id = $1 AND room_recordings.deleted_at IS NULL AND room_recordings.status NOT IN ('pending', 'recording')
 RETURNING *;
 
 -- name: ListStalePendingRecordings :many
@@ -262,3 +268,35 @@ INSERT INTO message_attachments (message_id, file_id, position, forwarded)
 SELECT m.id, sqlc.arg('file_id')::uuid, 0, true FROM messages m
 WHERE m.forwarded_from = sqlc.arg('message_id')::uuid AND m.deleted_at IS NULL
 ON CONFLICT DO NOTHING;
+
+-- ---- speaker names (ADR-0169) ----
+
+
+-- name: GetRecordingForSpeech :one
+-- The recording $1 of the room $2 if it still takes on-air reports: recording, or stopped less
+-- than a minute ago (the last report of a stop may arrive after the recorder ended).
+SELECT * FROM room_recordings
+WHERE id = $1 AND room_id = $2 AND deleted_at IS NULL AND started_at IS NOT NULL
+  AND (status = 'recording' OR (status IN ('uploading', 'processing', 'failed') AND stopped_at > now() - interval '1 minute'));
+
+-- name: HasRecordingSpeech :one
+-- The user reported on-air time for this recording before (they were in its voice then).
+SELECT EXISTS (SELECT 1 FROM room_recording_speech WHERE recording_id = $1 AND user_id = $2);
+
+-- name: InsertRecordingSpeech :execrows
+-- One report's intervals (ms from started_at); a user keeps at most 20000 intervals per recording.
+INSERT INTO room_recording_speech (recording_id, user_id, start_ms, end_ms)
+SELECT sqlc.arg('recording_id')::uuid, sqlc.arg('user_id')::uuid, unnest(sqlc.arg('starts')::integer[]), unnest(sqlc.arg('ends')::integer[])
+WHERE (SELECT count(*) FROM room_recording_speech x
+       WHERE x.recording_id = sqlc.arg('recording_id')::uuid AND x.user_id = sqlc.arg('user_id')::uuid) < 20000;
+
+-- name: ListRecordingSpeech :many
+SELECT user_id, start_ms, end_ms FROM room_recording_speech WHERE recording_id = $1 ORDER BY start_ms;
+
+-- name: RecordingPhoneCalls :many
+-- Phone calls of the room that were connected while it was being recorded (the client-less
+-- participant rule of ADR-0169 §4).
+SELECT number FROM sip_calls
+WHERE room_id = sqlc.arg('room_id')::uuid AND answered_at IS NOT NULL
+  AND answered_at < sqlc.arg('until')::timestamptz AND coalesce(ended_at, now()) > sqlc.arg('since')::timestamptz
+LIMIT 3;

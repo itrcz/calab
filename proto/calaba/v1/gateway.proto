@@ -41,6 +41,7 @@ enum GatewayOpcode {
   GATEWAY_OPCODE_INVALID_SESSION = 9; // s→c
   GATEWAY_OPCODE_HELLO = 10;          // s→c
   GATEWAY_OPCODE_HEARTBEAT_ACK = 11;  // s→c
+  GATEWAY_OPCODE_RECORDING_SPEECH = 12; // c→s (ADR-0169)
 }
 
 // WebSocket close codes used by the gateway (sent as the close status, not in frames).
@@ -85,6 +86,7 @@ message GatewayFrame {
     SetPresence set_presence = 13;
     Typing typing = 14;
     Subscribe subscribe = 15;
+    RecordingSpeech recording_speech = 16;
     // s→c
     Hello hello = 20;
     HeartbeatAck heartbeat_ack = 21;
@@ -141,6 +143,25 @@ message Typing {
 
 message Subscribe {
   repeated string room_ids = 1; // replaces the previous subscription set
+}
+
+// While a voice room is being recorded, the client reports when its own microphone was on air
+// (the VAD gate / PTT, docs/02) so the transcript shows names instead of speaker numbers
+// (ADR-0169). Sent every 10 s while recording, and on the stop, a leave or a move. Who spoke is
+// the socket's user; times are milliseconds back from the moment of sending (no clock sync).
+// The server keeps intervals only for a recording of the room in progress (or stopped under a
+// minute ago) from a participant of its voice; at most 200 intervals per message, the rest are
+// dropped. Not acknowledged; over the inbound rate limit it is dropped like TYPING.
+message RecordingSpeech {
+  string room_id = 1;
+  string recording_id = 2;
+  repeated SpeechInterval intervals = 3;
+}
+
+// One on-air interval: started ago_start_ms and ended ago_end_ms before sending (start >= end).
+message SpeechInterval {
+  uint32 ago_start_ms = 1;
+  uint32 ago_end_ms = 2;
 }
 
 // ---- server → client ----

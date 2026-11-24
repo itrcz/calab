@@ -210,6 +210,8 @@ func (h *Hub) loop(c *conn, s *Session) {
 			h.typing(s, p.Typing.GetRoomId())
 		case *v1.GatewayFrame_Subscribe:
 			s.setSubscribed(p.Subscribe.GetRoomIds())
+		case *v1.GatewayFrame_RecordingSpeech:
+			h.recordingSpeech(s, p.RecordingSpeech)
 		default:
 			c.closeGraceful(4001, "unexpected opcode")
 			s.detach(c)
@@ -1025,6 +1027,18 @@ func (h *Hub) typing(s *Session, roomIDStr string) {
 		return
 	}
 	h.pub.Workspace(ctx, wid, ev)
+}
+
+// recordingSpeech hands a client's on-air report to the recorder (ADR-0169): who spoke is the
+// session's user, never anything the client says.
+func (h *Hub) recordingSpeech(s *Session, m *v1.RecordingSpeech) {
+	if h.RecordingSpeech == nil {
+		return
+	}
+	at := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	h.RecordingSpeech(ctx, s.user, m, at)
 }
 
 // maxDMPeers bounds the per-session DM cache (a client may send typing for arbitrary ids).

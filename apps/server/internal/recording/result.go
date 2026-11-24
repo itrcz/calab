@@ -103,7 +103,7 @@ func (s *Service) result(ctx context.Context, rec sqlc.RoomRecording) {
 		return
 	}
 	if token == "" || rec.GptunnelID == "" {
-		s.finishResult(ctx, rec, "", "", nil, "unavailable")
+		s.finishResult(ctx, rec, "", "", nil, nil, "unavailable")
 		return
 	}
 	res, err := s.gpt.Result(ctx, token, rec.GptunnelID)
@@ -113,7 +113,7 @@ func (s *Service) result(ctx context.Context, rec sqlc.RoomRecording) {
 		}
 		if e, ok := gptunnel.AsError(err); ok && e.Unauthorized() {
 			s.forgetToken(ctx, rec, sealed)
-			s.finishResult(ctx, rec, "", "", nil, "unavailable")
+			s.finishResult(ctx, rec, "", "", nil, nil, "unavailable")
 			return
 		}
 		s.retryResult(ctx, rec, err) // 404 = an older GPTunneL without the method: asked again later
@@ -121,7 +121,7 @@ func (s *Service) result(ctx context.Context, rec sqlc.RoomRecording) {
 	}
 	summary := clip(strings.TrimSpace(deref(res.Summary)), 50000)
 	lang := clip(deref(res.Language), 16)
-	var transcript []byte
+	var transcript, speakers []byte
 	if res.TranscriptSegments != nil && *res.TranscriptSegments > 0 {
 		tl, segs, err := s.gpt.Transcript(ctx, token, rec.GptunnelID)
 		switch e, ok := gptunnel.AsError(err); {
@@ -129,8 +129,11 @@ func (s *Service) result(ctx context.Context, rec sqlc.RoomRecording) {
 			if tl != "" {
 				lang = clip(tl, 16)
 			}
-			if transcript, err = marshalTranscript(segs); err != nil {
+			clean := cleanTranscript(segs)
+			speakers = s.nameSpeakers(ctx, rec, clean)
+			if transcript, err = json.Marshal(clean); err != nil {
 				slog.WarnContext(ctx, "recording: encode transcript", "recording", rec.ID, "err", err)
+				speakers = nil
 			}
 		case ctx.Err() != nil:
 			return
@@ -141,7 +144,7 @@ func (s *Service) result(ctx context.Context, rec sqlc.RoomRecording) {
 			slog.WarnContext(ctx, "recording: no transcript from GPTunneL", "recording", rec.ID, "err", err)
 		}
 	}
-	s.finishResult(ctx, rec, summary, lang, transcript, "ready")
+	s.finishResult(ctx, rec, summary, lang, transcript, speakers, "ready")
 }
 
 func deref(p *string) string {
@@ -157,6 +160,7 @@ type segment struct {
 	Start   float64 `json:"start"`
 	End     float64 `json:"end"`
 	Text    string  `json:"text"`
+	UserID  string  `json:"user_id,omitempty"` // who said it (ADR-0169); "" = not identified
 }
 
 func finite(f float64) float64 {
@@ -166,8 +170,8 @@ func finite(f float64) float64 {
 	return math.Min(f, float64(math.MaxUint32/1000))
 }
 
-// marshalTranscript keeps what GPTunneL gave, sanitized: valid UTF-8, bounded texts and times.
-func marshalTranscript(in []gptunnel.Segment) ([]byte, error) {
+// cleanTranscript keeps what GPTunneL gave, sanitized: valid UTF-8, bounded texts and times.
+func cleanTranscript(in []gptunnel.Segment) []segment {
 	out := make([]segment, 0, len(in))
 	for _, sg := range in {
 		text := strings.TrimSpace(strings.ToValidUTF8(sg.Text, ""))
@@ -185,14 +189,14 @@ func marshalTranscript(in []gptunnel.Segment) ([]byte, error) {
 		start := finite(sg.Start)
 		out = append(out, segment{Speaker: sp, Start: start, End: math.Max(start, finite(sg.End)), Text: text})
 	}
-	return json.Marshal(out)
+	return out
 }
 
 func (s *Service) retryResult(ctx context.Context, rec sqlc.RoomRecording, cause error) {
 	n := int(rec.ResultAttempts)
 	if n >= len(s.ResultBackoff) {
 		slog.WarnContext(ctx, "recording: giving up the result", "recording", rec.ID, "err", cause)
-		s.finishResult(ctx, rec, "", "", nil, "unavailable")
+		s.finishResult(ctx, rec, "", "", nil, nil, "unavailable")
 		return
 	}
 	next := s.Now().Add(s.ResultBackoff[n])
@@ -204,10 +208,10 @@ func (s *Service) retryResult(ctx context.Context, rec sqlc.RoomRecording, cause
 	slog.InfoContext(ctx, "recording: result not available yet", "recording", rec.ID, "attempt", n+1, "next_at", next, "err", cause)
 }
 
-func (s *Service) finishResult(ctx context.Context, rec sqlc.RoomRecording, summary, lang string, transcript []byte, state string) {
+func (s *Service) finishResult(ctx context.Context, rec sqlc.RoomRecording, summary, lang string, transcript, speakers []byte, state string) {
 	upd, err := db.GuardValue(ctx, s.db, func(guarded *sqlc.Queries) (sqlc.RoomRecording, error) {
 		return guarded.SetRecordingResult(ctx, sqlc.SetRecordingResultParams{
-			ID: rec.ID, Summary: summary, Language: lang, TranscriptJson: transcript, ResultState: state,
+			ID: rec.ID, Summary: summary, Language: lang, TranscriptJson: transcript, SpeakersJson: speakers, ResultState: state,
 		})
 	})
 	if db.IsNotFound(err) {
@@ -394,7 +398,16 @@ func (s *Service) transcript(w http.ResponseWriter, r *http.Request) error {
 		if sg.Speaker != nil {
 			speaker = int32(min(max(*sg.Speaker, 0), 999)) //nolint:gosec // bounded
 		}
-		out.Segments = append(out.Segments, &v1.TranscriptSegment{Speaker: speaker, StartMs: ms(sg.Start), EndMs: ms(sg.End), Text: sg.Text})
+		out.Segments = append(out.Segments, &v1.TranscriptSegment{Speaker: speaker, StartMs: ms(sg.Start), EndMs: ms(sg.End), Text: sg.Text, UserId: sg.UserID})
+	}
+	var speakers []speakerJSON
+	if row.SpeakersJson != nil {
+		if err := json.Unmarshal(row.SpeakersJson, &speakers); err != nil {
+			return err
+		}
+	}
+	for _, sp := range speakers {
+		out.Speakers = append(out.Speakers, &v1.TranscriptSpeaker{Speaker: int32(min(max(sp.Speaker, 0), 999)), UserId: sp.UserID, Name: sp.Name}) //nolint:gosec // bounded
 	}
 	w.Header().Set("Cache-Control", "private, no-cache")
 	httpx.Write(w, http.StatusOK, out)
