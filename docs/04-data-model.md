@@ -123,8 +123,12 @@ room_recordings     id (uuidv7 приложения), workspace_id, room_id, sta
                     status (pending|recording|uploading|processing|done|failed), stop_reason, egress_id? (unique),
                     file (<workspace>/<id>.mp4 на томе записей), size_bytes, duration_sec, started_at, stopped_at?,
                     empty_since?, gptunnel_id, web_url, error, message_id? (карточка в чате), attempts, next_at?
-                    (очередь загрузки/опроса), processing_since?, file_deleted_at?
+                    (очередь загрузки/опроса), processing_since?, file_deleted_at?, file_started_at? (начало файла
+                    egress, NULL = started_at), speakers_json? ([{speaker, user_id?, name?}] — номера спикеров, ADR-0169)
                     UNIQUE (room_id) WHERE status IN (pending, recording) — одна запись на комнату (ADR-0025)
+room_recording_speech recording_id → room_recordings ON DELETE CASCADE, user_id, start_ms, end_ms (мс от started_at:
+                    когда микрофон человека был в эфире, по отчётам его клиента, ADR-0169), reported_at (когда пришёл
+                    отчёт); ≤ 20 000 на человека за запись, очищается вместе с результатом при удалении записи
                     rooms += allow_recording (true);  messages += kind ('user'|'system'), payload? (jsonb SystemMessage)
 
 sticker_packs       id, workspace_id, name (1..64), short_name ([a-z0-9_]{1,32}, UNIQUE среди живых в пространстве),
