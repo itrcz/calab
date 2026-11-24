@@ -237,6 +237,10 @@ func TestRecordingSpeechAdmission(t *testing.T) {
 	if d := spans[2][1] - spans[2][0]; d < 3000 || d > 5100 {
 		t.Fatalf("after leaving: the stretch past the bound is not cut at it: %v", spans)
 	}
+	var moved bool // a report after leaving must not push the bound on
+	if err := testDB.Pool.QueryRow(ctx, `SELECT max(reported_at) > now() - interval '50 seconds' FROM room_recording_speech WHERE recording_id = $1 AND user_id = $2`, recID, bob.id).Scan(&moved); err != nil || moved {
+		t.Fatalf("after leaving: the bound moved (%v, %v)", moved, err)
+	}
 
 	// The minute after the stop: a late report is kept (within the recording); later, dropped.
 	exec(`UPDATE room_recordings SET status = 'failed', stopped_at = now() - interval '30 seconds' WHERE id = $1`, recID)

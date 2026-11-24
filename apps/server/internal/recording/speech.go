@@ -77,8 +77,14 @@ func (s *Service) ReportSpeech(ctx context.Context, user uuid.UUID, m *v1.Record
 	if rec.StoppedAt != nil && rec.StoppedAt.Before(hi) {
 		hi = *rec.StoppedAt
 	}
-	if !until.IsZero() && until.Before(hi) {
-		hi = until
+	reportedAt := at
+	if !until.IsZero() {
+		if until.Before(hi) {
+			hi = until
+		}
+		// Out of the voice: the bound does not move on, or reports every few seconds would
+		// stretch it forever.
+		reportedAt = until.Add(-afterLeaveSlack)
 	}
 	end := hi.Sub(rec.StartedAt).Milliseconds()
 	ivs := m.GetIntervals()
@@ -101,7 +107,7 @@ func (s *Service) ReportSpeech(ctx context.Context, user uuid.UUID, m *v1.Record
 		starts[i], ends[i] = int32(iv[0]), int32(iv[1]) //nolint:gosec // clamped to MaxInt32
 	}
 	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
-		_, err := guarded.InsertRecordingSpeech(ctx, sqlc.InsertRecordingSpeechParams{RecordingID: rec.ID, UserID: user, Starts: starts, Ends: ends, ReportedAt: at})
+		_, err := guarded.InsertRecordingSpeech(ctx, sqlc.InsertRecordingSpeechParams{RecordingID: rec.ID, UserID: user, Starts: starts, Ends: ends, ReportedAt: reportedAt})
 		return err
 	}); err != nil && !db.IsForeignKeyViolation(err) {
 		slog.WarnContext(ctx, "recording: store speech", "recording", rec.ID, "err", err)
