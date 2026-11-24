@@ -60,7 +60,7 @@ describe('on-air reports service (ADR-0169)', () => {
     record(null); // the stop
     expect(sent).toHaveLength(2);
     expect(sent[1]).toMatchObject({ roomId: 'r1', recordingId: 'rec1' });
-    expect(sent[1]!.ivs).toHaveLength(1);
+    expect(sent[1]?.ivs).toHaveLength(1);
   });
 
   it('flushes before the connection goes on a leave and on a move', () => {
@@ -70,7 +70,7 @@ describe('on-air reports service (ADR-0169)', () => {
     vi.advanceTimersByTime(1500);
     for (const fn of leaveHooks) fn(); // voice.leave(): before teardown
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.ivs).toEqual([{ agoStartMs: 1500, agoEndMs: 0 }]);
+    expect(sent[0]?.ivs).toEqual([{ agoStartMs: 1500, agoEndMs: 0 }]);
     useVoice.setState({ transmitting: false, roomId: null }); // the teardown follows
     expect(sent).toHaveLength(1);
 
