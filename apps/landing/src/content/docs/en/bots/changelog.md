@@ -8,6 +8,7 @@ The bot API only grows: new routes, fields and events are added, existing ones k
 
 | Server version | Date | What's new |
 |---|---|---|
+| next | — | Speaker names in a recording's transcript: `segments[].userId` and `speakers[]` in `GET /api/rooms/{id}/recordings/{rid}/transcript` — see [Messages](./rest-messages#meeting-transcript) |
 | next | — | MCP: the tools `calendar` (meetings, free/busy, free slots), `event` (create, reschedule, cancel, comment), `inbox` (unread DMs and mentions), `react`, `checklist`, `link_tasks`, `approve`; `read` with `person` and `members`, a task's approval and links; `send_message` with `to` — see [MCP server](./mcp#calendar-people-messages-and-approvals) |
 | next | — | The bot's current owner edits the text of the bot's messages from the app (`PATCH /api/messages/{id}` with their own session, in the bot's home workspace and its DMs): the author stays the bot, the keyboard stays, `keyboardRevision` grows, `MESSAGE_UPDATE` is unchanged — see [Messages](./rest-messages) |
 | next | — | MCP without a bot: a person connects an MCP client with their own account through OAuth 2.1 (metadata `/.well-known/oauth-protected-resource/api/mcp` and `/.well-known/oauth-authorization-server`, registration `POST /api/mcp/oauth/register`, PKCE S256); the connection's token works only on `/api/mcp` (`403 MCP_TOKEN` on other REST); the endpoint's `401` carries `WWW-Authenticate` — see [MCP server](./mcp#connecting-with-your-account-oauth) |

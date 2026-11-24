@@ -238,13 +238,20 @@ A command replying to a card has `replyToId` set to the card's **message** id.
   "recordingId": "0192a100-0000-7000-8000-000000000001",
   "language": "en",
   "segments": [
-    {"speaker": 0, "startMs": 480, "endMs": 6900, "text": "First segment."},
+    {"speaker": 0, "startMs": 480, "endMs": 6900, "text": "First segment.", "userId": "0192a100-0000-7000-8000-0000000000aa"},
+    {"speaker": 1, "startMs": 7000, "endMs": 7100, "text": "A phone caller."},
     {"speaker": -1, "startMs": 7200, "endMs": 12050, "text": "Unknown speaker."}
+  ],
+  "speakers": [
+    {"speaker": 0, "userId": "0192a100-0000-7000-8000-0000000000aa"},
+    {"speaker": 1, "name": "+79990000000"}
   ]
 }
 ```
 
 `startMs` / `endMs` are numbers in milliseconds from the start of the recording; `speaker` is a zero-based recognition label, or `-1` when unknown; `language` may be empty.
+
+Speaker names: a segment's `userId` is the workspace member who said it (absent = not identified); `speakers` lists the identified numbers: a `userId` (take the name and avatar from [members](./rest-members)) or a `name` for someone who is not a member (a phone caller's number). Identification relies on the members' apps reporting when their microphone was on air, so older recordings and members on older app versions keep plain numbers. The card's summary may still mention speaker numbers.
 
 ```js tab="JavaScript"
 const t = await bot.transcript(roomId, recordingId);
