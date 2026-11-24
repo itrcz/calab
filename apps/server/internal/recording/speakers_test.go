@@ -2,8 +2,11 @@ package recording
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/calaba/calaba/server/internal/db/sqlc"
 )
 
 func TestMatchSpeakers(t *testing.T) {
@@ -95,14 +98,35 @@ func TestMatchSpeakers(t *testing.T) {
 			segments: []uuid.UUID{a, b, uuid.Nil},
 		},
 		{
-			name: "the one client-less participant gets the one notable number left",
+			name: "the one client-less participant gets the only number left",
+			in: matchInput{
+				Segments:   []matchSegment{sg(0, 0, 50), sg(1, 60, 100), sg(2, 110, 150)},
+				Speech:     []speechSpan{sp(a, 0, 50), sp(b, 60, 100)},
+				DurationMs: 15000, Clientless: "+79990000000",
+			},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}, 2: {Name: "+79990000000"}},
+			segments: []uuid.UUID{a, b, uuid.Nil},
+		},
+		{
+			name: "an employee on an old client and a brief caller: no guess",
+			// A reports; B (old client) talks a lot under 1; the caller says a word under 2. Only
+			// «one of the notable numbers» would have named B by the phone number.
+			in: matchInput{
+				Segments:   []matchSegment{sg(0, 0, 50), sg(1, 60, 120), sg(2, 125, 130), sg(0, 135, 150)},
+				Speech:     []speechSpan{sp(a, 0, 50), sp(a, 135, 150)},
+				DurationMs: 15000, Clientless: "+79990000000",
+			},
+			speakers: map[int]speakerMatch{0: {User: a}},
+			segments: []uuid.UUID{a, uuid.Nil, uuid.Nil, a},
+		},
+		{
+			name: "a stray short number besides the caller's: no guess",
 			in: matchInput{
 				Segments:   []matchSegment{sg(0, 0, 50), sg(1, 60, 100), sg(2, 110, 150), sg(3, 151, 152)},
 				Speech:     []speechSpan{sp(a, 0, 50), sp(b, 60, 100)},
 				DurationMs: 15000, Clientless: "+79990000000",
 			},
-			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}, 2: {Name: "+79990000000"}},
-			segments: []uuid.UUID{a, b, uuid.Nil, uuid.Nil},
+			speakers: map[int]speakerMatch{0: {User: a}, 1: {User: b}},
 		},
 		{
 			name: "two notable numbers left: the client-less rule does not guess",
@@ -156,6 +180,28 @@ func TestMergeSpeech(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
+// The reports count from started_at, the transcript from the file's start: a file that started
+// 1.5 s after started_at sees the same speech 1.5 s earlier; one that started before, later.
+func TestSpeechInFileShift(t *testing.T) {
+	u := uuid.New()
+	started := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+	rows := []sqlc.ListRecordingSpeechRow{{UserID: u, StartMs: 5000, EndMs: 8000}}
+	for _, tc := range []struct {
+		name       string
+		file       *time.Time
+		start, end int64
+	}{
+		{"no file start", nil, 5000, 8000},
+		{"file started later", new(started.Add(1500 * time.Millisecond)), 3500, 6500},
+		{"file started earlier", new(started.Add(-700 * time.Millisecond)), 5700, 8700},
+	} {
+		got := speechInFile(rows, started, tc.file)
+		if len(got) != 1 || got[0].User != u || got[0].Start != tc.start || got[0].End != tc.end {
+			t.Fatalf("%s: got %+v, want %d–%d", tc.name, got, tc.start, tc.end)
 		}
 	}
 }

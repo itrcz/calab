@@ -54,34 +54,18 @@ func TestRecordingSpeakerNames(t *testing.T) {
 	if _, err := testDB.Pool.Exec(ctx, `UPDATE room_recordings SET started_at = now() - interval '60 seconds' WHERE id = $1`, recID); err != nil {
 		t.Fatal(err)
 	}
-	report := func(u *user, ivs ...*v1.SpeechInterval) {
-		t.Helper()
-		g := dialGW(t)
-		g.identify(u.token)
-		g.send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_RECORDING_SPEECH, Payload: &v1.GatewayFrame_RecordingSpeech{
-			RecordingSpeech: &v1.RecordingSpeech{RoomId: rid, RecordingId: recID, Intervals: ivs},
-		}})
-	}
-	iv := func(agoStart, agoEnd uint32) *v1.SpeechInterval {
-		return &v1.SpeechInterval{AgoStartMs: agoStart, AgoEndMs: agoEnd}
-	}
+	report, sync := speechReporter(t, rid, recID)
+	iv := speechIv
 	report(o, iv(59500, 50000), iv(40000, 35000))     // ≈ 0.5–10 s and 20–25 s of the recording
 	report(bob, iv(48000, 41000))                     // ≈ 12–19 s
 	report(carol, iv(30000, 28000), iv(60000, 59000)) // not in the call: dropped
+	sync(o, bob, carol)                               // every frame above is handled
 	rows := func(user string) int {
 		t.Helper()
-		var n int
-		if err := testDB.Pool.QueryRow(ctx, `SELECT count(*) FROM room_recording_speech WHERE recording_id = $1 AND ($2 = '' OR user_id::text = $2)`, recID, user).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		return n
+		return speechRows(t, recID, user)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for rows(o.id) != 2 || rows(bob.id) != 1 {
-		if time.Now().After(deadline) {
-			t.Fatalf("reports not stored: owner %d, bob %d", rows(o.id), rows(bob.id))
-		}
-		time.Sleep(50 * time.Millisecond)
+	if rows(o.id) != 2 || rows(bob.id) != 1 {
+		t.Fatalf("reports not stored: owner %d, bob %d", rows(o.id), rows(bob.id))
 	}
 	if n := rows(carol.id); n != 0 {
 		t.Fatalf("a report from outside the call was kept: %d", n)
@@ -129,5 +113,143 @@ func TestRecordingSpeakerNames(t *testing.T) {
 	}
 	if n := rows(""); n != 0 || named {
 		t.Fatalf("after delete: %d reports, speakers kept %v", n, named)
+	}
+}
+
+// speechReporter sends RecordingSpeech frames of a recording over one gateway socket per user;
+// sync waits until every frame sent so far on the users' sockets is handled (the gateway handles
+// a socket's frames in order: a heartbeat's ack comes after the reports before it).
+func speechReporter(t *testing.T, rid, recID string) (report func(u *user, ivs ...*v1.SpeechInterval), sync func(us ...*user)) {
+	socks := map[string]*gw{}
+	sock := func(u *user) *gw {
+		if g, ok := socks[u.id]; ok {
+			return g
+		}
+		g := dialGW(t)
+		g.identify(u.token)
+		socks[u.id] = g
+		return g
+	}
+	report = func(u *user, ivs ...*v1.SpeechInterval) {
+		t.Helper()
+		sock(u).send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_RECORDING_SPEECH, Payload: &v1.GatewayFrame_RecordingSpeech{
+			RecordingSpeech: &v1.RecordingSpeech{RoomId: rid, RecordingId: recID, Intervals: ivs},
+		}})
+	}
+	sync = func(us ...*user) {
+		t.Helper()
+		for _, u := range us {
+			g := sock(u)
+			g.send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_HEARTBEAT, Payload: &v1.GatewayFrame_Heartbeat{Heartbeat: &v1.Heartbeat{}}})
+			g.waitFrame("heartbeat ack", func(f *v1.GatewayFrame) bool { return f.GetHeartbeatAck() != nil })
+		}
+	}
+	return report, sync
+}
+
+func speechIv(agoStart, agoEnd uint32) *v1.SpeechInterval {
+	return &v1.SpeechInterval{AgoStartMs: agoStart, AgoEndMs: agoEnd}
+}
+
+// speechRows counts the stored on-air intervals of a recording ("" = everyone's).
+func speechRows(t *testing.T, recID, user string) int {
+	t.Helper()
+	var n int
+	if err := testDB.Pool.QueryRow(context.Background(), `SELECT count(*) FROM room_recording_speech WHERE recording_id = $1 AND ($2 = '' OR user_id::text = $2)`, recID, user).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// TestRecordingSpeechAdmission (ADR-0169 §2): the limits of what an on-air report may store — the
+// per-message and per-recording caps, a report from someone who has left the call (only up to
+// their last accepted report + 15 s), and the minute after the stop.
+func TestRecordingSpeechAdmission(t *testing.T) {
+	liveKitUp(t)
+	o, bob, ws, room := setupTeam(t)
+	rid := room.GetId()
+	pairWorkspace(t, o, ws.GetId())
+	inCall(t, o, ws, rid)
+	bobIdentity := inCall(t, bob, ws, rid)
+	ctx := context.Background()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := testDB.Pool.Exec(ctx, q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var start v1.StartRecordingResponse
+	o.must(200, "POST", "/api/rooms/"+rid+"/recording/start", nil, &start)
+	recID := start.GetRecording().GetRecordingId()
+	exec(`UPDATE room_recordings SET started_at = now() - interval '10 minutes' WHERE id = $1`, recID)
+	report, sync := speechReporter(t, rid, recID)
+	iv := speechIv
+
+	// 250 intervals 0.1 s long, 0.6 s apart (nothing merges): the first 200 are kept.
+	many := make([]*v1.SpeechInterval, 250)
+	for i := range many {
+		at := uint32(300_000 - i*600)
+		many[i] = iv(at, at-100)
+	}
+	report(o, many...)
+	sync(o)
+	if n := speechRows(t, recID, o.id); n != 200 {
+		t.Fatalf("one message: %d intervals kept, want 200", n)
+	}
+	// 20000 per user and recording: the owner is at the cap, nothing more is stored.
+	exec(`INSERT INTO room_recording_speech (recording_id, user_id, start_ms, end_ms)
+		SELECT $1, $2, g * 10, g * 10 + 5 FROM generate_series(1, 19800) g`, recID, o.id)
+	report(o, iv(5000, 4000))
+	sync(o)
+	if n := speechRows(t, recID, o.id); n != 20000 {
+		t.Fatalf("at the cap: %d intervals, want 20000", n)
+	}
+
+	// Bob reports while in the call, then leaves; his last accepted report was a minute ago.
+	report(bob, iv(70000, 69000))
+	sync(bob)
+	if n := speechRows(t, recID, bob.id); n != 1 {
+		t.Fatalf("bob in the call: %d", n)
+	}
+	exec(`UPDATE room_recording_speech SET reported_at = now() - interval '60 seconds' WHERE recording_id = $1 AND user_id = $2`, recID, bob.id)
+	bob.must(204, "POST", "/api/rooms/"+rid+"/voice/leave", nil, nil)
+	webhook(t, whEvent("participant_left", "ws_"+ws.GetId()+"_room_"+rid, bobIdentity, nil), "secret")
+	// 58–52 s ago ends before that report + 15 s: kept; 50–40 s ago is cut at 45 s ago; 20–10 s
+	// ago is all after it: dropped.
+	report(bob, iv(58000, 52000), iv(50000, 40000), iv(20000, 10000))
+	sync(bob)
+	var spans [][2]int32
+	r, err := testDB.Pool.Query(ctx, `SELECT start_ms, end_ms FROM room_recording_speech WHERE recording_id = $1 AND user_id = $2 ORDER BY start_ms`, recID, bob.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for r.Next() {
+		var a, b int32
+		if err := r.Scan(&a, &b); err != nil {
+			t.Fatal(err)
+		}
+		spans = append(spans, [2]int32{a, b})
+	}
+	r.Close()
+	if len(spans) != 3 || spans[1][1]-spans[1][0] < 5900 {
+		t.Fatalf("after leaving: %v", spans)
+	}
+	if d := spans[2][1] - spans[2][0]; d < 3000 || d > 5100 {
+		t.Fatalf("after leaving: the stretch past the bound is not cut at it: %v", spans)
+	}
+
+	// The minute after the stop: a late report is kept (within the recording); later, dropped.
+	exec(`UPDATE room_recordings SET status = 'failed', stopped_at = now() - interval '30 seconds' WHERE id = $1`, recID)
+	exec(`DELETE FROM room_recording_speech WHERE recording_id = $1 AND user_id = $2`, recID, o.id)
+	report(o, iv(40000, 35000), iv(25000, 20000)) // the second is after the stop
+	sync(o)
+	if n := speechRows(t, recID, o.id); n != 1 {
+		t.Fatalf("within the grace: %d rows, want 1", n)
+	}
+	exec(`UPDATE room_recordings SET stopped_at = now() - interval '2 minutes' WHERE id = $1`, recID)
+	report(o, iv(150000, 140000))
+	sync(o)
+	if n := speechRows(t, recID, o.id); n != 1 {
+		t.Fatalf("after the grace: %d rows, want 1", n)
 	}
 }
