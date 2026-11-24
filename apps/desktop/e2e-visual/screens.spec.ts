@@ -75,6 +75,7 @@ const KEY = new Set([
   'chat-recording-reply-permissions',
   'chat-recording-play',
   'recording-transcript',
+  'recording-transcript-speakers',
   'chat-recording-delete',
   'chat-audio',
   'chat-audio-mini',
@@ -3215,15 +3216,27 @@ test('chat-recording-play', async ({ open, win, mock }) => {
 
 // «Полный транскрипт» (docs/09 #47): speakers, times, search that keeps the matching remarks, a
 // click plays the recording from that remark (the chat's player), «Копировать», «Скачать .txt».
+// Speakers by name (ADR-0169): Анна and Борис with avatars, a phone caller by number, the
+// unidentified one stays «Спикер 3».
 test('recording-transcript', async ({ open, win, mock, shot }) => {
   await open();
+  mock.state.transcriptSpeakers = true;
   const card = await doneCard(win, mock);
   await card.getByRole('button', { name: 'Полный транскрипт' }).click();
   const dialog = win.getByRole('dialog', { name: 'Транскрипт встречи' });
   await expect(dialog).toBeVisible();
   const rows = dialog.getByTestId('recording-transcript-row');
-  await expect(rows.first()).toContainText('Спикер 1');
+  await expect(rows.first()).toContainText('Анна Смирнова');
   await expect(rows.first()).toContainText('Коллеги, начнём');
+  await expect(rows.nth(2)).toContainText('Спикер 3');
+  await expect(rows.nth(5)).toContainText('+7 999 123-45-67');
+  await expect(rows.first().getByTestId('recording-transcript-speaker')).toBeVisible();
+  await dialog.getByRole('textbox', { name: 'Поиск по транскрипту' }).focus(); // no «Закрыть» tooltip in the shot
+  await settle(win);
+  await checkpoint(shot, 'recording-transcript-speakers');
+  await dialog.getByRole('textbox', { name: 'Поиск по транскрипту' }).fill('борис');
+  await expect(rows).toHaveCount(4); // his two remarks, the one without a number, and «Борис, что со стендом?»
+  await dialog.getByRole('textbox', { name: 'Поиск по транскрипту' }).fill('');
   await dialog.getByRole('textbox', { name: 'Поиск по транскрипту' }).fill('эталоны');
   await expect(rows).toHaveCount(2);
   await expect(dialog).toContainText('Найдено: 2');

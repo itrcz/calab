@@ -12,6 +12,7 @@ import { toast, useToasts } from '../stores/toasts';
 import { useUi } from '../stores/ui';
 import { setVoice, useVoice } from '../stores/voice';
 import { memberName, rolesOf, useWorkspaces } from '../stores/workspaces';
+import { startSpeechReports } from './recordingSpeech';
 
 /**
  * Meeting recording on the client (ADR-0025): the server's state of which rooms are recorded
@@ -87,6 +88,7 @@ let started = false;
 export function startRecordingSync(): void {
   if (started) return;
   started = true;
+  startSpeechReports(); // my on-air time while my room is recorded: names in the transcript (ADR-0169)
   useRecordings.subscribe(syncVoice);
   // Only a room change matters here (the voice store changes many times a second: levels).
   useVoice.subscribe((s, p) => {

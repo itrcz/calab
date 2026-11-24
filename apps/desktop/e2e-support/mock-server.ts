@@ -582,6 +582,7 @@ import {
   MOCK_GPTUNNEL_WEB,
   PASSWORD,
   RECORDING_RESULT,
+  RECORDING_SPEAKERS,
   buildState,
   builtinRoles,
   defaultSettings,
@@ -7755,7 +7756,8 @@ class MockImpl {
       sendMsg(c.res, 200, GetRecordingTranscriptResponseSchema, {
         recordingId: card.recordingId,
         language: RECORDING_RESULT.language,
-        segments: RECORDING_RESULT.transcript.map((x) => ({ ...x })),
+        segments: RECORDING_RESULT.transcript.map((x) => ({ ...x, userId: this.state.transcriptSpeakers ? (RECORDING_SPEAKERS.segmentUsers[x.speaker] ?? '') : '' })),
+        speakers: this.state.transcriptSpeakers ? RECORDING_SPEAKERS.speakers.map((x) => ({ ...x })) : [],
       });
     });
 
