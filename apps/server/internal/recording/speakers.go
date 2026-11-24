@@ -274,7 +274,6 @@ func matchSpeakers(in matchInput) matchOutput {
 		s := in.Segments[i]
 		return tl.decide(tl.score([]matchSegment{s}), min(minSoloMs, (s.End-s.Start)/2))
 	}
-	unresolved := map[int]bool{}
 	if len(in.Speech) > 0 {
 		out.OffsetMs = bestOffset(in.Segments, in.Speech)
 		tl := buildTimeline(in.Speech, out.OffsetMs)
@@ -294,34 +293,32 @@ func matchSpeakers(in matchInput) matchOutput {
 						out.Segments[i] = tl.users[u]
 					}
 				}
-				continue
 			}
-			unresolved[n] = true
 		}
 		for _, i := range byNum[-1] { // remarks without a number: each by its own overlap
 			if u := one(tl, i); u >= 0 {
 				out.Segments[i] = tl.users[u]
 			}
 		}
-	} else {
-		for _, n := range nums {
-			unresolved[n] = true
-		}
 	}
-	// The one participant without a client gets the one remaining number with notable speech.
+	// The one participant without a client (a phone caller) gets the number left over — only when
+	// it is the single number not matched to anyone and has notable speech. Two or more left (an
+	// employee on an old client and the caller, say): no guess.
 	if in.Clientless != "" && in.DurationMs > 0 {
-		cand, count := -1, 0
-		for n := range unresolved {
+		var left []int
+		for _, n := range nums {
+			if _, ok := out.Speakers[n]; !ok {
+				left = append(left, n)
+			}
+		}
+		if len(left) == 1 {
 			var ms int64
-			for _, s := range pick(byNum[n]) {
+			for _, s := range pick(byNum[left[0]]) {
 				ms += max(s.End-s.Start, 0)
 			}
 			if float64(ms) >= clientlessPart*float64(in.DurationMs) {
-				cand, count = n, count+1
+				out.Speakers[left[0]] = speakerMatch{Name: in.Clientless}
 			}
-		}
-		if count == 1 {
-			out.Speakers[cand] = speakerMatch{Name: in.Clientless}
 		}
 	}
 	return out

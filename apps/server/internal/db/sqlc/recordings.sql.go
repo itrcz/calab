@@ -530,7 +530,6 @@ func (q *Queries) GetRecordingByEgress(ctx context.Context, egressID *string) (R
 
 const getRecordingForSpeech = `-- name: GetRecordingForSpeech :one
 
-
 SELECT id, workspace_id, room_id, started_by, stopped_by, status, stop_reason, egress_id, file, size_bytes, duration_sec, started_at, stopped_at, empty_since, gptunnel_id, web_url, error, message_id, attempts, next_at, processing_since, file_deleted_at, updated_at, reuploads, reupload_at, done_at, summary, language, transcript_json, result_state, result_attempts, result_next_at, file_id, deleted_at, deleted_by, transcript_text, file_started_at, speakers_json FROM room_recordings
 WHERE id = $1 AND room_id = $2 AND deleted_at IS NULL AND started_at IS NOT NULL
   AND (status = 'recording' OR (status IN ('uploading', 'processing', 'failed') AND stopped_at > now() - interval '1 minute'))
@@ -613,23 +612,6 @@ func (q *Queries) GetRecordingTranscript(ctx context.Context, arg GetRecordingTr
 	return i, err
 }
 
-const hasRecordingSpeech = `-- name: HasRecordingSpeech :one
-SELECT EXISTS (SELECT 1 FROM room_recording_speech WHERE recording_id = $1 AND user_id = $2)
-`
-
-type HasRecordingSpeechParams struct {
-	RecordingID uuid.UUID
-	UserID      uuid.UUID
-}
-
-// The user reported on-air time for this recording before (they were in its voice then).
-func (q *Queries) HasRecordingSpeech(ctx context.Context, arg HasRecordingSpeechParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasRecordingSpeech, arg.RecordingID, arg.UserID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
 const insertRecording = `-- name: InsertRecording :one
 INSERT INTO room_recordings (id, workspace_id, room_id, started_by, file)
 VALUES ($1, $2, $3, $4, $5)
@@ -697,8 +679,9 @@ func (q *Queries) InsertRecording(ctx context.Context, arg InsertRecordingParams
 }
 
 const insertRecordingSpeech = `-- name: InsertRecordingSpeech :execrows
-INSERT INTO room_recording_speech (recording_id, user_id, start_ms, end_ms)
-SELECT $1::uuid, $2::uuid, unnest($3::integer[]), unnest($4::integer[])
+INSERT INTO room_recording_speech (recording_id, user_id, start_ms, end_ms, reported_at)
+SELECT $1::uuid, $2::uuid, unnest($3::integer[]), unnest($4::integer[]),
+    $5::timestamptz
 WHERE (SELECT count(*) FROM room_recording_speech x
        WHERE x.recording_id = $1::uuid AND x.user_id = $2::uuid) < 20000
 `
@@ -708,6 +691,7 @@ type InsertRecordingSpeechParams struct {
 	UserID      uuid.UUID
 	Starts      []int32
 	Ends        []int32
+	ReportedAt  time.Time
 }
 
 // One report's intervals (ms from started_at); a user keeps at most 20000 intervals per recording.
@@ -717,6 +701,7 @@ func (q *Queries) InsertRecordingSpeech(ctx context.Context, arg InsertRecording
 		arg.UserID,
 		arg.Starts,
 		arg.Ends,
+		arg.ReportedAt,
 	)
 	if err != nil {
 		return 0, err
@@ -764,6 +749,25 @@ func (q *Queries) InsertSystemMessage(ctx context.Context, arg InsertSystemMessa
 		&i.Via,
 	)
 	return i, err
+}
+
+const lastRecordingSpeechAt = `-- name: LastRecordingSpeechAt :one
+SELECT reported_at FROM room_recording_speech WHERE recording_id = $1 AND user_id = $2
+ORDER BY reported_at DESC LIMIT 1
+`
+
+type LastRecordingSpeechAtParams struct {
+	RecordingID uuid.UUID
+	UserID      uuid.UUID
+}
+
+// When the user's last stored report for this recording arrived (no row = never; they were in its
+// voice then): a report after leaving is accepted only up to this + 15 s.
+func (q *Queries) LastRecordingSpeechAt(ctx context.Context, arg LastRecordingSpeechAtParams) (time.Time, error) {
+	row := q.db.QueryRow(ctx, lastRecordingSpeechAt, arg.RecordingID, arg.UserID)
+	var reported_at time.Time
+	err := row.Scan(&reported_at)
+	return reported_at, err
 }
 
 const listActiveRecordings = `-- name: ListActiveRecordings :many
@@ -1577,7 +1581,7 @@ func (q *Queries) RecheckRecording(ctx context.Context, id uuid.UUID) (RoomRecor
 }
 
 const recordingPhoneCalls = `-- name: RecordingPhoneCalls :many
-SELECT number FROM sip_calls
+SELECT DISTINCT number FROM sip_calls
 WHERE room_id = $1::uuid AND answered_at IS NOT NULL
   AND answered_at < $2::timestamptz AND coalesce(ended_at, now()) > $3::timestamptz
 LIMIT 3
@@ -1589,8 +1593,8 @@ type RecordingPhoneCallsParams struct {
 	Since  time.Time
 }
 
-// Phone calls of the room that were connected while it was being recorded (the client-less
-// participant rule of ADR-0169 §4).
+// The numbers of the room's phone calls that were connected while it was being recorded (the
+// client-less participant rule of ADR-0169 §4); a repeat call to the same number is one.
 func (q *Queries) RecordingPhoneCalls(ctx context.Context, arg RecordingPhoneCallsParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, recordingPhoneCalls, arg.RoomID, arg.Until, arg.Since)
 	if err != nil {

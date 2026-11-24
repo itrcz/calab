@@ -271,7 +271,6 @@ ON CONFLICT DO NOTHING;
 
 -- ---- speaker names (ADR-0169) ----
 
-
 -- name: GetRecordingForSpeech :one
 -- The recording $1 of the room $2 if it still takes on-air reports: recording, or stopped less
 -- than a minute ago (the last report of a stop may arrive after the recorder ended).
@@ -279,14 +278,17 @@ SELECT * FROM room_recordings
 WHERE id = $1 AND room_id = $2 AND deleted_at IS NULL AND started_at IS NOT NULL
   AND (status = 'recording' OR (status IN ('uploading', 'processing', 'failed') AND stopped_at > now() - interval '1 minute'));
 
--- name: HasRecordingSpeech :one
--- The user reported on-air time for this recording before (they were in its voice then).
-SELECT EXISTS (SELECT 1 FROM room_recording_speech WHERE recording_id = $1 AND user_id = $2);
+-- name: LastRecordingSpeechAt :one
+-- When the user's last stored report for this recording arrived (no row = never; they were in its
+-- voice then): a report after leaving is accepted only up to this + 15 s.
+SELECT reported_at FROM room_recording_speech WHERE recording_id = $1 AND user_id = $2
+ORDER BY reported_at DESC LIMIT 1;
 
 -- name: InsertRecordingSpeech :execrows
 -- One report's intervals (ms from started_at); a user keeps at most 20000 intervals per recording.
-INSERT INTO room_recording_speech (recording_id, user_id, start_ms, end_ms)
-SELECT sqlc.arg('recording_id')::uuid, sqlc.arg('user_id')::uuid, unnest(sqlc.arg('starts')::integer[]), unnest(sqlc.arg('ends')::integer[])
+INSERT INTO room_recording_speech (recording_id, user_id, start_ms, end_ms, reported_at)
+SELECT sqlc.arg('recording_id')::uuid, sqlc.arg('user_id')::uuid, unnest(sqlc.arg('starts')::integer[]), unnest(sqlc.arg('ends')::integer[]),
+    sqlc.arg('reported_at')::timestamptz
 WHERE (SELECT count(*) FROM room_recording_speech x
        WHERE x.recording_id = sqlc.arg('recording_id')::uuid AND x.user_id = sqlc.arg('user_id')::uuid) < 20000;
 
@@ -294,9 +296,9 @@ WHERE (SELECT count(*) FROM room_recording_speech x
 SELECT user_id, start_ms, end_ms FROM room_recording_speech WHERE recording_id = $1 ORDER BY start_ms;
 
 -- name: RecordingPhoneCalls :many
--- Phone calls of the room that were connected while it was being recorded (the client-less
--- participant rule of ADR-0169 §4).
-SELECT number FROM sip_calls
+-- The numbers of the room's phone calls that were connected while it was being recorded (the
+-- client-less participant rule of ADR-0169 §4); a repeat call to the same number is one.
+SELECT DISTINCT number FROM sip_calls
 WHERE room_id = sqlc.arg('room_id')::uuid AND answered_at IS NOT NULL
   AND answered_at < sqlc.arg('until')::timestamptz AND coalesce(ended_at, now()) > sqlc.arg('since')::timestamptz
 LIMIT 3;

@@ -23,6 +23,9 @@ import (
 const (
 	maxSpeechIntervals = 200 // per message; the rest are dropped
 	speechMergeGapMs   = 500 // on-air stretches closer than this are one
+	// afterLeaveSlack: a report from someone no longer in the voice (the leave's last stretch, a
+	// retried send) keeps only what ended this long after their last accepted report.
+	afterLeaveSlack = 15 * time.Second
 )
 
 // mergeSpeech clamps the intervals to [lo, hi], sorts them and joins those less than
@@ -50,8 +53,9 @@ func mergeSpeech(in [][2]int64, lo, hi int64) [][2]int64 {
 // ReportSpeech keeps one on-air report of user, received at `at` (the gateway's
 // RecordingSpeech). Only for a recording of that room in progress (or stopped under a minute
 // ago) and from a participant of the room's voice — or one who reported for this recording
-// before (the report of a leave arrives when the user may already be out). Best effort: a
-// report that does not qualify is dropped silently.
+// before (the report of a leave may arrive when the user is already out), then only what ended
+// by their last accepted report + afterLeaveSlack. Best effort: a report that does not qualify
+// is dropped silently.
 func (s *Service) ReportSpeech(ctx context.Context, user uuid.UUID, m *v1.RecordingSpeech, at time.Time) {
 	roomID, err1 := uuid.Parse(m.GetRoomId())
 	recID, err2 := uuid.Parse(m.GetRecordingId())
@@ -65,12 +69,16 @@ func (s *Service) ReportSpeech(ctx context.Context, user uuid.UUID, m *v1.Record
 		}
 		return
 	}
-	if !s.inVoice(ctx, rec, user) {
+	ok, until := s.inVoice(ctx, rec, user)
+	if !ok {
 		return
 	}
 	hi := at
 	if rec.StoppedAt != nil && rec.StoppedAt.Before(hi) {
 		hi = *rec.StoppedAt
+	}
+	if !until.IsZero() && until.Before(hi) {
+		hi = until
 	}
 	end := hi.Sub(rec.StartedAt).Milliseconds()
 	ivs := m.GetIntervals()
@@ -93,28 +101,49 @@ func (s *Service) ReportSpeech(ctx context.Context, user uuid.UUID, m *v1.Record
 		starts[i], ends[i] = int32(iv[0]), int32(iv[1]) //nolint:gosec // clamped to MaxInt32
 	}
 	if err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
-		_, err := guarded.InsertRecordingSpeech(ctx, sqlc.InsertRecordingSpeechParams{RecordingID: rec.ID, UserID: user, Starts: starts, Ends: ends})
+		_, err := guarded.InsertRecordingSpeech(ctx, sqlc.InsertRecordingSpeechParams{RecordingID: rec.ID, UserID: user, Starts: starts, Ends: ends, ReportedAt: at})
 		return err
 	}); err != nil && !db.IsForeignKeyViolation(err) {
 		slog.WarnContext(ctx, "recording: store speech", "recording", rec.ID, "err", err)
 	}
 }
 
-// inVoice: the user is connected to the voice of the recording's room, or reported for this
-// recording before.
-func (s *Service) inVoice(ctx context.Context, rec sqlc.RoomRecording, user uuid.UUID) bool {
+// inVoice: the user is connected to the voice of the recording's room (until zero), or is not
+// but reported for this recording before — then until is the latest end time to keep.
+func (s *Service) inVoice(ctx context.Context, rec sqlc.RoomRecording, user uuid.UUID) (ok bool, until time.Time) {
 	sessions, err := s.voice.List(ctx, rec.WorkspaceID)
 	if err != nil {
 		slog.WarnContext(ctx, "recording: voice state for a speech report", "recording", rec.ID, "err", err)
-		return false
+		return false, time.Time{}
 	}
 	for _, st := range sessions {
 		if st.UserID == user && st.RoomID == rec.RoomID {
-			return true
+			return true, time.Time{}
 		}
 	}
-	ok, err := s.db.Q.HasRecordingSpeech(ctx, sqlc.HasRecordingSpeechParams{RecordingID: rec.ID, UserID: user})
-	return err == nil && ok
+	last, err := s.db.Q.LastRecordingSpeechAt(ctx, sqlc.LastRecordingSpeechAtParams{RecordingID: rec.ID, UserID: user})
+	if err != nil {
+		if !db.IsNotFound(err) {
+			slog.WarnContext(ctx, "recording: last speech report", "recording", rec.ID, "err", err)
+		}
+		return false, time.Time{}
+	}
+	return true, last.Add(afterLeaveSlack)
+}
+
+// speechInFile moves the reports from ms of started_at (the recording's start) to ms of the file,
+// which starts at fileStartedAt (the egress's FileInfo.started_at; nil = started_at): a file
+// that started later than started_at puts the same speech earlier in its own time.
+func speechInFile(rows []sqlc.ListRecordingSpeechRow, startedAt time.Time, fileStartedAt *time.Time) []speechSpan {
+	var shift int64
+	if fileStartedAt != nil {
+		shift = startedAt.Sub(*fileStartedAt).Milliseconds()
+	}
+	out := make([]speechSpan, len(rows))
+	for i, r := range rows {
+		out[i] = speechSpan{User: r.UserID, Start: int64(r.StartMs) + shift, End: int64(r.EndMs) + shift}
+	}
+	return out
 }
 
 // speakerJSON is one entry of room_recordings.speakers_json.
@@ -136,16 +165,8 @@ func (s *Service) nameSpeakers(ctx context.Context, rec sqlc.RoomRecording, segs
 		slog.WarnContext(ctx, "recording: speech for speaker names", "recording", rec.ID, "err", err)
 		return nil
 	}
-	// The reports count from started_at; the file from its own start (the egress's).
-	var shift int64
-	if rec.FileStartedAt != nil {
-		shift = rec.StartedAt.Sub(*rec.FileStartedAt).Milliseconds()
-	}
-	in := matchInput{Segments: make([]matchSegment, len(segs)), Speech: make([]speechSpan, len(rows)),
+	in := matchInput{Segments: make([]matchSegment, len(segs)), Speech: speechInFile(rows, rec.StartedAt, rec.FileStartedAt),
 		DurationMs: int64(rec.DurationSec) * 1000}
-	for i, r := range rows {
-		in.Speech[i] = speechSpan{User: r.UserID, Start: int64(r.StartMs) + shift, End: int64(r.EndMs) + shift}
-	}
 	for i, sg := range segs {
 		k := -1
 		if sg.Speaker != nil {

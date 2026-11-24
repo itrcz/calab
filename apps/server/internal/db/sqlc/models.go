@@ -1598,6 +1598,7 @@ type RoomRecordingSpeech struct {
 	UserID      uuid.UUID
 	StartMs     int32
 	EndMs       int32
+	ReportedAt  time.Time
 }
 
 type Session struct {
