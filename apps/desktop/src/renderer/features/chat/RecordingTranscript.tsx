@@ -151,7 +151,7 @@ export default function RecordingTranscript({
                   <span className="w-14 shrink-0 pt-px text-caption tabular-nums text-muted">{stamp(s.startMs)}</span>
                   <span className="min-w-0 flex-1">
                     {w ? <SpeakerTag who={w} workspaceId={workspaceId} /> : null}
-                    <span className="break-words text-body text-fg">
+                    <span className="selectable break-words text-body text-fg">
                       {words.length
                         ? splitHits(s.text, words).map((p, i) =>
                             i % 2 === 1 ? (
@@ -169,7 +169,7 @@ export default function RecordingTranscript({
               );
               const row = cx('flex w-full gap-3 rounded-[var(--radius-row)] px-2 py-1.5 text-left', (idx === playing || (playing < 0 && idx === focus)) && 'bg-accent/12');
               return track ? (
-                <button type="button" className={cx(row, 'hover:bg-hover')} onClick={() => seek(s.startMs)} title={t('rec.tr.playFrom', { time: stamp(s.startMs) })} aria-current={idx === playing || undefined} data-testid="recording-transcript-row">
+                <button type="button" className={cx(row, 'hover:bg-hover')} onClick={() => (window.getSelection()?.toString() ? undefined : seek(s.startMs))} title={t('rec.tr.playFrom', { time: stamp(s.startMs) })} aria-current={idx === playing || undefined} data-testid="recording-transcript-row">
                   {body}
                 </button>
               ) : (

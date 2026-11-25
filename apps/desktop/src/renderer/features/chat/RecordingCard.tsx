@@ -252,7 +252,7 @@ export function Summary({ text }: { text: string }): ReactNode {
       </IconButton>
       <div
         ref={box}
-        className={cx('relative pr-7 text-body leading-5 text-fg mobile:pr-9', folded && 'overflow-hidden')}
+        className={cx('selectable relative pr-7 text-body leading-5 text-fg mobile:pr-9', folded && 'overflow-hidden')}
         style={folded ? (tall ? { maxHeight: FOLDED_PX, maskImage: 'linear-gradient(to bottom, #000 70%, transparent)' } : { maxHeight: FOLDED_PX + 4 }) : undefined}
       >
         {blocks.map((b, i) =>
