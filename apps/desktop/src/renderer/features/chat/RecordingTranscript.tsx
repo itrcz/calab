@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Download, Search } from 'lucide-react';
-import { memo, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Avatar } from '../../components/Avatar';
 import { Button, Input, Modal, Spinner, cx } from '../../components/ui';
@@ -169,7 +169,7 @@ export default function RecordingTranscript({
               );
               const row = cx('flex w-full gap-3 rounded-[var(--radius-row)] px-2 py-1.5 text-left', (idx === playing || (playing < 0 && idx === focus)) && 'bg-accent/12');
               return track ? (
-                <button type="button" className={cx(row, 'hover:bg-hover')} onClick={() => (window.getSelection()?.toString() ? undefined : seek(s.startMs))} title={t('rec.tr.playFrom', { time: stamp(s.startMs) })} aria-current={idx === playing || undefined} data-testid="recording-transcript-row">
+                <button type="button" className={cx(row, 'hover:bg-hover')} onClick={(e) => (dragSelectedHere(e) ? undefined : seek(s.startMs))} title={t('rec.tr.playFrom', { time: stamp(s.startMs) })} aria-current={idx === playing || undefined} data-testid="recording-transcript-row">
                   {body}
                 </button>
               ) : (
@@ -184,6 +184,12 @@ export default function RecordingTranscript({
     </Modal>
   );
 }
+
+/** A mouse click that ends a drag-select inside this very row must not seek; keyboard activation (detail 0) always does. */
+const dragSelectedHere = (e: MouseEvent<HTMLButtonElement>): boolean => {
+  const sel = window.getSelection();
+  return e.detail > 0 && !!sel && !sel.isCollapsed && (e.currentTarget.contains(sel.anchorNode) || e.currentTarget.contains(sel.focusNode));
+};
 
 /** Number → one of the 8 name colours, so a speaker keeps a colour through the transcript. */
 const nameColor = (n: number | null): string | undefined => (n === null ? undefined : `var(--name-${((n - 1) % 8) + 1})`);

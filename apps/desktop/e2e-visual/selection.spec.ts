@@ -145,7 +145,7 @@ test('drag-select a recording summary and a transcript remark; the drag does not
   await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('Эталоны скриншотов после');
 
   // The transcript dialog: a drag over a remark selects its text and does not start the player.
-  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  // (The summary selection is still there: it must not block seeking from other remarks.)
   await card.getByRole('button', { name: 'Полный транскрипт' }).click();
   const dialog = page.getByRole('dialog', { name: 'Транскрипт встречи' });
   await expect(dialog).toBeVisible();
@@ -155,8 +155,20 @@ test('drag-select a recording summary and a transcript remark; the drag does not
   await settle(page);
   await expect(dialog.locator('[aria-current]')).toHaveCount(0);
 
-  // A plain click on a remark still plays from there.
-  await page.evaluate(() => window.getSelection()?.removeAllRanges());
-  await dialog.getByTestId('recording-transcript-row').nth(1).click();
+  // A click on another remark's timestamp seeks even with a foreign selection around.
+  await page.evaluate(() => {
+    const r = document.createRange();
+    r.selectNodeContents(document.querySelector('[data-testid="recording-card-summary"]') as Node);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(r);
+  });
+  await dialog.getByTestId('recording-transcript-row').nth(1).getByText(/^\d+:\d\d/).first().click();
   await expect(dialog.locator('[aria-current]')).toHaveCount(1);
+
+  // Keyboard activation (Enter on a focused remark) seeks too: back to the first one (the mock clip is short).
+  await expect(dialog.getByTestId('recording-transcript-row').nth(1)).toHaveAttribute('aria-current', 'true');
+  await dialog.getByTestId('recording-transcript-row').first().focus();
+  await page.keyboard.press('Enter');
+  await expect(dialog.getByTestId('recording-transcript-row').first()).toHaveAttribute('aria-current', 'true');
 });
