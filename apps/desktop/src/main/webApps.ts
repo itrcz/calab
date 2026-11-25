@@ -25,6 +25,7 @@ import { apiSession } from './apiTransport';
 import { isAppSession, markAppSession } from './appSessions';
 import { currentServerUrl, getAccessToken } from './auth';
 import { markFromInternet } from './downloads';
+import { editMenuItems } from './contextMenuModel';
 import { mainStrings } from './strings';
 import { hideTip } from './tipOverlay';
 import { navShortcut } from './webAppKeys';
@@ -334,16 +335,8 @@ function contextMenu(wc: WebContents, p: ContextMenuParams): MenuItemConstructor
     items.push({ label: s.webAppCopyLink, click: () => void clipboard.writeText(link) });
     items.push({ type: 'separator' });
   }
-  if (p.isEditable) {
-    items.push({ label: s.menuCut, role: 'cut', enabled: p.editFlags.canCut });
-    items.push({ label: s.menuCopy, role: 'copy', enabled: p.editFlags.canCopy });
-    items.push({ label: s.menuPaste, role: 'paste', enabled: p.editFlags.canPaste });
-    items.push({ label: s.menuSelectAll, role: 'selectAll' });
-    items.push({ type: 'separator' });
-  } else if (p.selectionText) {
-    items.push({ label: s.menuCopy, role: 'copy' });
-    items.push({ type: 'separator' });
-  }
+  const edit = editMenuItems(p, s, (w) => wc.replaceMisspelling(w));
+  if (edit.length) items.push(...edit, { type: 'separator' });
   const nav = wc.navigationHistory;
   items.push({ label: s.webAppBack, enabled: nav.canGoBack(), click: () => nav.goBack() });
   items.push({ label: s.webAppForward, enabled: nav.canGoForward(), click: () => nav.goForward() });

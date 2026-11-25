@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, nativeTheme, screen, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme, screen, type Rectangle, type TitleBarOverlayOptions, type WebContents } from 'electron';
 import { API_SCHEME, IPC } from '../shared/ipc';
 import { vibrancyWanted } from '../shared/windowMaterial';
 import { isAppSession, isCheckoutSession } from './appSessions';
@@ -11,6 +11,7 @@ import { windowIconPath } from './icons';
 import { officeFrameAllowed } from './officeFrame';
 import { isPdfViewerFrame } from './pdfFrame';
 import { openLink } from './ownLink';
+import { editMenuItems } from './contextMenuModel';
 import { mainStrings } from './strings';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -199,6 +200,13 @@ export function createMainWindow(): BrowserWindow {
   win.on('hide', sendShown);
   win.on('minimize', sendShown);
   win.on('restore', sendShown);
+
+  // Native fallback menu for text no in-app menu covers (transcript, wiki, plain inputs): Radix
+  // menus preventDefault the page's contextmenu event, so Chromium emits this only for the rest.
+  win.webContents.on('context-menu', (_e, params) => {
+    const items = editMenuItems(params, mainStrings(), (w) => win.webContents.replaceMisspelling(w));
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+  });
 
   let saveTimer: NodeJS.Timeout | null = null;
   const scheduleSave = (): void => {
