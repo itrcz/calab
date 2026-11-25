@@ -73,8 +73,25 @@ jobs:
 
       - name: registry login (Harbor)
         run: |
-          echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
-          printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin
+          # GitHub's AWS-hosted runners (Region us-east-1 / us-west-2 in "Set up job") sometimes lose every
+          # packet to the VK ingress on the way, Azure-hosted ones do not: try both public ingress addresses
+          # a few times. The egress address goes to the log for the network ticket.
+          echo "runner egress: $(curl -s -m 5 https://api.ipify.org || echo unknown)"
+          for round in 1 2 3; do
+            for ip in 138.16.203.140 138.16.202.217; do
+              sudo sed -i '/ cr\.shds\.io$/d' /etc/hosts
+              echo "$ip cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+              if timeout 8 bash -c "exec 3<>/dev/tcp/$ip/443" 2>/dev/null &&
+                printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin; then
+                echo "cr.shds.io via $ip"
+                exit 0
+              fi
+              echo "::warning::cr.shds.io via $ip did not answer (round $round)"
+            done
+            sleep 20
+          done
+          echo "::error::cr.shds.io is unreachable from this runner via every ingress address"
+          exit 1
 
       - name: push
         id: push
@@ -158,8 +175,25 @@ jobs:
 
       - name: registry login (Harbor)
         run: |
-          echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
-          printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin
+          # GitHub's AWS-hosted runners (Region us-east-1 / us-west-2 in "Set up job") sometimes lose every
+          # packet to the VK ingress on the way, Azure-hosted ones do not: try both public ingress addresses
+          # a few times. The egress address goes to the log for the network ticket.
+          echo "runner egress: $(curl -s -m 5 https://api.ipify.org || echo unknown)"
+          for round in 1 2 3; do
+            for ip in 138.16.203.140 138.16.202.217; do
+              sudo sed -i '/ cr\.shds\.io$/d' /etc/hosts
+              echo "$ip cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+              if timeout 8 bash -c "exec 3<>/dev/tcp/$ip/443" 2>/dev/null &&
+                printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin; then
+                echo "cr.shds.io via $ip"
+                exit 0
+              fi
+              echo "::warning::cr.shds.io via $ip did not answer (round $round)"
+            done
+            sleep 20
+          done
+          echo "::error::cr.shds.io is unreachable from this runner via every ingress address"
+          exit 1
 
       - name: push
         id: push
@@ -211,8 +245,25 @@ jobs:
 
       - name: registry login (Harbor)
         run: |
-          echo "138.16.203.140 cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
-          printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin
+          # GitHub's AWS-hosted runners (Region us-east-1 / us-west-2 in "Set up job") sometimes lose every
+          # packet to the VK ingress on the way, Azure-hosted ones do not: try both public ingress addresses
+          # a few times. The egress address goes to the log for the network ticket.
+          echo "runner egress: $(curl -s -m 5 https://api.ipify.org || echo unknown)"
+          for round in 1 2 3; do
+            for ip in 138.16.203.140 138.16.202.217; do
+              sudo sed -i '/ cr\.shds\.io$/d' /etc/hosts
+              echo "$ip cr.shds.io" | sudo tee -a /etc/hosts >/dev/null
+              if timeout 8 bash -c "exec 3<>/dev/tcp/$ip/443" 2>/dev/null &&
+                printf '%s' "$HARBOR_PASSWORD" | docker login cr.shds.io --username "$HARBOR_USER" --password-stdin; then
+                echo "cr.shds.io via $ip"
+                exit 0
+              fi
+              echo "::warning::cr.shds.io via $ip did not answer (round $round)"
+            done
+            sleep 20
+          done
+          echo "::error::cr.shds.io is unreachable from this runner via every ingress address"
+          exit 1
 
       - name: push
         run: |
