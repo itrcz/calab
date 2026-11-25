@@ -1,4 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { IDS } from '../e2e-support/mock-server';
+import { RecordingStatus } from '@calaba/protocol';
 import { launch, login, settle, type Env } from './harness';
 
 /**
@@ -17,18 +19,18 @@ const selection = (page: Page): Promise<string> => page.evaluate(() => window.ge
 const bubble = (page: Page, text: string): Locator => page.getByTestId('message-bubble').filter({ visible: true, hasText: text }).first();
 
 /** Scrolls `el` into the feed's view and waits until the virtualized list stops moving it. */
-async function inView(page: Page, el: Locator): Promise<void> {
+async function inView(page: Page, el: Locator, bottom = 500): Promise<void> {
   await expect(async () => {
     await el.scrollIntoViewIfNeeded();
     await settle(page);
     const b = await el.boundingBox();
-    expect(b && b.y > 40 && b.y + b.height < 500).toBe(true);
+    expect(b && b.y > 40 && b.y + b.height < bottom).toBe(true);
   }).toPass({ timeout: 10_000 });
 }
 
 /** Drags the primary button inside `el` from the first character of `from` to the last of `to`. */
-async function dragAcross(page: Page, el: Locator, from: string, to = from): Promise<void> {
-  await inView(page, el);
+async function dragAcross(page: Page, el: Locator, from: string, to = from, bottom?: number): Promise<void> {
+  await inView(page, el, bottom);
   const box = await el.evaluate(
     (node, [from, to]) => {
       const rect = (t: string, first: boolean): DOMRect | null => {
@@ -122,4 +124,39 @@ test('drag-select message text, copy it; a file drag keeps the selection', async
   // …and a drag-select afterwards works as before.
   await dragAcross(page, morning, 'утро! Сегодня');
   expect(await selection(page)).toBe('утро! Сегодня');
+});
+
+test('drag-select a recording summary and a transcript remark; the drag does not seek', async () => {
+  env = await launch({ theme: 'dark', viewport: { width: 960, height: 700 }, onboarded: true });
+  const { page, app, mock } = env;
+  await login(page);
+  mock.injectRecordingCard({ roomId: IDS.rooms.meeting, byUserId: IDS.users.boris, durationSec: 42 * 60 + 10, status: RecordingStatus.DONE, result: true });
+  await page.locator('aside').getByRole('button', { name: /^Переговорка/ }).first().click();
+  await expect(page.getByRole('heading', { name: 'Переговорка' })).toBeVisible();
+  const card = page.getByTestId('recording-card');
+  await expect(card).toHaveCount(1);
+
+  // The summary: a fragment of a list item, ⌘C copies it; the copy button / «Показать всё» stay out.
+  const summary = card.getByTestId('recording-card-summary');
+  await dragAcross(page, summary, 'Эталоны скриншотов после', 'Эталоны скриншотов после', 600);
+  expect(await selection(page)).toBe('Эталоны скриншотов после');
+  await app.evaluate(({ clipboard }) => clipboard.writeText(''));
+  await page.keyboard.press('ControlOrMeta+c');
+  await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('Эталоны скриншотов после');
+
+  // The transcript dialog: a drag over a remark selects its text and does not start the player.
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  await card.getByRole('button', { name: 'Полный транскрипт' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Транскрипт встречи' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId('recording-transcript-row').first()).toContainText('Коллеги, начнём');
+  await dragAcross(page, dialog.getByTestId('recording-transcript-row').first(), 'начнём. Сегодня релиз');
+  expect(await selection(page)).toBe('начнём. Сегодня релиз');
+  await settle(page);
+  await expect(dialog.locator('[aria-current]')).toHaveCount(0);
+
+  // A plain click on a remark still plays from there.
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  await dialog.getByTestId('recording-transcript-row').nth(1).click();
+  await expect(dialog.locator('[aria-current]')).toHaveCount(1);
 });
