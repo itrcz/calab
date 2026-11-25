@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { folderParam, publicView, type PublicFile } from './diskPublic';
+import { folderParam, isInternalDiskPath, publicView, type PublicFile } from './diskPublic';
 
 const file = (name: string, mime: string, extra: Partial<PublicFile> = {}): PublicFile => ({
   id: 'f', name, mime, size: 1000n, width: 0, height: 0, hasThumbnail: false, office: false, ...extra,
@@ -30,5 +30,15 @@ describe('folderParam', () => {
     expect(folderParam('?folder=01a13942-0de2-7841-8219-f2fcdcaa79df')).toBe('01a13942-0de2-7841-8219-f2fcdcaa79df');
     expect(folderParam('?folder=../x')).toBe('');
     expect(folderParam('')).toBe('');
+  });
+});
+
+describe('isInternalDiskPath (CBF-201)', () => {
+  it('matches the in-app Disk address only', () => {
+    expect(isInternalDiskPath('/disk/0a1b2c3d-0000-4000-8000-000000000001')).toBe(true);
+    expect(isInternalDiskPath('/disk')).toBe(true);
+    expect(isInternalDiskPath('/d/abc')).toBe(false);
+    expect(isInternalDiskPath('/diskette')).toBe(false);
+    expect(isInternalDiskPath('/')).toBe(false);
   });
 });

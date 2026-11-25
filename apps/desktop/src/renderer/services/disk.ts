@@ -231,6 +231,9 @@ export function onDiskItemUpsert(e: DiskItemUpsert): void {
   const before = useDisk.getState().items[e.item.id]?.parentId;
   useDisk.getState().upsert(e.item, true);
   refreshDisk(e.workspaceId, before === undefined ? [e.item.parentId] : [e.item.parentId, before]);
+  // An event never carries `link`; a folder opened by its path (its parent's listing may not be
+  // the open one) gets it back from the path, or the «Доступна по ссылке» mark would drop (CBF-201).
+  if (useDisk.getState().paths[e.item.id]) void loadPath(e.item.id);
 }
 
 /** DISK_ITEM_REMOVE: deleted forever or my access is gone; the open folder inside it falls back to the root. */

@@ -17,7 +17,7 @@ export const PublicLinkMark = memo(function PublicLinkMark({ itemId, className }
   return (
     <div className={className ?? 'flex items-center gap-2 border-b border-line px-3 py-1.5'} data-testid="disk-public-mark">
       <Globe className="size-4 shrink-0 text-accent-text" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-body font-medium">{t('disk.link.mark')}</span>
+      <span className="min-w-0 flex-1 text-body font-medium">{t('disk.link.mark')}</span>
       <Button variant="secondary" size="sm" className="shrink-0" onClick={() => void copyItemLink(itemId)} data-testid="disk-public-copy">
         {t('disk.link.markCopy')}
       </Button>

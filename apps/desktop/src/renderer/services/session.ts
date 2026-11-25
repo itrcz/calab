@@ -51,6 +51,7 @@ import { platform } from '../platform';
 import { t } from '../i18n';
 import { clearAllDrafts } from '../features/chat/drafts';
 import { logoutToastKey } from './logoutNotice';
+import { forgetInternalDiskPage } from './diskPublic';
 
 const OFFLINE_RETRY_MS = 30_000;
 
@@ -171,6 +172,7 @@ export function beginSession(s: AuthSession): void {
     loggedOutReason: null,
   });
   if (me.user) useWorkspaces.getState().upsertUser(me.user);
+  forgetInternalDiskPage();
   connectGateway();
   const invite = takePendingInvite();
   if (invite) useUi.getState().openDialog({ kind: 'join-workspace', code: invite });

@@ -3000,6 +3000,14 @@ test('m-disk-folder', async ({ page }) => {
   await expect(folder.getByTestId('phone-header')).toContainText('Проекты');
   await expect(folder.getByTestId('disk-row')).toHaveCount(1);
   await checkpoint(page, 'm-disk-folder');
+  // CBF-201: a public link on the open folder — the mark «Доступна по ссылке» under the header.
+  await folder.getByTestId('phone-disk-more').tap();
+  await page.getByTestId('disk-open-link').tap();
+  await page.getByTestId('disk-link').getByRole('switch').tap();
+  await expect(page.getByTestId('disk-link-url')).toHaveValue(/\/d\//);
+  await page.keyboard.press('Escape');
+  await expect(folder.getByTestId('disk-public-mark')).toContainText('Доступна по ссылке');
+  await checkpoint(page, 'm-disk-folder-public-mark', { snapshot: false });
   // CBF-22: a text file opens the read-only viewer (tap), the type plates read in the rows.
   await folder.getByTestId('disk-row').getByTestId('disk-row-open').tap();
   await expect(folder.getByTestId('disk-row')).toHaveCount(4);
@@ -3007,6 +3015,16 @@ test('m-disk-folder', async ({ page }) => {
   await folder.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).getByTestId('disk-row-open').tap();
   await expect(page.getByTestId('disk-view-markdown')).toBeVisible();
   await checkpoint(page, 'm-disk-preview-text');
+  await page.keyboard.press('Escape');
+  // CBF-201: a file with its own public link — the same mark in the viewer.
+  await folder.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).getByTestId('disk-item-more').tap();
+  await page.getByTestId('disk-item-menu').getByTestId('disk-menu-link').tap();
+  await page.getByTestId('disk-link').getByRole('switch').tap();
+  await expect(page.getByTestId('disk-link-url')).toHaveValue(/\/d\//);
+  await page.keyboard.press('Escape');
+  await folder.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).getByTestId('disk-row-open').tap();
+  await expect(page.getByTestId('disk-public-mark')).toContainText('Доступна по ссылке');
+  await checkpoint(page, 'm-disk-preview-public-mark', { snapshot: false });
   await page.keyboard.press('Escape');
   await page.getByTestId('phone-back').tap();
   await page.getByTestId('phone-back').tap();

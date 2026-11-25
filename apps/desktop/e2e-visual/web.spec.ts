@@ -210,6 +210,10 @@ for (const theme of THEMES) {
         await page.evaluate((t) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: t, onboarded: true, locale: 'ru' }, version: 1 })), theme);
         await page.goto(`${mock.url}/disk/0a1b2c3d-0000-4000-8000-000000000001?visual-test`);
         await expect(page.getByTestId('auth-internal-link')).toContainText('Это внутренняя ссылка Calab');
+        // The boot resets the address bar to `/` (openDiskLink): the hint must outlive a re-render.
+        await page.getByLabel('Email').fill('a');
+        await page.getByLabel('Email').fill('');
+        await expect(page.getByTestId('auth-internal-link')).toBeVisible();
         await checkpoint({ page, theme, viewport }, 'web-internal-disk-link');
       } finally {
         await mock?.close();

@@ -49,3 +49,6 @@ export function folderParam(search: string): string {
   const v = new URLSearchParams(search).get('folder') ?? '';
   return /^[0-9a-f-]{36}$/i.test(v) ? v : '';
 }
+
+/** A pathname of an in-app Disk address (`/disk/<id>`, ADR-0094): not a public link, it needs a Calab account (CBF-201). */
+export const isInternalDiskPath = (pathname: string): boolean => /^\/disk(\/|$)/.test(pathname);
