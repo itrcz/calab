@@ -290,8 +290,24 @@ diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewCl
  import java.util.concurrent.atomic.AtomicReference;
  
  public class RNCWebViewClient extends WebViewClient {
-@@ -90,8 +95,85 @@ public class RNCWebViewClient extends WebViewClient {
+@@ -88,10 +93,101 @@ public class RNCWebViewClient extends WebViewClient {
+ 
+       RNCWebView reactWebView = (RNCWebView) webView;
        reactWebView.callInjectedJavaScriptBeforeContentLoaded();
++
++      // Calab patch (ADR-0070, Android): upstream reports load start only from
++      // doUpdateVisitedHistory, which also fires for history.pushState/replaceState, so JS cannot
++      // tell an SPA route change from a new document. The engine calls onPageStarted only for a
++      // main-frame load of a new document (not for same-document navigations or subframes), so it
++      // emits one more load-start event, marked `calabPageStart`: the host ends the previous
++      // document's handshake on it (apps/mobile/src/activityProtocol.ts).
++      WritableMap pageStart = createWebViewEvent(webView, url);
++      pageStart.putBoolean("calabPageStart", true);
++      reactWebView.dispatchEvent(
++        webView,
++        new TopLoadingStartEvent(
++          RNCWebViewWrapper.getReactTagFromWebView(webView),
++          pageStart));
      }
  
 +    /**
@@ -376,7 +392,7 @@ diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewCl
          final RNCWebView rncWebView = (RNCWebView) view;
          final boolean isJsDebugging = rncWebView.getReactApplicationContext().getJavaScriptContextHolder().get() == 0;
  
-@@ -143,7 +225,8 @@ public class RNCWebViewClient extends WebViewClient {
+@@ -143,7 +239,8 @@ public class RNCWebViewClient extends WebViewClient {
      @Override
      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
          final String url = request.getUrl().toString();
