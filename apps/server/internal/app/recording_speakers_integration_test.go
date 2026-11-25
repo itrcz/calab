@@ -111,9 +111,9 @@ func TestRecordingSpeakerNames(t *testing.T) {
 
 	// RECORDING_SPEAKER_NAMES=off: the stored match is not returned — numbers as before.
 	testApp.Recording.SetSpeakerNames(false)
+	t.Cleanup(func() { testApp.Recording.SetSpeakerNames(true) })
 	var plain v1.GetRecordingTranscriptResponse
 	carol.must(200, "GET", tpath, nil, &plain)
-	testApp.Recording.SetSpeakerNames(true)
 	if len(plain.GetSpeakers()) != 0 || len(plain.GetSegments()) != 4 || plain.GetSegments()[0].GetUserId() != "" ||
 		plain.GetSegments()[0].GetSpeaker() != 0 || plain.GetSegments()[1].GetUserId() != "" {
 		t.Fatalf("names with the switch off: %v", &plain)

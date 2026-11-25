@@ -17,7 +17,7 @@ Every frame is `GatewayFrame { op, seq, <payload> }`. Frames are binary protobuf
 
 ## Lifecycle
 
-1. **Server → `HELLO`** `{ heartbeatIntervalMs }` — the heartbeat interval, about 41 seconds.
+1. **Server → `HELLO`** `{ heartbeatIntervalMs, capabilities }` — the heartbeat interval, about 41 seconds, and `capabilities`, a bit mask of server features (`uint64`; in JSON it is a string, e.g. `"capabilities":"1"`; the bit with value 1 = `RECORDING_SPEECH`). Bots may ignore it.
 2. **Bot → `IDENTIFY`** `{ token, device: { name, platform, appVersion } }` — the bot token and a description of the process.
 3. **Server → `DISPATCH ready`** with `seq = 1`: `sessionId`, `me`, `workspaces[]` (for each workspace — visible rooms, members, roles, voice states, presence, the bot's permissions per room), `dms[]`, `readStates`.
 4. Then **`DISPATCH`** frames with events and a growing `seq`.
@@ -27,7 +27,7 @@ Frames in JSON mode:
 
 ```json
 → {"op": "GATEWAY_OPCODE_IDENTIFY", "identify": {"token": "calab_bot_0192a1b2-…", "device": {"name": "my-bot", "platform": "linux", "appVersion": "1.0"}}}
-← {"op": "GATEWAY_OPCODE_HELLO", "hello": {"heartbeatIntervalMs": 41000}}
+← {"op": "GATEWAY_OPCODE_HELLO", "hello": {"heartbeatIntervalMs": 41000, "capabilities": "1"}}
 ← {"op": "GATEWAY_OPCODE_DISPATCH", "seq": "1", "dispatch": {"ready": {"sessionId": "…", "me": {"user": {"id": "…", "isBot": true}}, "workspaces": […], "dms": […]}}}
 ← {"op": "GATEWAY_OPCODE_DISPATCH", "seq": "2", "dispatch": {"messageCreate": {"workspaceId": "…", "message": {"id": "…", "content": "/echo hi", "command": {"botUserId": "…", "name": "echo", "args": "hi"}}}}}
 → {"op": "GATEWAY_OPCODE_HEARTBEAT", "heartbeat": {"lastSeq": "2"}}

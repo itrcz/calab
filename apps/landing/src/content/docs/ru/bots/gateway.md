@@ -17,7 +17,7 @@ wss://app.example.com/gateway?v=1&encoding=json    # текстовые кадр
 
 ## Жизненный цикл
 
-1. **Сервер → `HELLO`** `{ heartbeatIntervalMs }` — интервал heartbeat, около 41 секунды.
+1. **Сервер → `HELLO`** `{ heartbeatIntervalMs, capabilities }` — интервал heartbeat, около 41 секунды, и `capabilities` — битовая маска возможностей сервера (`uint64`; в JSON строка, например `"capabilities":"1"`; бит со значением 1 = `RECORDING_SPEECH`). Боты могут её игнорировать.
 2. **Бот → `IDENTIFY`** `{ token, device: { name, platform, appVersion } }` — токен бота и описание процесса.
 3. **Сервер → `DISPATCH ready`** с `seq = 1`: `sessionId`, `me`, `workspaces[]` (для каждого пространства — видимые комнаты, участники, роли, голосовые состояния, присутствие, права бота по комнатам), `dms[]`, `readStates`.
 4. Дальше — кадры **`DISPATCH`** с событиями и растущим `seq`.
@@ -27,7 +27,7 @@ wss://app.example.com/gateway?v=1&encoding=json    # текстовые кадр
 
 ```json
 → {"op": "GATEWAY_OPCODE_IDENTIFY", "identify": {"token": "calab_bot_0192a1b2-…", "device": {"name": "my-bot", "platform": "linux", "appVersion": "1.0"}}}
-← {"op": "GATEWAY_OPCODE_HELLO", "hello": {"heartbeatIntervalMs": 41000}}
+← {"op": "GATEWAY_OPCODE_HELLO", "hello": {"heartbeatIntervalMs": 41000, "capabilities": "1"}}
 ← {"op": "GATEWAY_OPCODE_DISPATCH", "seq": "1", "dispatch": {"ready": {"sessionId": "…", "me": {"user": {"id": "…", "isBot": true}}, "workspaces": […], "dms": […]}}}
 ← {"op": "GATEWAY_OPCODE_DISPATCH", "seq": "2", "dispatch": {"messageCreate": {"workspaceId": "…", "message": {"id": "…", "content": "/echo hi", "command": {"botUserId": "…", "name": "echo", "args": "hi"}}}}}
 → {"op": "GATEWAY_OPCODE_HEARTBEAT", "heartbeat": {"lastSeq": "2"}}

@@ -174,7 +174,8 @@ message Hello {
   uint64 capabilities = 2;
 }
 
-// Bits of Hello.capabilities (values are bit masks, not bit numbers).
+// Bits of Hello.capabilities (values are bit masks, not bit numbers). The enum is int32,
+// so at most 31 bits are available; combine them with OR into the uint64 field.
 enum ServerCapability {
   SERVER_CAPABILITY_UNSPECIFIED = 0;
   // RECORDING_SPEECH frames are accepted (ADR-0169); absent = the client must not send them.
