@@ -230,6 +230,10 @@ type Config struct {
 	// ai.proto): the check and AI features call {GPTUNNEL_AI_URL}/chat/completions.
 	GPTunnelAIURL     string `env:"GPTUNNEL_AI_URL" envDefault:"https://gptunnel.ru/v1"`
 	RecordingKeepDays int    `env:"RECORDING_KEEP_DAYS" envDefault:"30"`
+	// RECORDING_SPEAKER_NAMES: on (default) | off — the kill switch of speaker names in
+	// transcripts (ADR-0169). Off: HELLO does not advertise RECORDING_SPEECH (clients stop
+	// sending it), such frames are ignored, transcripts keep speaker numbers.
+	RecordingSpeakerNames string `env:"RECORDING_SPEAKER_NAMES" envDefault:"on"`
 	// TasksDueTZ: the IANA zone whose 09:00 the due notices of tasks go out at (ADR-0089).
 	TasksDueTZ             string `env:"TASKS_DUE_TZ" envDefault:"Europe/Moscow"`
 	RecordingMaxConcurrent int    `env:"RECORDING_MAX_CONCURRENT" envDefault:"3"`
@@ -273,6 +277,10 @@ func (c *Config) BotLimits() (perSec, msgsPerMin int) {
 	}
 	return perSec, msgsPerMin
 }
+
+// SpeakerNames reports whether speaker names in transcripts are on (RECORDING_SPEAKER_NAMES,
+// ADR-0169); unset = on.
+func (c *Config) SpeakerNames() bool { return c.RecordingSpeakerNames != "off" }
 
 // PlanContact is the "contact us to buy" link shown to users (ADR-0024).
 func (c *Config) PlanContact() string {
@@ -464,6 +472,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
+	}
+	if c.RecordingSpeakerNames != "" && c.RecordingSpeakerNames != "on" && c.RecordingSpeakerNames != "off" {
+		errs = append(errs, fmt.Errorf("RECORDING_SPEAKER_NAMES must be on or off, got %q", c.RecordingSpeakerNames))
 	}
 	if c.SIPRecordingTZ != "" { // "" = UTC
 		if _, err := time.LoadLocation(c.SIPRecordingTZ); err != nil || c.SIPRecordingTZ == "Local" {

@@ -393,15 +393,20 @@ func (s *Service) transcript(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := &v1.GetRecordingTranscriptResponse{RecordingId: rec.ID.String(), Language: row.Language,
 		Segments: make([]*v1.TranscriptSegment, 0, len(segs))}
+	named := !s.namesOff.Load() // RECORDING_SPEAKER_NAMES=off: numbers only, a stored match is ignored
 	for _, sg := range segs {
 		speaker := int32(-1)
 		if sg.Speaker != nil {
 			speaker = int32(min(max(*sg.Speaker, 0), 999)) //nolint:gosec // bounded
 		}
-		out.Segments = append(out.Segments, &v1.TranscriptSegment{Speaker: speaker, StartMs: ms(sg.Start), EndMs: ms(sg.End), Text: sg.Text, UserId: sg.UserID})
+		ts := &v1.TranscriptSegment{Speaker: speaker, StartMs: ms(sg.Start), EndMs: ms(sg.End), Text: sg.Text}
+		if named {
+			ts.UserId = sg.UserID
+		}
+		out.Segments = append(out.Segments, ts)
 	}
 	var speakers []speakerJSON
-	if row.SpeakersJson != nil {
+	if row.SpeakersJson != nil && named {
 		if err := json.Unmarshal(row.SpeakersJson, &speakers); err != nil {
 			return err
 		}

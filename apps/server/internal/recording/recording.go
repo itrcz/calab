@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -84,6 +85,8 @@ type Service struct {
 	phone  *PhoneConfig // phone call recording (ADR-0131, SetPhone); nil = off
 	// journal: the call journal hears of a phone recording's progress (ADR-0137; SetJournal).
 	journal JournalSink
+	// namesOff: RECORDING_SPEAKER_NAMES=off (SetSpeakerNames) — transcripts keep speaker numbers.
+	namesOff atomic.Bool
 
 	// Tunables (tests shorten them).
 	Tick          time.Duration // worker loop period

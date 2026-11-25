@@ -149,15 +149,22 @@ type gwMsg struct {
 // gw reads in a background goroutine: in coder/websocket a Read whose context expires
 // closes the connection, so per-read timeouts are implemented on the channel instead.
 type gw struct {
-	t    *testing.T
-	ws   *websocket.Conn
-	in   chan gwMsg
-	last uint64
+	t     *testing.T
+	ws    *websocket.Conn
+	in    chan gwMsg
+	last  uint64
+	hello *v1.Hello
 }
 
 func dialGW(t *testing.T) *gw {
 	t.Helper()
-	u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/gateway?v=1&encoding=json"
+	return dialGWAt(t, srv.URL)
+}
+
+// dialGWAt opens a gateway socket to the API at base (another App of the test) and reads HELLO.
+func dialGWAt(t *testing.T, base string) *gw {
+	t.Helper()
+	u := "ws" + strings.TrimPrefix(base, "http") + "/gateway?v=1&encoding=json"
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	ws, _, err := websocket.Dial(ctx, u, nil) //nolint:bodyclose // websocket
@@ -175,9 +182,11 @@ func dialGW(t *testing.T) *gw {
 			}
 		}
 	}()
-	if f := g.next(); f.GetHello().GetHeartbeatIntervalMs() != 41000 {
+	f := g.next()
+	if f.GetHello().GetHeartbeatIntervalMs() != 41000 {
 		t.Fatalf("expected HELLO, got %v", f)
 	}
+	g.hello = f.GetHello()
 	return g
 }
 

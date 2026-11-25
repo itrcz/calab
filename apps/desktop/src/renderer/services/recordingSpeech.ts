@@ -1,7 +1,7 @@
 import { SpeechLog } from '../lib/recordingSpeech';
 import { useRecordings } from '../stores/recordings';
 import { useVoice } from '../stores/voice';
-import { sendRecordingSpeech } from './gateway';
+import { onGatewayCapabilities, recordingSpeechSupported, sendRecordingSpeech } from './gateway';
 import { voice } from './voice';
 
 /**
@@ -10,8 +10,10 @@ import { voice } from './voice';
  * 10 s, and once more when the recording stops or I leave / move — a leave flushes before the
  * voice connection is torn down, so the server still sees me in the room. A final report that
  * could not go (no READY gateway, no token) is kept with its recording and retried on the same
- * timer within the server's one-minute grace after the stop, then dropped. Outside React: no
- * state, no re-renders; no timer while nothing is recorded or pending.
+ * timer within the server's one-minute grace after the stop, then dropped. Only while the
+ * server's HELLO advertises RECORDING_SPEECH (an older server closes the socket on the frame, one
+ * with RECORDING_SPEAKER_NAMES=off ignores it): without it nothing is logged, kept or timed.
+ * Outside React: no state, no re-renders; no timer while nothing is recorded or pending.
  */
 
 export const FLUSH_MS = 10_000;
@@ -52,8 +54,9 @@ function flush(to: Target, l: SpeechLog): boolean {
   return true;
 }
 
-/** The recording of my room, if any. */
+/** The recording of my room, if any (and the server takes the reports). */
 function currentTarget(): Target | null {
+  if (!recordingSpeechSupported()) return null;
   const roomId = useVoice.getState().roomId;
   const rec = roomId ? useRecordings.getState().byRoom[roomId] : undefined;
   return roomId && rec ? { roomId, recordingId: rec.recordingId } : null;
@@ -88,7 +91,7 @@ function retarget(): void {
   const next = currentTarget();
   if (next?.roomId === target?.roomId && next?.recordingId === target?.recordingId) return;
   const now = performance.now();
-  flushFinal(now);
+  if (recordingSpeechSupported()) flushFinal(now);
   log.clear();
   target = next;
   if (target && useVoice.getState().transmitting) log.on(now);
@@ -111,6 +114,12 @@ export function startSpeechReports(): void {
   voice.onBeforeLeave(() => {
     flushFinal(performance.now());
     log.clear(); // the mic goes off with the connection
+  });
+  onGatewayCapabilities(() => {
+    // Reconnected to a server without the capability (a rollback): drop what is kept, stop the timer.
+    if (!recordingSpeechSupported()) pending = [];
+    retarget();
+    syncTimer();
   });
   retarget();
 }

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,19 @@ import (
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/perm"
 )
+
+// HELLO advertises RECORDING_SPEECH only while the hub takes the reports (RECORDING_SPEAKER_NAMES,
+// ADR-0169): clients send it only then.
+func TestHelloCapabilities(t *testing.T) {
+	h := &Hub{}
+	if c := h.capabilities(); c != 0 {
+		t.Fatalf("no recorder: capabilities %d", c)
+	}
+	h.RecordingSpeech = func(context.Context, uuid.UUID, *v1.RecordingSpeech, time.Time) {}
+	if c := h.capabilities(); c != uint64(v1.ServerCapability_SERVER_CAPABILITY_RECORDING_SPEECH) {
+		t.Fatalf("with the recorder: capabilities %d", c)
+	}
+}
 
 // 4010 carries the revocation reason for clients (gateway.proto); junk stays out.
 func TestRevokedCloseReason(t *testing.T) {

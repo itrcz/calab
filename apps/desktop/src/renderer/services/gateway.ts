@@ -1,4 +1,4 @@
-import { PresenceStatus } from '@calaba/protocol';
+import { PresenceStatus, ServerCapability } from '@calaba/protocol';
 import { ReconnectBanner } from '../lib/gateway/banner';
 import { GatewayClient, gatewayUrl, type GatewayFatal } from '../lib/gateway/client';
 import { TabId } from '../lib/gateway/tabId';
@@ -16,6 +16,11 @@ let subscribed: string[] = [];
 /** «переподключаемся…» banner: only after a real drop > 3 s, gone at once on READY/RESUMED. */
 const banner = new ReconnectBanner((reconnectBanner) => useSession.getState().set({ reconnectBanner }));
 let wakeInstalled = false;
+/** Told when the server's HELLO capabilities change (or the client goes). */
+const capsListeners = new Set<() => void>();
+function capsChanged(): void {
+  for (const fn of capsListeners) fn();
+}
 /**
  * Web: tabs of one browser share the auth session; each keeps its own gateway session under
  * its own tab id (#40). Desktop: none — one window = one device.
@@ -78,6 +83,7 @@ export function startGateway(onFatal: (kind: GatewayFatal, reason?: LogoutReason
       banner.update(gateway);
     },
     onFatal,
+    onCapabilities: capsChanged,
     log: (m) => log.info(m),
     ...(tabId && {
       tabId: () => tabId.get(),
@@ -89,9 +95,11 @@ export function startGateway(onFatal: (kind: GatewayFatal, reason?: LogoutReason
 }
 
 export function stopGateway(): void {
+  const had = client !== null;
   client?.stop();
   client = null;
   banner.reset();
+  if (had) capsChanged();
 }
 
 /** Logout: forget the previous account's room subscriptions (review L9). */
@@ -121,6 +129,20 @@ export function subscribeRooms(roomIds: string[]): void {
 
 export function sendTyping(roomId: string): void {
   client?.sendTyping(roomId);
+}
+
+/**
+ * The server takes on-air reports (HELLO capability RECORDING_SPEECH, ADR-0169): an older one, or
+ * one with RECORDING_SPEAKER_NAMES=off, would close the socket on them / ignore them.
+ */
+export function recordingSpeechSupported(): boolean {
+  return client?.supports(ServerCapability.RECORDING_SPEECH) ?? false;
+}
+
+/** Calls `fn` whenever the server's capabilities may have changed; returns the unsubscribe. */
+export function onGatewayCapabilities(fn: () => void): () => void {
+  capsListeners.add(fn);
+  return () => capsListeners.delete(fn);
 }
 
 /** On-air report of a recorded meeting (ADR-0169); false = not sent now, try again later. */

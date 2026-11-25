@@ -5,15 +5,19 @@ package app_test
 import (
 	"context"
 	"crypto/rand"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/livekit/protocol/livekit"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/app"
+	"github.com/calaba/calaba/server/internal/events"
 	"github.com/calaba/calaba/server/internal/gptunnel/gptunneltest"
 )
 
@@ -105,6 +109,16 @@ func TestRecordingSpeakerNames(t *testing.T) {
 		t.Fatalf("segments: %v", segs)
 	}
 
+	// RECORDING_SPEAKER_NAMES=off: the stored match is not returned — numbers as before.
+	testApp.Recording.SetSpeakerNames(false)
+	var plain v1.GetRecordingTranscriptResponse
+	carol.must(200, "GET", tpath, nil, &plain)
+	testApp.Recording.SetSpeakerNames(true)
+	if len(plain.GetSpeakers()) != 0 || len(plain.GetSegments()) != 4 || plain.GetSegments()[0].GetUserId() != "" ||
+		plain.GetSegments()[0].GetSpeaker() != 0 || plain.GetSegments()[1].GetUserId() != "" {
+		t.Fatalf("names with the switch off: %v", &plain)
+	}
+
 	// Deleting the recording clears the reports and the names with the transcript.
 	bob.must(204, "DELETE", "/api/rooms/"+rid+"/recordings/"+recID, nil, nil)
 	var named bool
@@ -114,6 +128,38 @@ func TestRecordingSpeakerNames(t *testing.T) {
 	if n := rows(""); n != 0 || named {
 		t.Fatalf("after delete: %d reports, speakers kept %v", n, named)
 	}
+}
+
+// TestRecordingSpeakerNamesSwitch (ADR-0169, rollout safety): HELLO advertises RECORDING_SPEECH
+// by default; with RECORDING_SPEAKER_NAMES=off it does not, and such a frame is ignored — the
+// socket stays open (an older server would close it with 4001).
+func TestRecordingSpeakerNamesSwitch(t *testing.T) {
+	o, _, _, _ := setupTeam(t)
+	on := dialGW(t)
+	if on.hello.GetCapabilities()&uint64(v1.ServerCapability_SERVER_CAPABILITY_RECORDING_SPEECH) == 0 {
+		t.Fatalf("HELLO without RECORDING_SPEECH by default: %v", on.hello)
+	}
+	_ = on.ws.CloseNow()
+
+	c := *testCfg
+	c.RecordingSpeakerNames = "off"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	offApp := app.New(app.Deps{Config: &c, DB: testDB, Redis: testRedis, Events: events.Redis{C: testRedis}, Blob: testStore, LiveKit: lkRec, Mail: testMail})
+	offSrv := httptest.NewServer(offApp.Handler)
+	t.Cleanup(offSrv.Close)
+	g := dialGWAt(t, offSrv.URL)
+	defer func() { _ = g.ws.CloseNow() }()
+	if caps := g.hello.GetCapabilities(); caps != 0 {
+		t.Fatalf("HELLO capabilities with the switch off: %d", caps)
+	}
+	g.identify(o.token)
+	g.send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_RECORDING_SPEECH, Payload: &v1.GatewayFrame_RecordingSpeech{
+		RecordingSpeech: &v1.RecordingSpeech{RoomId: uuid.NewString(), RecordingId: uuid.NewString(), Intervals: []*v1.SpeechInterval{speechIv(2000, 1000)}},
+	}})
+	g.send(&v1.GatewayFrame{Op: v1.GatewayOpcode_GATEWAY_OPCODE_HEARTBEAT, Payload: &v1.GatewayFrame_Heartbeat{Heartbeat: &v1.Heartbeat{}}})
+	g.waitFrame("heartbeat ack after RECORDING_SPEECH", func(f *v1.GatewayFrame) bool { return f.GetHeartbeatAck() != nil })
 }
 
 // speechReporter sends RecordingSpeech frames of a recording over one gateway socket per user;

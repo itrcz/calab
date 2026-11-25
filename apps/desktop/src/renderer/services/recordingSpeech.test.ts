@@ -2,12 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Ivs = { agoStartMs: number; agoEndMs: number }[];
 const sent: { roomId: string; recordingId: string; ivs: Ivs }[] = [];
-const gw = { up: true };
+const gw = { up: true, caps: true };
 const leaveHooks: (() => void)[] = [];
+const capsHooks: (() => void)[] = [];
 
 vi.mock('./gateway', () => ({
+  recordingSpeechSupported: () => gw.caps,
+  onGatewayCapabilities: (fn: () => void) => capsHooks.push(fn),
   sendRecordingSpeech: (roomId: string, recordingId: string, build: () => Ivs) => {
-    if (!gw.up) return false;
+    if (!gw.up || !gw.caps) return false;
     sent.push({ roomId, recordingId, ivs: build() });
     return true;
   },
@@ -27,7 +30,9 @@ describe('on-air reports service (ADR-0169)', () => {
     vi.useFakeTimers();
     sent.length = 0;
     gw.up = true;
+    gw.caps = true;
     leaveHooks.length = 0;
+    capsHooks.length = 0;
     resetSpeechReportsForTest();
     record(null);
     useVoice.setState({ roomId: 'r1', transmitting: false });
@@ -35,6 +40,36 @@ describe('on-air reports service (ADR-0169)', () => {
   afterEach(() => {
     resetSpeechReportsForTest();
     vi.useRealTimers();
+  });
+
+  it('logs, sends and times nothing while the server does not advertise the capability', () => {
+    const caps = (on: boolean): void => {
+      gw.caps = on;
+      for (const fn of capsHooks) fn();
+    };
+    gw.caps = false; // an older server (or RECORDING_SPEAKER_NAMES=off)
+    startSpeechReports();
+    record('r1');
+    useVoice.setState({ transmitting: true });
+    vi.advanceTimersByTime(3 * FLUSH_MS);
+    for (const fn of leaveHooks) fn();
+    expect(sent).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+
+    caps(true); // HELLO of a new server: reports start
+    useVoice.setState({ transmitting: false });
+    useVoice.setState({ transmitting: true });
+    vi.advanceTimersByTime(FLUSH_MS);
+    expect(sent).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(1);
+
+    gw.up = false; // a drop: the next report waits
+    vi.advanceTimersByTime(FLUSH_MS);
+    caps(false); // reconnected to a rolled-back server: drop everything, stop the timer
+    gw.up = true;
+    vi.advanceTimersByTime(PENDING_MS);
+    expect(sent).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('runs no timer while nothing is recorded', () => {

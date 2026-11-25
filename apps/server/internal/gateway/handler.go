@@ -63,6 +63,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go c.writeLoop()
 	c.sendFrame(&v1.GatewayFrame{Payload: &v1.GatewayFrame_Hello{Hello: &v1.Hello{
 		HeartbeatIntervalMs: uint32(h.cfg.HeartbeatInterval.Milliseconds()), //nolint:gosec // seconds-scale
+		Capabilities:        h.capabilities(),
 	}}})
 	h.serve(c)
 }
@@ -1027,6 +1028,16 @@ func (h *Hub) typing(s *Session, roomIDStr string) {
 		return
 	}
 	h.pub.Workspace(ctx, wid, ev)
+}
+
+// capabilities are the HELLO bits of what this server accepts beyond the base protocol: a client
+// sends RECORDING_SPEECH only when advertised (an older server closes the socket on it).
+func (h *Hub) capabilities() uint64 {
+	var c uint64
+	if h.RecordingSpeech != nil {
+		c |= uint64(v1.ServerCapability_SERVER_CAPABILITY_RECORDING_SPEECH)
+	}
+	return c
 }
 
 // recordingSpeech hands a client's on-air report to the recorder (ADR-0169): who spoke is the

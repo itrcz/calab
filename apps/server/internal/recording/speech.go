@@ -152,6 +152,11 @@ func speechInFile(rows []sqlc.ListRecordingSpeechRow, startedAt time.Time, fileS
 	return out
 }
 
+// SetSpeakerNames switches speaker names in transcripts (RECORDING_SPEAKER_NAMES, ADR-0169; on by
+// default). Off: a new transcript is not matched, and a stored match (speakers_json, the
+// segments' user_id) is not returned — the transcript shows speaker numbers as before.
+func (s *Service) SetSpeakerNames(on bool) { s.namesOff.Store(!on) }
+
 // speakerJSON is one entry of room_recordings.speakers_json.
 type speakerJSON struct {
 	Speaker int    `json:"speaker"`
@@ -163,7 +168,7 @@ type speakerJSON struct {
 // the room's phone calls (ADR-0169 §3–5): it sets the segments' user_id and returns
 // speakers_json (nil = nobody identified). Failures leave the transcript numbered.
 func (s *Service) nameSpeakers(ctx context.Context, rec sqlc.RoomRecording, segs []segment) []byte {
-	if len(segs) == 0 || rec.StartedAt.IsZero() {
+	if len(segs) == 0 || rec.StartedAt.IsZero() || s.namesOff.Load() {
 		return nil
 	}
 	rows, err := s.db.Q.ListRecordingSpeech(ctx, rec.ID)
@@ -192,8 +197,8 @@ func (s *Service) nameSpeakers(ctx context.Context, rec sqlc.RoomRecording, segs
 		}
 	}
 	out := matchSpeakers(in)
-	for i, u := range out.Segments {
-		if u != uuid.Nil {
+	for i := range min(len(segs), len(out.Segments)) { // one per segment
+		if u := out.Segments[i]; u != uuid.Nil {
 			segs[i].UserID = u.String()
 		}
 	}
