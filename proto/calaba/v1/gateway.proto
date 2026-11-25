@@ -168,6 +168,17 @@ message SpeechInterval {
 
 message Hello {
   uint32 heartbeat_interval_ms = 1;
+  // Bit flags of ServerCapability: what this server accepts beyond the base protocol. HELLO
+  // opens every socket (IDENTIFY and RESUME alike), so the client re-reads them on each
+  // reconnect. An older server sends 0 and closes the socket on a frame it does not know.
+  uint64 capabilities = 2;
+}
+
+// Bits of Hello.capabilities (values are bit masks, not bit numbers).
+enum ServerCapability {
+  SERVER_CAPABILITY_UNSPECIFIED = 0;
+  // RECORDING_SPEECH frames are accepted (ADR-0169); absent = the client must not send them.
+  SERVER_CAPABILITY_RECORDING_SPEECH = 1;
 }
 
 message HeartbeatAck {}

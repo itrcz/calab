@@ -205,3 +205,15 @@ func TestSpeechInFileShift(t *testing.T) {
 		}
 	}
 }
+
+// RECORDING_SPEAKER_NAMES=off: the matcher is skipped before any read of the reports — no
+// speakers_json, the segments keep only their numbers.
+func TestNameSpeakersOff(t *testing.T) {
+	s := &Service{} // no database: an attempt to read the reports would panic
+	s.SetSpeakerNames(false)
+	zero := 0
+	segs := []segment{{Speaker: &zero, Start: 0, End: 5, Text: "hi"}}
+	if got := s.nameSpeakers(t.Context(), sqlc.RoomRecording{ID: uuid.New(), StartedAt: time.Now()}, segs); got != nil || segs[0].UserID != "" {
+		t.Fatalf("matched with the switch off: %s, %q", got, segs[0].UserID)
+	}
+}

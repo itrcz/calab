@@ -375,6 +375,7 @@ func New(d Deps) *App {
 	}
 	recSvc := recording.New(recCfg, d.DB, d.Redis, egress, gptunnel.New(d.Config.GPTunnelAPIURL), pub)
 	recSvc.KeepAudio = time.Duration(d.Config.RecordingKeepDays) * 24 * time.Hour
+	recSvc.SetSpeakerNames(d.Config.SpeakerNames())
 	recSvc.PlanInactive = func(ctx context.Context, ws uuid.UUID) bool {
 		l, err := planSvc.Lapsed(ctx, ws)
 		return err == nil && l
@@ -410,7 +411,9 @@ func New(d Deps) *App {
 	}, d.DB, d.Redis, authSvc, pub)
 
 	authSvc.OnBotRequest = hub.TouchBot
-	hub.RecordingSpeech = recSvc.ReportSpeech // on-air reports for speaker names (ADR-0169)
+	if d.Config.SpeakerNames() { // RECORDING_SPEAKER_NAMES=off: not advertised in HELLO, frames ignored
+		hub.RecordingSpeech = recSvc.ReportSpeech // on-air reports for speaker names (ADR-0169)
+	}
 
 	// One-to-one calls (ADR-0034): signalling here, media through rtc (DM voice sessions).
 	callSvc := calls.New(d.DB, d.Redis, pub,
