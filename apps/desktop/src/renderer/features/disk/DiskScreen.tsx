@@ -15,6 +15,7 @@ import { myUserId } from '../../stores/session';
 import { useMemberRoles, useWorkspaces } from '../../stores/workspaces';
 import { useFileDrop } from '../chat/useFileDrop';
 import { DiskBar } from './DiskBar';
+import { PublicLinkMark } from './PublicLinkMark';
 import { DiskColumns } from './DiskColumns';
 import { DiskListing, DragChip, DropTarget } from './DiskItems';
 import { DiskDialogs } from './Dialogs';
@@ -102,6 +103,7 @@ export function DiskScreen({ workspaceId }: { workspaceId: string }): ReactNode 
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragged(null)}>
         <section className="mat-content island-fade flex min-w-0 flex-1 flex-col [--island-fade-color:var(--color-bg)] [&::after]:right-auto [&::after]:w-[calc(var(--sidebar-width)+8px)]" aria-label={t('disk.section')} data-testid="disk">
           <DiskBar workspaceId={workspaceId} folderId={folderId} trash={trash} write={write} manage={manage} />
+          {folderId && !trash ? <PublicLinkMark itemId={folderId} /> : null}
           <div
             className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
             style={{ paddingBottom: 'max(0px, calc(var(--island-height, 0px) - 28px))' }}

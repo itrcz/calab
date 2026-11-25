@@ -134,6 +134,7 @@ export const en: Dict = {
   // auth
   'auth.welcome': 'Welcome back',
   'auth.welcomeSub': 'Sign in to your account',
+  'auth.internalLink': 'This is an internal Calab link. If it was sent to you, ask the sender to copy the link from the “Link…” menu',
   'auth.create': 'Create account',
   'auth.createSub': 'Sign up on a Calab server',
   'auth.server': 'Server',

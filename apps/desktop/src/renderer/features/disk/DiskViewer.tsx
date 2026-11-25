@@ -11,6 +11,7 @@ import { downloadItem, openSendToChat } from '../../services/disk';
 import { useDisk } from '../../stores/disk';
 import { usePlayer } from '../../stores/player';
 import { useUi } from '../../stores/ui';
+import { PublicLinkMark } from './PublicLinkMark';
 import { AudioAttachment } from '../chat/MediaPlayer';
 
 /**
@@ -328,6 +329,7 @@ export function DiskViewDialog({ itemId, siblings, onClose }: { itemId: string; 
       }
     >
       <div className="py-2" data-testid="disk-viewer" data-kind={kind}>
+        <PublicLinkMark itemId={id} className="mb-2 flex items-center gap-2 rounded-[var(--radius-row)] bg-hover px-3 py-1.5" />
         {ids.length > 1 ? (
           <div className="mb-2 flex items-center justify-end gap-1">
             <Button variant="secondary" disabled={!prev} onClick={() => prev && setId(prev)} aria-label={t('lightbox.prev')} data-testid="disk-view-prev">

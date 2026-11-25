@@ -91,6 +91,8 @@ export const ruDisk = {
   'disk.link.address': 'Адрес ссылки',
   'disk.link.copyShort': 'Скопировать',
   'disk.link.copied': 'Ссылка скопирована',
+  'disk.link.mark': 'Доступна по ссылке',
+  'disk.link.markCopy': 'Скопировать ссылку',
   'disk.link.until': 'Действует до {date}',
   'disk.link.forever': 'Бессрочно',
   'disk.link.downloads': 'Скачиваний: {n}',

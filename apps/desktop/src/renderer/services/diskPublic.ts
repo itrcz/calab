@@ -53,6 +53,12 @@ export const diskPublic = {
 export const diskPageCode = (): string | null =>
   import.meta.env.VITE_PLATFORM === 'web' ? (/^\/d\/([A-Za-z0-9_-]{43})\/?$/.exec(location.pathname)?.[1] ?? null) : null;
 
+/** A pathname of an in-app Disk address (`/disk/<id>`, ADR-0094): not a public link, it needs a Calab account. */
+export const isInternalDiskPath = (pathname: string): boolean => /^\/disk(\/|$)/.test(pathname);
+
+/** The web page was opened at an in-app Disk address (CBF-201): the login explains it is not the public link. */
+export const onInternalDiskPage = (): boolean => import.meta.env.VITE_PLATFORM === 'web' && isInternalDiskPath(location.pathname);
+
 /** Starts a download of an absolute URL (the server answers `Content-Disposition: attachment`). */
 export function downloadUrl(url: string): void {
   const a = document.createElement('a');

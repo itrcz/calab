@@ -88,6 +88,8 @@ export const zhDisk: DictShape<typeof ruDisk> = {
   'disk.link.address': '链接地址',
   'disk.link.copyShort': '复制',
   'disk.link.copied': '链接已复制',
+  'disk.link.mark': '可通过链接访问',
+  'disk.link.markCopy': '复制链接',
   'disk.link.until': '有效期至 {date}',
   'disk.link.forever': '永久有效',
   'disk.link.downloads': '下载次数：{n}',

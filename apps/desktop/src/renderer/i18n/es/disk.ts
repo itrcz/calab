@@ -88,6 +88,8 @@ export const esDisk: DictShape<typeof ruDisk> = {
   'disk.link.address': 'Dirección del enlace',
   'disk.link.copyShort': 'Copiar',
   'disk.link.copied': 'Enlace copiado',
+  'disk.link.mark': 'Disponible por enlace',
+  'disk.link.markCopy': 'Copiar enlace',
   'disk.link.until': 'Válido hasta {date}',
   'disk.link.forever': 'Sin caducidad',
   'disk.link.downloads': 'Descargas: {n}',

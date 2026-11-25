@@ -19,6 +19,7 @@ import { INSECURE_SERVER_CODE } from '../../../shared/serverUrl';
 import { GuestScreen } from './GuestScreen';
 import { AuthLegalFooter } from '../legal/Legal';
 import { ForgotPassword } from './ForgotPassword';
+import { onInternalDiskPage } from '../../services/diskPublic';
 import { logoutBannerKey } from '../../services/logoutNotice';
 
 function authError(e: ApiErrorJson): { text: string; field?: string } {
@@ -56,6 +57,8 @@ function LoginScreen(): ReactNode {
   const pendingRoom = useRoomLink((s) => s.code);
   const settings = useSession((s) => s.settings);
   const banner = logoutBannerKey(useSession((s) => s.loggedOutReason));
+  // Opened at /disk/<id> without a session (CBF-201): not the public link, say so (no data by id).
+  const internalLink = onInternalDiskPage();
   // An invitation link (docs/09 #36) — also one that arrives while this form is on screen.
   const invite = useInvite((s) => s.code) ?? '';
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(invite ? 'register' : 'login');
@@ -215,6 +218,11 @@ function LoginScreen(): ReactNode {
             </div>
           ) : null}
           {banner ? <p className="rounded-[var(--radius-row)] bg-mention px-3 py-2 text-body">{t(banner)}</p> : null}
+          {internalLink ? (
+            <p className="rounded-[var(--radius-row)] bg-mention px-3 py-2 text-body" data-testid="auth-internal-link">
+              {t('auth.internalLink')}
+            </p>
+          ) : null}
           <Field label={t('auth.email')} error={fieldErr('email')} hint={emailLocked ? t('mail.invitedHint') : undefined}>
             <Input
               type="email"

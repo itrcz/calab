@@ -134,6 +134,7 @@ export const es: Dict = {
   // auth
   'auth.welcome': 'Bienvenido de nuevo',
   'auth.welcomeSub': 'Inicia sesión en tu cuenta',
+  'auth.internalLink': 'Este es un enlace interno de Calab. Si te lo enviaron, pide al remitente que copie el enlace desde el menú «Enlace…»',
   'auth.create': 'Crear cuenta',
   'auth.createSub': 'Regístrate en un servidor de Calab',
   'auth.server': 'Servidor',

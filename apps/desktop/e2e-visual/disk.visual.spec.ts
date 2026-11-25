@@ -198,6 +198,14 @@ test('disk-share', async ({ open, win, shot }) => {
   await link.getByRole('switch').click();
   await expect(link.getByTestId('disk-link-url')).toHaveValue(/\/d\//);
   await checkpoint(shot, 'disk-folder-link');
+  // CBF-201: the mark «Доступна по ссылке» with «Скопировать ссылку» in the opened folder.
+  await win.keyboard.press('Escape');
+  await win.getByTestId('disk-tile').filter({ hasText: 'Проекты' }).dblclick();
+  await expect(win.getByTestId('disk-public-mark')).toContainText('Доступна по ссылке');
+  await checkpoint(shot, 'disk-folder-public-mark');
+  await win.getByTestId('disk-crumb').first().click();
+  await win.getByTestId('disk-tile').filter({ hasText: 'Проекты' }).click({ button: 'right' });
+  await win.getByTestId('disk-menu-link').click();
   // CBF-168 (ADR-0167): a password (only «set / not set» is shown) and «Без скачивания».
   await link.getByTestId('disk-link-password-edit').click();
   await link.getByTestId('disk-link-password-input').fill('сезам-2026');

@@ -132,6 +132,7 @@ export const ru = {
   // auth
   'auth.welcome': 'С возвращением',
   'auth.welcomeSub': 'Войдите в аккаунт',
+  'auth.internalLink': 'Это внутренняя ссылка Calab. Если вам её прислали — попросите отправителя скопировать ссылку из меню «Ссылка…»',
   'auth.create': 'Создать аккаунт',
   'auth.createSub': 'Регистрация на сервере Calab',
   'auth.server': 'Сервер',

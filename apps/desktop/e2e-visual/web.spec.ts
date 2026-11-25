@@ -193,6 +193,32 @@ for (const theme of THEMES) {
 }
 
 /**
+ * CBF-201: /disk/<id> without a session is not the public link — the login page says so (and shows
+ * nothing about the folder: the id is never resolved without a session).
+ */
+for (const theme of THEMES) {
+  for (const viewport of VIEWPORTS) {
+    test(`web internal disk link: ${theme} ${viewport.width}`, async ({ page }) => {
+      test.skip(!ALL && (theme !== 'dark' || viewport.width !== 960), 'full matrix only (CALABA_VISUAL_ALL=1, nightly CI)');
+      expect(existsSync(join(DIST, 'index.html')), 'dist-web is missing: run `pnpm build:web` first').toBe(true);
+      let mock: MockServer | undefined;
+      try {
+        mock = await startMockServer({ port: 0, scenario: 'data', staticDir: DIST });
+        await page.setViewportSize(viewport);
+        await page.clock.setFixedTime(NOW);
+        await page.goto(`${mock.url}/?visual-test`);
+        await page.evaluate((t) => localStorage.setItem('calaba-prefs', JSON.stringify({ state: { theme: t, onboarded: true, locale: 'ru' }, version: 1 })), theme);
+        await page.goto(`${mock.url}/disk/0a1b2c3d-0000-4000-8000-000000000001?visual-test`);
+        await expect(page.getByTestId('auth-internal-link')).toContainText('Это внутренняя ссылка Calab');
+        await checkpoint({ page, theme, viewport }, 'web-internal-disk-link');
+      } finally {
+        await mock?.close();
+      }
+    });
+  }
+}
+
+/**
  * The public meeting page of an invited address (ADR-0038 «Диплинки для приглашённых»): no account,
  * the card with the time in the viewer's zone, the organizer's, the room, the description, the
  * answers and «Присоединиться к встрече» — not active yet (15 minutes before the start). Dark 960.

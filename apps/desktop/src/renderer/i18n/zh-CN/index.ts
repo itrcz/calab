@@ -134,6 +134,7 @@ export const zhCN: Dict = {
   // auth
   'auth.welcome': '欢迎回来',
   'auth.welcomeSub': '登录你的账号',
+  'auth.internalLink': '这是 Calab 内部链接。如果有人把它发给你，请让发送者从“链接…”菜单复制链接',
   'auth.create': '创建账号',
   'auth.createSub': '在 Calab 服务器上注册',
   'auth.server': '服务器',
