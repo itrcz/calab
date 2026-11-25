@@ -107,11 +107,13 @@ DEV-5031/DEV-5033. Канал host включён и на Android; сообще�
   challenge/proof больше нет: `activityProtocol.ts` одинаков на обеих платформах и только
   сужает схему и порядок. Отличие от iOS: Android не сверяет «текущий документ» в native.
   Hello прошлого документа того же origin, пришедший после навигации, — это наш же код, а не
-  чужой. RN сбрасывает протокол на каждом loadStart/remount, и новая страница при своём hello
-  заново получает document authority. Native не получает auth Calab.
+  чужой. RN сбрасывает протокол на каждом loadStart нового документа и remount, и новая
+  страница при своём hello заново получает document authority. На Android loadStart приходит
+  и от `doUpdateVisitedHistory` (каждый `history.pushState` SPA) — там документ жив и сброса
+  нет; новый документ отмечает патч событием из `onPageStarted` с `calabPageStart` (CBF-197). Native не получает auth Calab.
 - **Document authority в native.** На iOS её выдаёт патч WebView (`CalabHostDocumentGranted`).
   На Android RN передаёт её модулю после hello (`setDocument(document)`) и отзывает при каждом
-  loadStart/ошибке/remount/revoke (`setDocument(null, logout)`). Logout дополнительно стирает
+  loadStart нового документа/ошибке/remount/revoke (`setDocument(null, logout)`). Logout дополнительно стирает
   отложенный tap и уведомления Calab. Async-ответы перепроверяют документ, как на iOS.
 - **Объявляем только реализованное.** Bridge Android: `notificationsVersion`,
   `notificationsTestVersion`, `platform: 'android'`; ack — `notifications: 1, links: 1`.

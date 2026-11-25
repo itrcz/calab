@@ -88,12 +88,16 @@ function Host({ origin }: { origin: string }) {
   const pendingCalendar = useRef<{ action: CalendarWidgetAction; tap: number } | null>(null);
   const loaded = useRef(false);
   const activity = useRef(new ActivityProtocol(state.generation));
-  const resetActivity = useCallback(() => {
-    activity.current.reset();
+  /** The native state of the handshaken document: session activity, media session, notifications. */
+  const endDocument = useCallback(() => {
     endSessionActivity();
     clearMediaSession();
     setNotificationsDocument(null, false);
   }, []);
+  const resetActivity = useCallback(() => {
+    activity.current.reset();
+    endDocument();
+  }, [endDocument]);
   useEffect(() => {
     activity.current = new ActivityProtocol(state.generation);
     return resetActivity;
@@ -202,8 +206,8 @@ function Host({ origin }: { origin: string }) {
       const url = appUrlForLink(raw, origin, LINK_HOSTS);
       if (!url) return;
       pendingCalendar.current = null; // A newer regular link supersedes an undelivered widget tap.
-      const document = activity.current.belongsTo(state.generation) ? activity.current.current() : null;
-      if (hostChannelEnabled && loaded.current && document) web.current?.injectJavaScript(linkEvent(state.generation, document, url));
+      const document = activity.current.linkDocument(state.generation, loaded.current);
+      if (hostChannelEnabled && document) web.current?.injectJavaScript(linkEvent(state.generation, document, url));
       else dispatch({ type: 'open', url });
     };
   }, [origin, state.generation, deliverCalendar]);
@@ -268,20 +272,13 @@ function Host({ origin }: { origin: string }) {
 
   const onLoadStart = useCallback(
     ({ nativeEvent }: WebViewNavigationEvent) => {
-      // Android: no resetActivity() here. onLoadStart there also fires for SPA route changes
-      // (doUpdateVisitedHistory on history.pushState), where the document — and the whole host
-      // handshake — survive; for a real load it fires at commit and can land after the new
-      // page's hello. A real reload re-handshakes by itself: the fresh page sends hello on its
-      // first capability setter (a new document id resets the protocol), and logout sends
-      // revoke. Resetting here dropped the document while the page stayed ready, and the channel
-      // went dead until the next reload (CBF-192 device check 2026-11-18: no push registration,
-      // no media-session FGS). iOS fires it only for a real main-frame navigation, before the
-      // new document exists, so it keeps the reset.
+      // A new main-frame document ends the handshake; an Android SPA route change
+      // (doUpdateVisitedHistory) does not — see ActivityProtocol.loadStart (CBF-192, CBF-197).
       if (!activity.current.belongsTo(state.generation)) return;
-      if (!ANDROID) resetActivity();
+      if (activity.current.loadStart(ANDROID, nativeEvent)) endDocument();
       if (!leftApp(nativeEvent.url)) dispatch({ type: 'loadStart' });
     },
-    [leftApp, resetActivity, state.generation],
+    [leftApp, endDocument, state.generation],
   );
 
   const onNavigationStateChange = useCallback(

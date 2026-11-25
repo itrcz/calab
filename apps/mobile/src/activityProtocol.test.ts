@@ -196,6 +196,44 @@ describe('Android host channel (DEV-5033, ADR-0070 Android)', () => {
     expect(ready).not.toContain('"mediaSession"');
     expect(bridge.mediaSessionVersion).toBeUndefined();
   });
+  // Android load-start events as the patched react-native-webview sends them (CBF-197).
+  const url = 'https://calab.example.com/rooms';
+  const routeChange = { url, loading: false, canGoBack: true, canGoForward: false, title: '' };
+  const pageStart = { ...routeChange, loading: true, calabPageStart: true };
+  it('an SPA route change (doUpdateVisitedHistory) keeps the handshake and links go in place', () => {
+    const p = new ActivityProtocol(0);
+    p.accept(hello());
+    expect(p.loadStart(true, routeChange)).toBe(false);
+    expect(p.current()).toBe(document);
+    expect(p.accept(activity())?.type).toBe('publish');
+    expect(p.linkDocument(0, true)).toBe(document);
+  });
+  it('Android reload without handshake: the link is not injected, session activity ended', () => {
+    const p = new ActivityProtocol(0);
+    p.accept(hello());
+    expect(p.accept(activity())?.type).toBe('publish');
+    // onPageStarted of the reload: the host tears the old document down (App: endDocument —
+    // session activity, media-session FGS, notifications document) and forgets it.
+    const endDocument = vi.fn();
+    if (p.loadStart(true, pageStart)) endDocument();
+    expect(endDocument).toHaveBeenCalledTimes(1);
+    expect(p.current()).toBeNull();
+    // The new page never says hello: no link reaches the gone document, the WebView remounts on it.
+    expect(p.linkDocument(0, true)).toBeNull();
+    expect(p.accept(activity(2, 2))).toBeNull();
+    // Its doUpdateVisitedHistory twin changes nothing; a later hello handshakes normally.
+    expect(p.loadStart(true, routeChange)).toBe(false);
+    expect(p.accept(hello(other))).toEqual({ type: 'ready', document: other });
+    expect(p.linkDocument(0, true)).toBe(other);
+    expect(p.linkDocument(0, false)).toBeNull();
+    expect(p.linkDocument(1, true)).toBeNull();
+  });
+  it('iOS ends the document on every load start, as before', () => {
+    const p = new ActivityProtocol(0);
+    p.accept(hello());
+    expect(p.loadStart(false, routeChange)).toBe(true);
+    expect(p.current()).toBeNull();
+  });
 });
 
 describe('Android media session (board #141)', () => {

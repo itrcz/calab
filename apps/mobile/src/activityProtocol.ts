@@ -38,6 +38,31 @@ export class ActivityProtocol {
 
   reset(): void { this.document = null; this.sequence = 0; this.generation = 0; }
 
+  /**
+   * A main-frame load-start event; true when it began a new document, which ends the handshake
+   * (the host then tears down that document's native state). iOS reports load start only for a
+   * real main-frame navigation, before the new document exists. Android (react-native-webview)
+   * also reports it from doUpdateVisitedHistory — every history.pushState of the SPA, where the
+   * document and its handshake survive (CBF-192) — so there only the event the patched client
+   * sends from onPageStarted, marked `calabPageStart`, ends it (CBF-197): without that a reload or
+   * a redirect to login kept the old document current until a hello that may never come.
+   * The engine posts onPageStarted at the main-frame commit; the new page says hello only after
+   * its app bundle has booted, so the reset lands before that hello (a device check pins this).
+   */
+  loadStart(android: boolean, event: object): boolean {
+    if (android && (event as { calabPageStart?: unknown }).calabPageStart !== true) return false;
+    this.reset();
+    return true;
+  }
+
+  /**
+   * The document an incoming link is handed to in place (ADR-0142): the handshaken document of
+   * this WebView generation once the page has loaded; null — remount on the link — otherwise.
+   */
+  linkDocument(host: number, loaded: boolean): string | null {
+    return loaded && this.belongsTo(host) ? this.document : null;
+  }
+
   accept(raw: string): ActivityAction | null {
     const message = parseHostActivityMessage(raw);
     if (!message || message.host !== this.host) return null;
