@@ -3803,7 +3803,8 @@ export const PresenceStatusSchema: GenEnum<PresenceStatus> = /*@__PURE__*/
   enumDesc(file_calaba_v1_gateway, 2);
 
 /**
- * Bits of Hello.capabilities (values are bit masks, not bit numbers).
+ * Bits of Hello.capabilities (values are bit masks, not bit numbers). The enum is int32,
+ * so at most 31 bits are available; combine them with OR into the uint64 field.
  *
  * @generated from enum calaba.v1.ServerCapability
  */

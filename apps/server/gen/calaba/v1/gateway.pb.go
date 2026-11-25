@@ -240,7 +240,8 @@ func (PresenceStatus) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_gateway_proto_rawDescGZIP(), []int{2}
 }
 
-// Bits of Hello.capabilities (values are bit masks, not bit numbers).
+// Bits of Hello.capabilities (values are bit masks, not bit numbers). The enum is int32,
+// so at most 31 bits are available; combine them with OR into the uint64 field.
 type ServerCapability int32
 
 const (

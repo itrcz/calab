@@ -280,7 +280,22 @@ func (c *Config) BotLimits() (perSec, msgsPerMin int) {
 
 // SpeakerNames reports whether speaker names in transcripts are on (RECORDING_SPEAKER_NAMES,
 // ADR-0169); unset = on.
-func (c *Config) SpeakerNames() bool { return c.RecordingSpeakerNames != "off" }
+func (c *Config) SpeakerNames() bool {
+	on, _ := parseSpeakerNames(c.RecordingSpeakerNames)
+	return on
+}
+
+// parseSpeakerNames reads the RECORDING_SPEAKER_NAMES switch: on/off/true/false/1/0,
+// case- and space-insensitive; empty = on. ok is false for anything else.
+func parseSpeakerNames(v string) (on, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "on", "true", "1":
+		return true, true
+	case "off", "false", "0":
+		return false, true
+	}
+	return true, false
+}
 
 // PlanContact is the "contact us to buy" link shown to users (ADR-0024).
 func (c *Config) PlanContact() string {
@@ -473,8 +488,8 @@ func (c *Config) Validate() error {
 	if c.RecordingKeepDays < 1 || c.RecordingKeepDays > 3650 {
 		errs = append(errs, errors.New("RECORDING_KEEP_DAYS must be 1..3650"))
 	}
-	if c.RecordingSpeakerNames != "" && c.RecordingSpeakerNames != "on" && c.RecordingSpeakerNames != "off" {
-		errs = append(errs, fmt.Errorf("RECORDING_SPEAKER_NAMES must be on or off, got %q", c.RecordingSpeakerNames))
+	if _, ok := parseSpeakerNames(c.RecordingSpeakerNames); !ok {
+		errs = append(errs, fmt.Errorf("RECORDING_SPEAKER_NAMES must be on/off (or true/false/1/0), got %q", c.RecordingSpeakerNames))
 	}
 	if c.SIPRecordingTZ != "" { // "" = UTC
 		if _, err := time.LoadLocation(c.SIPRecordingTZ); err != nil || c.SIPRecordingTZ == "Local" {
