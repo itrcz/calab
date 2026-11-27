@@ -101,7 +101,8 @@ let seq = 0;
 class WebNotification implements AppNotification {
   onclick: AppNotification['onclick'] = null;
   readonly shown: Promise<void>;
-  readonly id = `${Date.now().toString(36)}-${(seq++).toString(36)}`;
+  // Unique across tabs too: sw.js asks every tab whose id a clicked notification carries.
+  readonly id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${(seq++).toString(36)}`;
   private closed = false;
   private worker: WorkerRegistration | undefined;
   private native: Shown | undefined;
@@ -132,6 +133,7 @@ class WebNotification implements AppNotification {
         return;
       } catch {
         viaWorker.delete(this.id); // the constructor below; the worker never answers for it
+        if (this.isClosed()) return;
       }
     }
     const n = holdNotification(create(title, this.options));
@@ -181,10 +183,22 @@ function track(n: WebNotification): void {
   }
 }
 
-/** A message from sw.js: the click of a notification this page showed runs its handler. */
-export function handleWorkerMessage(data: unknown): boolean {
+/** sw.js asks the tabs which one showed a clicked notification (to focus that tab, not another at «/»). */
+export const WORKER_OWNER = 'calab:notification-owner';
+
+/**
+ * A message from sw.js: «is this id yours?» is answered on the given port; the click of a
+ * notification this page showed runs its handler.
+ */
+export function handleWorkerMessage(data: unknown, ports: ReadonlyArray<{ postMessage(v: unknown): void }> = []): boolean {
   const msg = data as { type?: unknown; id?: unknown } | null;
-  if (!msg || msg.type !== WORKER_CLICK || typeof msg.id !== 'string') return false;
+  if (!msg || typeof msg.id !== 'string') return false;
+  if (msg.type === WORKER_OWNER) {
+    const mine = viaWorker.has(msg.id);
+    ports[0]?.postMessage(mine);
+    return mine;
+  }
+  if (msg.type !== WORKER_CLICK) return false;
   const n = viaWorker.get(msg.id);
   if (!n) return false; // another tab's notification (sw.js tells every tab)
   n.click();
@@ -209,7 +223,7 @@ async function activeRegistration(): Promise<WorkerRegistration | undefined> {
   if (!sw) return undefined;
   if (!listening) {
     listening = true;
-    sw.addEventListener('message', (e) => void handleWorkerMessage(e.data));
+    sw.addEventListener('message', (e) => void handleWorkerMessage(e.data, e.ports));
     sw.startMessages();
   }
   const reg = await sw.getRegistration();

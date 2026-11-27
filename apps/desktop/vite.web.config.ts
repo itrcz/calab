@@ -39,8 +39,8 @@ function stripMetaCsp(): Plugin {
  * network and the app is always the deployed version (Caddy serves non-hashed files no-cache).
  * A new sw.js replaces the old one at once.
  * Notifications (ADR-0141 p.4): the page shows them via `registration.showNotification` (Android
- * Chrome has no `new Notification()`); a click focuses the tab that showed it (or opens the app) and
- * tells the tabs its id — the page runs the click handler it kept (lib/notifyHold.ts).
+ * Chrome has no `new Notification()`); a click asks the tabs whose id it is, focuses that tab (else
+ * the one at its URL, or opens the app) and tells the tabs its id — the page runs the click handler it kept (lib/notifyHold.ts).
  */
 const SERVICE_WORKER = `// Calab — service worker (ADR-0021): no fetch handler, no cache; notification clicks only.
 self.addEventListener('install', () => self.skipWaiting());
@@ -53,7 +53,15 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil((async () => {
     const tabs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const tab = tabs.find((c) => c.url === data.href) || tabs.find((c) => c.focused) || tabs.find((c) => c.visibilityState === 'visible') || tabs[0];
+    // The tab that showed it answers «mine» (several tabs share the URL «/»); old pages never answer.
+    const ask = (c) => new Promise((resolve) => {
+      const ch = new MessageChannel();
+      const timer = setTimeout(() => resolve(false), 500);
+      ch.port1.onmessage = (e) => { clearTimeout(timer); resolve(e.data === true); };
+      try { c.postMessage({ type: 'calab:notification-owner', id: data.calabId }, [ch.port2]); } catch (e) { resolve(false); }
+    });
+    const mine = data.calabId ? await Promise.all(tabs.map(ask)) : [];
+    const tab = tabs.find((c, i) => mine[i]) || tabs.find((c) => c.url === data.href) || tabs.find((c) => c.focused) || tabs.find((c) => c.visibilityState === 'visible') || tabs[0];
     if (!tab) {
       await self.clients.openWindow('/');
       return;

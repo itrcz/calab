@@ -9,7 +9,7 @@ vi.mock('../platform', () => ({
   },
 }));
 
-const { WORKER_CLICK, handleWorkerMessage, heldNotificationCount, holdNotification, showNotification, workerNotificationCount } = await import('./notifyHold');
+const { WORKER_CLICK, WORKER_OWNER, handleWorkerMessage, heldNotificationCount, holdNotification, showNotification, workerNotificationCount } = await import('./notifyHold');
 type WorkerRegistration = import('./notifyHold').WorkerRegistration;
 
 describe('holdNotification', () => {
@@ -127,6 +127,11 @@ describe('showNotification: web through the service worker', () => {
     expect(workerNotificationCount()).toBe(base + 1);
     expect(handleWorkerMessage({ type: 'other', id })).toBe(false);
     expect(handleWorkerMessage({ type: WORKER_CLICK, id: 'another-tab' })).toBe(false);
+    const answer = vi.fn();
+    expect(handleWorkerMessage({ type: WORKER_OWNER, id: 'another-tab' }, [{ postMessage: answer }])).toBe(false);
+    expect(handleWorkerMessage({ type: WORKER_OWNER, id }, [{ postMessage: answer }])).toBe(true);
+    expect(answer.mock.calls).toEqual([[false], [true]]);
+    expect(click).not.toHaveBeenCalled();
     expect(handleWorkerMessage({ type: WORKER_CLICK, id })).toBe(true);
     expect(click).toHaveBeenCalledTimes(1);
     expect(handleWorkerMessage({ type: WORKER_CLICK, id })).toBe(false);
