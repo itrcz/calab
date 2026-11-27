@@ -118,7 +118,7 @@ in the WebView; local video previews stay muted. Needs a new native build.
 
 ## 2026-10-28: links open the app (DEV-4947, ADR-0142)
 
-https `/t/<KEY>`, `/join/<code>`, `/r/<code>` of the hosts in `EXPO_PUBLIC_CALAB_LINK_HOSTS`
+https `/t/<KEY>`, `/join/<code>`, `/r/<code>` (CBF-215 added `/b/`, `/m/`, `/wiki/`, `/canvas/`, `/e/`, `/disk/`, see the ADR-0142 addendum) of the hosts in `EXPO_PUBLIC_CALAB_LINK_HOSTS`
 (default: the host of `EXPO_PUBLIC_CALAB_URL`) and `calab://` / `calaba://` open the app: iOS
 associated domains, Android `autoVerify` app links, `scheme` for both. `src/links.ts` maps the
 incoming URL to the app's own origin; a cold start loads that route directly, a running iOS page

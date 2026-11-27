@@ -69,3 +69,20 @@ Calab установлен: оболочка `apps/mobile` не объявлял
 `detectNativeShell` при отсутствии бриджа распознаёт её (Android UA → `'android'`, иначе `'ios'`),
 а при наличии бриджа правило бриджа не меняется (fail closed на iOS). Новый бинарник нужен
 только Android — iOS продолжает работать через бридж без пересборки.
+
+## Addendum (CBF-215): board, message, wiki, canvas, event and Disk links
+
+Only `/t/`, `/join/`, `/r/` were app links, so a board link `/b/<id>` from a messenger opened the
+browser. The routes now claimed: `/b/<uuid>`, `/m/<room uuid>/<message uuid>`, `/wiki/<uuid>`,
+`/canvas/<uuid>`, `/e/<uuid>` and `/disk/<uuid>`, in addition to the three above. `hostLinkRoute`
+(`apps/desktop/src/shared/hostActivity.ts`) validates each id with the shape of the web's own
+parser (`services/links.ts`: 36-char uuid form); anything else, `/e/<id>/rsvp` and the public
+pages `/c/`, `/d/`, form and event pages stay in the browser. The web already opens all of them at
+boot (`takeDeepLink`, with `/canvas/` added here) and via `calab-host-link` (`handleDeepLink`); the
+landing card is for `join`/`r`/`t` only and is unchanged.
+
+Rollout: new native builds for both platforms (Android intent filters, `LINK_PATHS` in
+`app.config.ts`) are needed. Operator: the prod AASA is served from the cluster ConfigMap
+`calab/calab-web-config`, not from the image — add the same `components` there
+(`/b/*`, `/m/*`, `/wiki/*`, `/canvas/*`, `/e/*`, `/disk/*`); the stand's Caddy
+`entrypoint.sh` already renders them. `assetlinks.json` has no paths and does not change.
