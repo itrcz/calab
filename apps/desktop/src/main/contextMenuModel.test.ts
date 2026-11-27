@@ -38,7 +38,7 @@ describe('editMenuItems', () => {
     expect(items.slice(0, 5).map((i) => i.label)).toEqual(['hello', 'help', 'halo', 'hero', 'helot']);
     expect(items[5]?.type).toBe('separator');
     expect(items[6]).toMatchObject({ role: 'cut', enabled: false });
-    items[0]?.click?.({} as never, undefined, {} as never);
+    items[0]?.click?.({} as never, undefined, {});
     expect(replace).toHaveBeenCalledWith('hello');
   });
 
