@@ -19,6 +19,9 @@ export const enApp: DictShape<typeof ruApp> = {
   'legal.thirdPartyTitle': 'Third-party licenses',
   'legal.unavailable': 'The text isn’t available in this build.',
   'legal.footerLicense': 'License: Business Source License 1.1',
+  'legal.privacy': 'Privacy Policy',
+  'legal.termsOfUse': 'Terms of Use',
+  'legal.docsCard': 'Documents',
   // rebindable in-window shortcuts
   'hotkeys.change': 'Change',
   'hotkeys.reset': 'Reset',

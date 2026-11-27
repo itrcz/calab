@@ -4,7 +4,7 @@ import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
 import { Container } from '@/components/ui';
 import { getDict, isLocale, localePath } from '@/i18n';
-import { isLegalDocument, getLegalDocuments, LEGAL_IDS, LEGAL_VERSION } from '@/lib/legal';
+import { isLegalDocument, getLegalDocuments, LEGAL_IDS, LEGAL_VERSION, formatLegalEdition } from '@/lib/legal';
 
 type Params = Promise<{ locale: string; document: string }>;
 
@@ -34,6 +34,7 @@ export default async function LegalPage({ params }: { params: Params }) {
   const documents = getLegalDocuments(locale);
   const content = documents[document];
   const ru = locale === 'ru';
+  const edition = formatLegalEdition(locale);
   return (
     <>
       <div className="print:hidden"><Header t={t.header} locale={locale} page={`legal/${document}/`} /></div>
@@ -42,7 +43,7 @@ export default async function LegalPage({ params }: { params: Params }) {
           <article className="mx-auto max-w-[840px] break-words" aria-labelledby="legal-title">
             <p className="text-[13px] font-medium tracking-wide text-fg-2">{ru ? 'CALAB · ПРАВОВЫЕ ДОКУМЕНТЫ' : 'CALAB GLOBAL · LEGAL · ENGLISH'}</p>
             <h1 id="legal-title" className="mt-4 text-[32px] leading-tight font-semibold tracking-tight sm:text-[44px]">{content.title}</h1>
-            <p className="mt-4 text-[14px] text-fg-2">{ru ? 'Редакция от ' : 'Updated '}<time dateTime={LEGAL_VERSION}>{ru ? '9 октября 2026 года' : '9 October 2026'}</time> · {ru ? 'Суточные тарифы' : 'Daily pricing edition'}</p>
+            <p className="mt-4 text-[14px] text-fg-2">{edition.label}<time dateTime={LEGAL_VERSION}>{edition.date}</time> · {ru ? 'Суточные тарифы' : 'Daily pricing edition'}</p>
             <p className="mt-6 text-[17px] leading-7 text-fg-2">{content.description}</p>
             <nav aria-label={ru ? 'Разделы документа' : 'Document sections'} className="my-8 rounded-2xl border border-line p-5 print:hidden">
               <ol className="space-y-2 text-[14px] leading-6">

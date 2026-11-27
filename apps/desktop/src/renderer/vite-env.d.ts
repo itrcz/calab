@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_APP_VERSION?: string;
   /** Plans on the landing page («Тариф» → «Подробнее о тарифах», ADR-0024); unset = no link. */
   readonly VITE_PRICING_URL?: string;
+  /** Landing origin for the privacy policy and terms links (auth footer, about); unset = no links. */
+  readonly VITE_LEGAL_URL?: string;
   /** The web build's app origins, space-separated (docs/06 «Домены»; shared/ownLink.ts ownOrigins). */
   readonly VITE_APP_ORIGINS?: string;
   /** '1': the billing cabinet and admin talk to an in-memory mock (lib/billing/mock.ts; dev / QA builds only). */
