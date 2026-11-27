@@ -182,7 +182,7 @@ if [ -n "${APP_LINKS_IOS:-}" ]; then
 	# Modern AASA (iOS >= 13): "appIDs" + "components". The legacy single-"appID"+"paths" form Apple
 	# documented pre-2019 is not included: iOS 13 shipped in 2019 and is long out of support, so every
 	# iOS version this app can run on already understands "appIDs"/"components".
-	AASA_BODY="{\"applinks\":{\"details\":[{\"appIDs\":[$IOS_IDS],\"components\":[{\"/\":\"/t/*\"},{\"/\":\"/join/*\"},{\"/\":\"/r/*\"}]}]},\"webcredentials\":{\"apps\":[$IOS_IDS]}}"
+	AASA_BODY="{\"applinks\":{\"details\":[{\"appIDs\":[$IOS_IDS],\"components\":[{\"/\":\"/t/*\"},{\"/\":\"/join/*\"},{\"/\":\"/r/*\"},{\"/\":\"/b/*\"},{\"/\":\"/m/*\"},{\"/\":\"/wiki/*\"},{\"/\":\"/canvas/*\"},{\"/\":\"/e/*\"},{\"/\":\"/disk/*\"}]}]},\"webcredentials\":{\"apps\":[$IOS_IDS]}}"
 	{
 		printf 'handle /.well-known/apple-app-site-association {\n'
 		printf '\theader Content-Type application/json\n'

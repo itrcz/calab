@@ -107,19 +107,25 @@ export function parseHostActivityMessage(raw: string): HostActivityMessage | nul
 
 /**
  * Routes the phone host may hand to an already running page (ADR-0142): a task, a workspace
- * invite or a room link. A task slug must be an actual task key — the same rule as the web's
- * `parseBoardLink` (`[A-Za-z][A-Za-z0-9]{1,5}-[0-9]{1,7}`) — so a route the web would ignore does
- * not remount the WebView; `join`/`r` keep the web's wider invite-code rule. Returns the
- * canonical `/<kind>/<code>` (no trailing slash) or null. Runs in the native JS host too: no URL
- * parsing.
+ * invite or a room link, and the in-app addresses of a board, a message, a wiki page, a canvas, a
+ * meeting and a Disk item. Every id has the shape the web's own parsers use (services/links.ts):
+ * a task slug is an actual task key (`parseBoardLink`, `[A-Za-z][A-Za-z0-9]{1,5}-[0-9]{1,7}`),
+ * `join`/`r` keep the wider invite-code rule, the others take the 36-char uuid form — so a route
+ * the web would ignore does not remount the WebView. Returns the canonical path (no trailing
+ * slash) or null. Runs in the native JS host too: no URL parsing.
  */
 const TASK_KEY = /^[A-Za-z][A-Za-z0-9]{1,5}-[0-9]{1,7}$/;
 const INVITE_CODE = /^[A-Za-z0-9_-]{4,64}$/;
+const UUID = /^[0-9a-fA-F-]{36}$/;
+/** Kinds whose single id is a uuid: board, wiki page, canvas, event, Disk item. */
+const UUID_KINDS = new Set(['b', 'wiki', 'canvas', 'e', 'disk']);
 
 export function hostLinkRoute(path: string): string | null {
-  const m = /^\/(t|join|r)\/([^/]+)\/?$/.exec(path);
+  const msg = /^\/m\/([^/]+)\/([^/]+)\/?$/.exec(path);
+  if (msg?.[1] && msg[2]) return UUID.test(msg[1]) && UUID.test(msg[2]) ? `/m/${msg[1]}/${msg[2]}` : null;
+  const m = /^\/(t|join|r|b|wiki|canvas|e|disk)\/([^/]+)\/?$/.exec(path);
   if (!m?.[1] || !m[2]) return null;
-  const ok = m[1] === 't' ? TASK_KEY.test(m[2]) : INVITE_CODE.test(m[2]);
+  const ok = m[1] === 't' ? TASK_KEY.test(m[2]) : UUID_KINDS.has(m[1]) ? UUID.test(m[2]) : INVITE_CODE.test(m[2]);
   return ok ? `/${m[1]}/${m[2]}` : null;
 }
 

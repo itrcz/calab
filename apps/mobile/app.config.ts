@@ -19,7 +19,7 @@ const webOrigin = process.env.EXPO_PUBLIC_CALAB_URL !== undefined ? parseWebOrig
  */
 const SCHEME = 'calab';
 const LEGACY_SCHEME = 'calaba';
-const LINK_PATHS = ['/t/', '/join/', '/r/'];
+const LINK_PATHS = ['/t/', '/join/', '/r/', '/b/', '/m/', '/wiki/', '/canvas/', '/e/', '/disk/'];
 const linkHosts = parseLinkHosts(process.env.EXPO_PUBLIC_CALAB_LINK_HOSTS, webOrigin);
 
 const env = (name: string): string | undefined => process.env[name]?.trim() || undefined;
