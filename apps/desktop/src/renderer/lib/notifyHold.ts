@@ -28,6 +28,7 @@ export function heldNotificationCount(): number {
 
 interface Shown extends Releasable {
   close(): void;
+  onclick?: ((this: never, ev: Event) => unknown) | null;
 }
 
 /** What callers of `showNotification` use: the click handler and closing it. */
@@ -134,7 +135,7 @@ class WebNotification implements AppNotification {
       }
     }
     const n = holdNotification(create(title, this.options));
-    n.addEventListener('click', () => this.click());
+    n.onclick = () => this.click();
     this.native = n;
     if (this.isClosed()) n.close();
   }

@@ -73,7 +73,7 @@ describe('the @mention notice (ADR-0127 wave 4)', () => {
 
   it('a system notification that opens the canvas at the thread; nothing in «не беспокоить», for my own or while I look at it', async () => {
     onCanvasCommentMention(mention({ text: 'hello' }));
-    expect(notes).toHaveLength(1);
+    await vi.waitFor(() => expect(notes).toHaveLength(1)); // web: shown after the service worker lookup
     expect(notes[0]?.title).toContain('Retro');
     notes[0]?.onclick?.();
     await Promise.resolve();
@@ -91,6 +91,7 @@ describe('the @mention notice (ADR-0127 wave 4)', () => {
     useUi.setState({ activeWorkspaceId: 'ws' } as never);
     useCanvasUi.setState({ active: true, itemOf: { ws: 'cv' } } as never);
     onCanvasCommentMention(mention());
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(notes).toHaveLength(1);
   });
 });

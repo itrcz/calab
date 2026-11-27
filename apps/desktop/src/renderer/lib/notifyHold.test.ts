@@ -29,6 +29,7 @@ describe('holdNotification', () => {
 /** A fake system notification: its options and whether it was closed. */
 class Fake extends EventTarget {
   closed = false;
+  onclick: (() => void) | null = null;
   constructor(readonly options: NotificationOptions) {
     super();
   }
@@ -80,7 +81,7 @@ describe('showNotification: replacement by tag', () => {
     expect(shown[0]?.closed).toBe(false);
     const click = vi.fn();
     b.onclick = click;
-    shown[1]?.dispatchEvent(new Event('click'));
+    shown[1]?.onclick?.();
     expect(click).toHaveBeenCalledTimes(1);
     b.close();
     expect(shown[1]?.closed).toBe(true);

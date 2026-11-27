@@ -172,7 +172,7 @@ describe('system notification of a message (ADR-0141, #99)', () => {
     expect(messageNoticeTitle('Борис', undefined, false)).toBe('Борис');
   });
 
-  it('a mention elsewhere notifies with the room in the title; a click shows the window, opens the room in its workspace and jumps to the message', () => {
+  it('a mention elsewhere notifies with the room in the title; a click shows the window, opens the room in its workspace and jumps to the message', async () => {
     const s = useRooms.getState();
     s.upsert(create(RoomSchema, { id: 'a', workspaceId: 'ws2', type: RoomType.TEXT, name: 'общий' }));
     useWorkspaces.setState({ byId: { ws1: { ws: { name: 'Один' }, members: {}, roles: [] }, ws2: { ws: { name: 'Два' }, members: {}, roles: [] } } } as never);
@@ -182,7 +182,7 @@ describe('system notification of a message (ADR-0141, #99)', () => {
     showWindow.mockClear();
     const m = msg(700, `hi @${ME}`);
     onIncomingMessage(m, 'ws2', false);
-    expect(shown).toHaveLength(1);
+    await vi.waitFor(() => expect(shown).toHaveLength(1)); // web: shown after the service worker lookup
     expect(shown[0]?.title).toMatch(/^#общий \(Два\) · /);
     expect(shown[0]?.opts.tag).toBe('a');
     shown[0]?.n.onclick?.();
@@ -192,14 +192,14 @@ describe('system notification of a message (ADR-0141, #99)', () => {
     expect(showWindow.mock.invocationCallOrder[0]).toBeLessThan(openRoom.mock.invocationCallOrder[0] ?? 0);
   });
 
-  it('a DM message: a click opens the chat in «Личные» (HOME), not a workspace', () => {
+  it('a DM message: a click opens the chat in «Личные» (HOME), not a workspace', async () => {
     useRooms.getState().upsert({ id: 'd', type: RoomType.DM, workspaceId: '' } as never);
     const openRoom = vi.fn();
     useUi.setState({ openRoom } as never);
     shown.length = 0;
     const m = create(MessageSchema, { id: id(701), roomId: 'd', authorId: 'other', content: 'привет' });
     onIncomingMessage(m, '', false);
-    expect(shown).toHaveLength(1);
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
     shown[0]?.n.onclick?.();
     expect(openRoom).toHaveBeenCalledWith(HOME, 'd');
     expect(useChatView.getState().jump).toMatchObject({ roomId: 'd', messageId: m.id });
