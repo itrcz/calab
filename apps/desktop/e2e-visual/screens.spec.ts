@@ -4889,12 +4889,12 @@ test('boards-task', async ({ open, win, mock, shot }) => {
   await expect(more).toBeVisible();
   await expect(more.getByTestId('panel-archive')).toBeVisible();
   await checkpoint(shot, 'boards-task-more', { axe: false });
-  const moveTo = more.getByRole('menuitem').filter({ hasText: 'Перенести' });
-  if (await moveTo.count()) {
-    await moveTo.first().hover();
-    await expect(win.getByRole('menu')).toHaveCount(2);
-    await checkpoint(shot, 'boards-task-more-move', { axe: false });
-  }
+  // The seed has a second board («Маркетинг») the owner manages, so «Перенести в…» is there; the
+  // pointer stays on it (keepPointer) or settle's mouse move would close the submenu before the shot.
+  await more.getByRole('menuitem').filter({ hasText: 'Перенести' }).hover();
+  await expect(win.getByRole('menu')).toHaveCount(2);
+  await expect(win.getByRole('menuitem').filter({ hasText: 'Маркетинг' })).toBeVisible();
+  await checkpoint(shot, 'boards-task-more-move', { axe: false, keepPointer: true });
   await win.keyboard.press('Escape');
   await expect(win.getByRole('menu')).toHaveCount(0);
 

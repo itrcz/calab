@@ -1502,6 +1502,12 @@ test('m-boards-task', async ({ page }) => {
   const panel = page.getByTestId('task-panel');
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await checkpoint(page, 'm-boards-task');
+  // CBF-207: the header «⋯» opens above the full-screen task panel, every item visible.
+  await panel.getByTestId('panel-more').tap();
+  await expect(page.getByRole('menu').getByTestId('panel-archive')).toBeVisible();
+  await checkpoint(page, 'm-boards-task-more');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
   // «Скачать» on a description's attachment: always visible on the phone (no hover).
   await expect(panel.getByTestId('task-attachment-download')).toBeVisible();
   await panel.getByTestId('task-attachment').scrollIntoViewIfNeeded();

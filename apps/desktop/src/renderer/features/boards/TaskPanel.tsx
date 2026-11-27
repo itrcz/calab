@@ -278,8 +278,13 @@ export const ArchivedBanner = memo(function ArchivedBanner({ task }: { task: Tas
 export function TaskMoreMenu({ task, perms, scoped }: { task: Task; perms: bigint | undefined; scoped: boolean }): ReactNode {
   const boards = useMoveTargets(task);
   const me = myUserId();
-  // An archived task is read-only: «Восстановить» (the banner) is its one action.
-  if (task.archivedAt) return null;
+  const canDuplicate = hasBit(perms, CREATE_TASKS) && !scoped;
+  const canMove = boards.length > 0 && !scoped && hasBit(perms, MANAGE_BOARD);
+  const canArchive = mayArchiveTask(task, perms, me);
+  // An archived task is read-only: «Восстановить» (the banner) is its one action. With no action
+  // allowed (a card-only viewer on someone else's task, CBF-207) there is no «⋯» at all, not an
+  // empty menu.
+  if (task.archivedAt || !(canDuplicate || canMove || canArchive)) return null;
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
@@ -289,12 +294,12 @@ export function TaskMoreMenu({ task, perms, scoped }: { task: Task; perms: bigin
       </Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content className={cx(menuBox, 'w-60')} sideOffset={4} align="end" collisionPadding={16}>
-          {hasBit(perms, CREATE_TASKS) && !scoped ? (
+          {canDuplicate ? (
             <Dropdown.Item className={menuItem} onSelect={() => void duplicateTask(task.id).then((c) => c && useBoardsUi.getState().openTask(c.id))}>
               <CopyPlus className="size-4" aria-hidden /> {t('boards.duplicate')}
             </Dropdown.Item>
           ) : null}
-          {boards.length && !scoped && hasBit(perms, MANAGE_BOARD) ? (
+          {canMove ? (
             <Dropdown.Sub>
               <Dropdown.SubTrigger className={cx(menuItem, 'data-[state=open]:not-data-[highlighted]:bg-hover')}>
                 <FolderInput className="size-4" aria-hidden /> <span className="flex-1">{t('boards.moveToBoard')}</span> <ChevronRight className="size-4" aria-hidden />
@@ -313,9 +318,9 @@ export function TaskMoreMenu({ task, perms, scoped }: { task: Task; perms: bigin
               </Dropdown.Portal>
             </Dropdown.Sub>
           ) : null}
-          {mayArchiveTask(task, perms, me) ? (
+          {canArchive ? (
             <>
-              <Dropdown.Separator className={menuSeparator} />
+              {canDuplicate || canMove ? <Dropdown.Separator className={menuSeparator} /> : null}
               <Dropdown.Item className={cx(menuItem, 'text-danger-text')} onSelect={() => void archiveTask(task.id)} data-testid="panel-archive">
                 <Archive className="size-4" aria-hidden /> {t('boards.archive')}
               </Dropdown.Item>
