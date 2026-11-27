@@ -365,6 +365,7 @@ export const esCalendar: DictShape<typeof ruCalendar> = {
   'ext.deleteAction': "Eliminar",
   'ext.deleteChanged': "El evento cambió en el calendario: lo hemos actualizado, inténtalo de nuevo",
   'ext.deleteReadOnly': "El calendario es de solo lectura: no se puede eliminar el evento",
+  'ext.authFailed': "El calendario no aceptó la contraseña guardada: vuelve a conectarlo en los ajustes del calendario",
   'ext.deleteFailed': "No se pudo eliminar el evento",
   'ext.rsvpSeries': "La respuesta se aplica a todas las repeticiones",
   'ext.rsvpChanged': "El evento cambió en el calendario: lo actualizamos, responde de nuevo",

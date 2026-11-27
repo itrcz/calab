@@ -165,3 +165,54 @@ func TestExternalEventDelete(t *testing.T) {
 	c.bob.must(204, "DELETE", "/api/me/caldav", nil, nil)
 	c.bob.must(404, "DELETE", "/api/me/external-events", req(daily[0], series), nil)
 }
+
+// CBF-206: a moved occurrence of a series (a RECURRENCE-ID override) is deleted on its own, and a
+// provider that refuses the saved password on the write is a CALENDAR_AUTH error of the
+// calendar, not a validation error of the field «password» (its text is the connect form's).
+func TestExternalMovedOccurrenceDelete(t *testing.T) {
+	c := calSetup(t)
+	base := nextMonday()
+	fake := caldavtest.New("anna", "app-pass")
+	defer fake.Close()
+	calDAVCAs.AddCert(fake.Certificate())
+
+	var resp v1.CalDavAccountResponse
+	c.bob.must(200, "POST", "/api/me/caldav", &v1.ConnectCalDavRequest{Url: fake.URL + "/", Username: "anna", Password: "app-pass"}, &resp)
+	c.bob.must(200, "PUT", "/api/me/caldav", &v1.UpdateCalDavRequest{CalendarHref: fake.URL + fake.Calendar(), Import: true}, nil)
+	d := base.Format("20060102")
+	d2 := base.Add(24 * time.Hour).Format("20060102")
+	fake.SetObject("moved.ics", "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"+
+		"BEGIN:VEVENT\r\nUID:moved\r\nSUMMARY:moved\r\nDTSTART:"+d+"T100000Z\r\nDTEND:"+d+"T103000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEND:VEVENT\r\n"+
+		"BEGIN:VEVENT\r\nUID:moved\r\nSUMMARY:moved\r\nRECURRENCE-ID:"+d2+"T100000Z\r\nDTSTART:"+d2+"T140000Z\r\nDTEND:"+d2+"T143000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+	c.bob.must(200, "POST", "/api/me/caldav/sync", nil, &resp)
+	var list v1.ExternalEventsResponse
+	window := "from=" + url.QueryEscape(base.Format(time.RFC3339)) + "&to=" + url.QueryEscape(base.Add(3*24*time.Hour).Format(time.RFC3339))
+	c.bob.must(200, "GET", "/api/me/external-events?"+window, nil, &list)
+	var moved *v1.ExternalEvent
+	for _, e := range list.GetEvents() {
+		if e.GetStartsAt().AsTime().Equal(base.Add(24*time.Hour + 14*time.Hour)) {
+			moved = e
+		}
+	}
+	if moved == nil || len(list.GetEvents()) != 3 {
+		t.Fatalf("imported %v", list.GetEvents())
+	}
+	req := &v1.DeleteExternalEventRequest{Uid: moved.GetUid(), Href: moved.GetHref(), Start: moved.GetStartsAt(), Scope: v1.ExternalDeleteScope_EXTERNAL_DELETE_SCOPE_THIS}
+
+	fake.Password = "changed"
+	c.bob.must(422, "DELETE", "/api/me/external-events", req, nil)
+	var e v1.ApiError
+	if err := protojson.Unmarshal(c.bob.lastBody, &e); err != nil {
+		t.Fatal(err)
+	}
+	if e.GetReason() != "CALENDAR_AUTH" || e.GetField() == "password" {
+		t.Fatalf("refused password: %s", c.bob.lastBody)
+	}
+	fake.Password = "app-pass"
+
+	c.bob.must(204, "DELETE", "/api/me/external-events", req, nil)
+	data, _ := fake.Object(fake.Calendar() + "moved.ics")
+	if strings.Contains(data, "RECURRENCE-ID") || !strings.Contains(data, "EXDATE") {
+		t.Fatalf("the moved occurrence stayed:\n%s", data)
+	}
+}

@@ -365,6 +365,7 @@ export const enCalendar: DictShape<typeof ruCalendar> = {
   'ext.deleteAction': "Delete",
   'ext.deleteChanged': "The event changed in the calendar — refreshed, try again",
   'ext.deleteReadOnly': "The calendar is read-only — the event cannot be deleted",
+  'ext.authFailed': "The calendar did not accept the saved password — connect it again in the calendar settings",
   'ext.deleteFailed': "Could not delete the event",
   'ext.rsvpSeries': "The answer covers every occurrence",
   'ext.rsvpChanged': "The event changed in the calendar — refreshed, answer again",

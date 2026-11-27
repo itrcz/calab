@@ -26,10 +26,17 @@ import (
 const (
 	ReasonEventChanged     = "EVENT_CHANGED"
 	ReasonCalendarReadOnly = "CALENDAR_READ_ONLY"
+	// ReasonCalendarAuth: the provider refused the saved credentials on a write. Never the
+	// field "password": that field's text is the connect form's (CBF-206).
+	ReasonCalendarAuth = "CALENDAR_AUTH"
 )
 
 func errChanged() error {
 	return httpx.Conflict("the event changed in the calendar: reload").WithDetails(ReasonEventChanged, 0, 0)
+}
+
+func errCalendarAuth() error {
+	return httpx.Validation("calendar", "the calendar did not accept the saved username and password: connect it again").WithDetails(ReasonCalendarAuth, 0, 0)
 }
 
 // deleteExternal: DELETE /api/me/external-events {uid, href, start, scope}.
@@ -137,7 +144,7 @@ func (s *Service) myExternal(ctx context.Context, me uuid.UUID, uid, href string
 	}
 	cr, err := s.open(acc)
 	if err != nil {
-		return acc, none, creds{}, httpx.Validation("password", "the stored password does not open: connect the calendar again")
+		return acc, none, creds{}, errCalendarAuth()
 	}
 	return acc, row, cr, nil
 }
@@ -158,7 +165,7 @@ func (s *Service) writeError(ctx context.Context, user uuid.UUID, err error) err
 	case errors.Is(err, ErrReadOnly):
 		return httpx.Validation("href", "the calendar is read-only").WithDetails(ReasonCalendarReadOnly, 0, 0)
 	case errors.Is(err, ErrAuth):
-		return httpx.Validation("password", "the server did not accept the username and password")
+		return errCalendarAuth()
 	case errors.As(err, &se), errors.As(err, &ue), errors.Is(err, ErrURL), errors.Is(err, ErrRedirect), errors.Is(err, ErrTooLarge), errors.Is(err, context.DeadlineExceeded):
 		slog.InfoContext(ctx, "caldav: write failed", "user_id", user, "err", err)
 		return httpx.Unavailable(err)

@@ -64,4 +64,13 @@ describe('deleteExternalEvent', () => {
     expect(useFreeBusy.getState().externalChunks).toEqual({ 1: true });
     expect(useToasts.getState().items[0]).toMatchObject({ kind: 'error', text: 'Календарь только для чтения — удалить событие нельзя.' });
   });
+
+  it('422 CALENDAR_AUTH (CBF-206): back, the calendar’s own text, never the password form’s', async () => {
+    deleteExternal.mockImplementation(() => Promise.reject(new ApiError('ERROR_CODE_VALIDATION', 'auth', 422, 'calendar', { reason: 'CALENDAR_AUTH' })));
+    expect(await deleteExternalEvent(d15, 'this')).toBe(false);
+    expect(useFreeBusy.getState().external).toEqual(held);
+    const text = useToasts.getState().items[0]?.text ?? '';
+    expect(text).toContain('Календарь не принял сохранённый пароль');
+    expect(text).not.toContain('8');
+  });
 });

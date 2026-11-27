@@ -3,6 +3,7 @@ import { eventsByDay, mergeDays, restoreExternal, withMyStatus, withoutExternal 
 import { chunksIn, CHUNK_MS, replaceBusy, type WorkHours } from '../lib/calendar/freebusy';
 import {
   externalChanged,
+  externalAuth,
   externalReadOnly,
   freebusyApi,
   type BusyInterval,
@@ -278,6 +279,7 @@ export async function deleteExternalEvent(ev: ExternalEvent, scope: ExternalDele
       useFreeBusy.setState((s) => (s.externalWs === ws ? { externalChunks: {} } : s));
       invalidateMe();
     } else if (externalReadOnly(e)) toast.error(t('ext.deleteReadOnly'));
+    else if (externalAuth(e)) toast.error(t('ext.authFailed'));
     else toast.fail(e, t('ext.deleteFailed'));
     return false;
   }
@@ -302,6 +304,7 @@ export async function respondExternalEvent(ev: ExternalEvent, status: ExternalAn
       toast.error(t('ext.rsvpChanged'));
       useFreeBusy.setState((s) => (s.externalWs === ws ? { externalChunks: {} } : s));
     } else if (externalReadOnly(e)) toast.error(t('ext.rsvpReadOnly'));
+    else if (externalAuth(e)) toast.error(t('ext.authFailed'));
     else toast.fail(e, t('cal.rsvp.failed'));
     return false;
   }

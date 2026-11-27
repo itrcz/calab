@@ -265,6 +265,8 @@ export const freebusyApi = {
 /** The delete of an external event failed because it changed in the calendar (409) / the calendar is read-only (422). */
 export const externalChanged = (e: unknown): boolean => e instanceof ApiError && e.status === 409 && e.code === 'ERROR_CODE_CONFLICT' && e.extra.reason !== 'PLAN_LIMIT';
 export const externalReadOnly = (e: unknown): boolean => e instanceof ApiError && e.status === 422 && e.extra.reason === 'CALENDAR_READ_ONLY';
+/** 422 CALENDAR_AUTH: the provider refused the saved password on a write (CBF-206). */
+export const externalAuth = (e: unknown): boolean => e instanceof ApiError && e.status === 422 && e.extra.reason === 'CALENDAR_AUTH';
 
 /** 409 NO_COMMON_HOURS: the people's work hours never overlap (ADR-0041 §2). */
 export const noCommonHours = (e: unknown): boolean => e instanceof ApiError && (e.code === 'ERROR_CODE_NO_COMMON_HOURS' || e.reason === 'NO_COMMON_HOURS');
