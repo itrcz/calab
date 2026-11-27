@@ -66,7 +66,7 @@ func (s *Service) deleteExternal(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	_, row, cr, err := s.myExternal(ctx, me, req.GetUid(), req.GetHref(), req.GetStart().AsTime())
+	acc, row, cr, err := s.myExternal(ctx, me, req.GetUid(), req.GetHref(), req.GetStart().AsTime())
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func (s *Service) deleteExternal(w http.ResponseWriter, r *http.Request) error {
 		err = s.dav.DeleteIf(ctx, row.Href, cr, row.Etag)
 	}
 	if err != nil {
-		return s.writeError(ctx, me, err)
+		return s.writeError(ctx, me, s.refused(ctx, acc, cr, err))
 	}
 	err = db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
 		if series {
@@ -147,6 +147,26 @@ func (s *Service) myExternal(ctx context.Context, me uuid.UUID, uid, href string
 		return acc, none, creds{}, errCalendarAuth()
 	}
 	return acc, row, cr, nil
+}
+
+// propfindProbe asks for nothing but the collection's type: a cheap request that needs the credentials.
+const propfindProbe = `<?xml version="1.0" encoding="utf-8"?>
+<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`
+
+// refused tells a refused password from an object that is gone: some providers answer 401, not
+// 404, to a request for an href they no longer have, and an event moved in the provider can get a
+// new href (CBF-206: deleting a rescheduled meeting showed a password error). A 401 of a write is
+// checked against the calendar itself with the same credentials: if they open it, the event
+// changed (ErrChanged: imported again, the client reloads); else the password is refused.
+func (s *Service) refused(ctx context.Context, acc sqlc.CaldavAccount, cr creds, err error) error {
+	if !errors.Is(err, ErrAuth) || acc.CalendarHref == nil {
+		return err
+	}
+	if _, _, e := s.dav.do(ctx, "PROPFIND", *acc.CalendarHref, cr, "0", "application/xml; charset=utf-8", []byte(propfindProbe)); e == nil {
+		slog.InfoContext(ctx, "caldav: 401 on an object of an open calendar: the event changed", "user_id", acc.UserID)
+		return ErrChanged
+	}
+	return err
 }
 
 // writeError maps a failure of the provider on a delete or an answer; a changed event is imported

@@ -1454,8 +1454,9 @@ export const DeleteExternalEventRequestSchema: GenMessage<DeleteExternalEventReq
  * organizer (RFC 6638 implicit scheduling). The server imports again at once, so the next GET has
  * the new answer. 404 — no such event of mine (or no account); 409 CONFLICT — the event changed in
  * the calendar (EVENT_CHANGED): reload; 422 — status not ACCEPTED / DECLINED / MAYBE, I am not an
- * attendee (reason NOT_AN_ATTENDEE) or the calendar is read-only (CALENDAR_READ_ONLY); shares the
- * 30 per minute of the delete. People only: guests and bots → 403.
+ * attendee (reason NOT_AN_ATTENDEE), the calendar is read-only (CALENDAR_READ_ONLY) or refuses
+ * the saved password (CALENDAR_AUTH); shares the 30 per minute of the delete. People only:
+ * guests and bots → 403.
  *
  * @generated from message calaba.v1.RespondExternalEventRequest
  */

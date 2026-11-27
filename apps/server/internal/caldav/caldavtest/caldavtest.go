@@ -33,6 +33,18 @@ type Server struct {
 	FailPut int
 	// ReadOnly makes PUT / DELETE answer 403 (a calendar shared read-only).
 	ReadOnly bool
+	// MissingIs401 makes GET / PUT / DELETE of a missing object answer 401, as some providers do
+	// for an href they no longer have (CBF-206).
+	MissingIs401 bool
+}
+
+// Move renames an object of the «work» calendar (a provider that re-creates a moved event).
+func (s *Server) Move(from, to string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store(s.Calendar()+to, s.objects[s.Calendar()+from])
+	delete(s.objects, s.Calendar()+from)
+	delete(s.etags, s.Calendar()+from)
 }
 
 // New starts a TLS server (use Server.Client() / Certificate() to trust it).
@@ -107,6 +119,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Path
+	s.mu.Lock()
+	_, exists := s.objects[path]
+	s.mu.Unlock()
+	if s.MissingIs401 && !exists && (r.Method == http.MethodGet || r.Method == http.MethodPut || r.Method == http.MethodDelete) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	switch r.Method {
 	case "PROPFIND":
 		s.propfind(w, path, r.Header.Get("Depth"))

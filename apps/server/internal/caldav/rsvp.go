@@ -124,7 +124,7 @@ func (s *Service) respondExternal(w http.ResponseWriter, r *http.Request) error 
 		if errors.Is(err, errNotAttendee) {
 			return errNotAttendeeHTTP()
 		}
-		return s.writeError(ctx, me, err)
+		return s.writeError(ctx, me, s.refused(ctx, acc, cr, err))
 	}
 	// The new answer and ETag in my rows at once (the provider may have changed more).
 	ictx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*requestTimeout)

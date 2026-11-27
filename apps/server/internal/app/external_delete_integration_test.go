@@ -210,8 +210,28 @@ func TestExternalMovedOccurrenceDelete(t *testing.T) {
 	}
 	fake.Password = "app-pass"
 
+	// The provider re-created the series under a new href and answers 401 (not 404) for the old
+	// one: the password still opens the calendar, so it is a changed event, imported again.
+	fake.Move("moved.ics", "moved-2.ics")
+	fake.MissingIs401 = true
+	c.bob.must(409, "DELETE", "/api/me/external-events", req, nil)
+	if err := protojson.Unmarshal(c.bob.lastBody, &e); err != nil || e.GetReason() != "EVENT_CHANGED" {
+		t.Fatalf("a 401 of a gone object: %s", c.bob.lastBody)
+	}
+	c.bob.must(200, "GET", "/api/me/external-events?"+window, nil, &list)
+	moved = nil
+	for _, e := range list.GetEvents() {
+		if e.GetStartsAt().AsTime().Equal(base.Add(24*time.Hour + 14*time.Hour)) {
+			moved = e
+		}
+	}
+	if moved == nil || !strings.HasSuffix(moved.GetHref(), "/moved-2.ics") {
+		t.Fatalf("not imported again: %v", list.GetEvents())
+	}
+	req.Href = moved.GetHref()
+
 	c.bob.must(204, "DELETE", "/api/me/external-events", req, nil)
-	data, _ := fake.Object(fake.Calendar() + "moved.ics")
+	data, _ := fake.Object(fake.Calendar() + "moved-2.ics")
 	if strings.Contains(data, "RECURRENCE-ID") || !strings.Contains(data, "EXDATE") {
 		t.Fatalf("the moved occurrence stayed:\n%s", data)
 	}
