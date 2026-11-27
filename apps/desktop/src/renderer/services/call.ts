@@ -1,5 +1,5 @@
 import { CallState, PresenceStatus, type Call, type User } from '@calaba/protocol';
-import { showNotification } from '../lib/notifyHold';
+import { showNotification, type AppNotification } from '../lib/notifyHold';
 import { toSource } from '../lib/notifyClick';
 import { confirmAction } from '../components/Confirm';
 import { t } from '../i18n';
@@ -376,7 +376,7 @@ function watchVoice(): void {
 
 // ---------------------------------------------------------------- notification
 
-let notice: Notification | null = null;
+let notice: AppNotification | null = null;
 
 /** «Входящий звонок от X» when the window is hidden or not focused; a click brings the app up. */
 function notifyIncoming(call: Call | null, peerId: string): void {

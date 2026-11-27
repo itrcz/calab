@@ -32,19 +32,36 @@ function stripMetaCsp(): Plugin {
  * window/Dock/tray icons come from electron-builder and main.
  * Phone / PWA (ADR-0021): the viewport meta (edge to edge under the iOS notch — the app pads with
  * env(safe-area-inset-*); Android resizes the layout for the keyboard), the iOS home-screen metas
- * and an install-only service worker (sw.js: no fetch handler, no cache — always the deployed app).
+ * and a service worker (sw.js: no fetch handler, no cache — always the deployed app).
  */
 /**
- * PWA service worker: install-only. No fetch handler and no cache, so every request goes to the
+ * PWA service worker. No fetch handler and no cache, so every request goes to the
  * network and the app is always the deployed version (Caddy serves non-hashed files no-cache).
  * A new sw.js replaces the old one at once.
+ * Notifications (ADR-0141 p.4): the page shows them via `registration.showNotification` (Android
+ * Chrome has no `new Notification()`); a click focuses the tab that showed it (or opens the app) and
+ * tells the tabs its id — the page runs the click handler it kept (lib/notifyHold.ts).
  */
-const SERVICE_WORKER = `// Calab — install-only service worker (ADR-0021): no fetch handler, no cache.
+const SERVICE_WORKER = `// Calab — service worker (ADR-0021): no fetch handler, no cache; notification clicks only.
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener('notificationclick', (event) => {
+  const data = event.notification.data || {};
+  event.notification.close();
+  event.waitUntil((async () => {
+    const tabs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const tab = tabs.find((c) => c.url === data.href) || tabs.find((c) => c.focused) || tabs.find((c) => c.visibilityState === 'visible') || tabs[0];
+    if (!tab) {
+      await self.clients.openWindow('/');
+      return;
+    }
+    try { await tab.focus(); } catch (e) { /* focus not allowed: the page still navigates */ }
+    for (const c of tabs) c.postMessage({ type: 'calab:notification-click', id: data.calabId });
+  })());
+});
 `;
 const WEB_THEME = '#1c1c1e'; // --color-bg (dark), the app opens dark by default
 function webIcons(): Plugin {

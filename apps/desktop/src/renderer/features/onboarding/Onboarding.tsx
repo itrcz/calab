@@ -16,6 +16,7 @@ import { MicMeter } from '../settings/MicMeter';
 import { PttBinder, bindingLabel } from '../settings/PttBinder';
 import { notifyStepView, readNotifyState, requestNotify, type NotifyState } from '../../lib/notifyPermission';
 import { screenStepState, screenStepView } from '../../lib/screenPermission';
+import { showNotification } from '../../lib/notifyHold';
 import { resendVerification, verifyEmail } from '../../services/email';
 import { CodeInput, CodeNote, ResendButton, useCodeAddress, useCodeFlow } from '../auth/VerifyEmail';
 import { asksToVerify, verifyReason } from '../auth/verifyAsk';
@@ -457,7 +458,7 @@ function NotificationsStep({ nav }: { nav: Nav }): ReactNode {
     if (desktop) {
       usePrefs.getState().setPrefs({ notifyMentions: true });
       try {
-        new Notification('Calab', { body: t('onb.notifOn') });
+        showNotification('Calab', { body: t('onb.notifOn') });
       } catch {
         // No notification support: the in-app badges still work.
       }

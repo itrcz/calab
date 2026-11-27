@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { notifyStepView, readNotifyState, requestNotify, testNotification, HostNotificationPrompt } from './notifyPermission';
 import type { HostNotificationsCapability } from '../../shared/hostActivity';
 
+// The default `show` goes through notifyHold, which reads the platform kind only.
+vi.mock('../platform', () => ({ platform: { kind: 'web' } }));
+
 function host(permission: 'default' | 'granted' | 'denied' | 'unsupported' = 'default'): HostNotificationsCapability {
   return { state: vi.fn().mockResolvedValue({ permission }), subscribe: () => () => undefined, clear: vi.fn(), acknowledge: vi.fn() };
 }
@@ -25,6 +28,11 @@ describe('notification test chooses the real platform', () => {
     browser.requestPermission.mockResolvedValue('granted');
     await expect(testNotification('Sample', undefined, browser, show)).resolves.toBe('scheduled');
     expect(show).toHaveBeenCalledWith('Sample');
+  });
+  it('reports «failed» when the notification could not be shown (Android: no constructor, no worker)', async () => {
+    const browser = { permission: 'granted', requestPermission: vi.fn() };
+    const show = vi.fn().mockRejectedValue(new TypeError('Illegal constructor'));
+    await expect(testNotification('Sample', undefined, browser, show)).resolves.toBe('failed');
   });
 });
 

@@ -1,4 +1,5 @@
 import type { HostNotificationsCapability, HostNotificationTestResult } from '../../shared/hostActivity';
+import { showNotification } from './notifyHold';
 
 /**
  * Notification permission for the onboarding step (docs/09 #20): one pure mapping from the
@@ -43,14 +44,14 @@ export async function testNotification(
   body: string,
   host?: HostNotificationsCapability,
   api: NotificationApi = (globalThis as { Notification?: NotificationApi }).Notification,
-  show = (body: string): void => { new Notification('Calab', { body }); },
+  show = (body: string): Promise<void> | undefined => showNotification('Calab', { body }).shown,
 ): Promise<HostNotificationTestResult | 'update'> {
   try {
     if (host) return host.test ? await host.test(body) : 'update';
     let permission = readNotifyState(api);
     if (permission === 'default') permission = await requestNotify(api);
     if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'unsupported';
-    show(body);
+    await show(body);
     return 'scheduled';
   } catch { return 'failed'; }
 }

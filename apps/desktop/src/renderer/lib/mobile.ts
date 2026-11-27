@@ -216,8 +216,9 @@ export function installTouchActive(): () => void {
 }
 
 /**
- * PWA service worker (install-only: no fetch handler, no cache — the app is always fresh from the
- * network). Registered on the production web build only, after load.
+ * PWA service worker (no fetch handler, no cache — the app is always fresh from the network; it
+ * shows notifications and relays their clicks, lib/notifyHold.ts). Registered on the production
+ * web build only, after load.
  */
 export function registerServiceWorker(): void {
   if (!isWeb || !import.meta.env.PROD || !('serviceWorker' in navigator)) return;

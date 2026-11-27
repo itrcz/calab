@@ -2,7 +2,7 @@ import { PresenceStatus, SipCallStatus, type SipCall, type WorkspaceSnapshot } f
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
 import { api } from '../lib/api/endpoints';
-import { showNotification } from '../lib/notifyHold';
+import { showNotification, type AppNotification } from '../lib/notifyHold';
 import { toSource } from '../lib/notifyClick';
 import { log } from '../lib/log';
 import { formatPhone } from '../lib/sip';
@@ -64,7 +64,7 @@ export function sipInboundRinging(): boolean {
   return useSipInbound.getState().ringing.length > 0;
 }
 
-let notice: Notification | null = null;
+let notice: AppNotification | null = null;
 
 function notify(c: SipCall): void {
   platform.app.attention();
