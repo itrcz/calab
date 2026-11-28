@@ -14,8 +14,8 @@ License audit: no GPL / LGPL / AGPL / SSPL / RSAL / BUSL (the generator fails on
   github.com/Azure/go-ntlmssp              v0.1.1                 MIT
   github.com/aws/aws-sdk-go-v2             v1.48.0                Apache-2.0
   github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.27                Apache-2.0
-  github.com/aws/aws-sdk-go-v2/credentials v1.21.0                Apache-2.0
-  github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.24               Apache-2.0
+  github.com/aws/aws-sdk-go-v2/credentials v1.21.3                Apache-2.0
+  github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.28               Apache-2.0
   github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12                Apache-2.0
   github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12                Apache-2.0
   github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12                Apache-2.0
@@ -23,8 +23,8 @@ License audit: no GPL / LGPL / AGPL / SSPL / RSAL / BUSL (the generator fails on
   github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.13               Apache-2.0
   github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12               Apache-2.0
   github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.12               Apache-2.0
-  github.com/aws/aws-sdk-go-v2/service/s3  v1.114.10              Apache-2.0
-  github.com/aws/smithy-go                 v1.28.9                Apache-2.0
+  github.com/aws/aws-sdk-go-v2/service/s3  v1.116.0               Apache-2.0
+  github.com/aws/smithy-go                 v1.28.10               Apache-2.0
   github.com/beorn7/perks                  v1.0.1                 MIT
   github.com/caarlos0/env/v11              v11.4.2                MIT
   github.com/cespare/xxhash/v2             v2.3.0                 MIT
@@ -38,25 +38,25 @@ License audit: no GPL / LGPL / AGPL / SSPL / RSAL / BUSL (the generator fails on
   github.com/google/uuid                   v1.6.0                 BSD-3-Clause
   github.com/jackc/pgpassfile              v1.0.0                 MIT
   github.com/jackc/pgservicefile           v0.0.0-20240606120523-5a60cdf6a761 MIT
-  github.com/jackc/pgx/v5                  v5.12.0                MIT
+  github.com/jackc/pgx/v5                  v5.13.0                MIT
   github.com/jackc/puddle/v2               v2.2.3                 MIT
   github.com/jolestar/go-commons-pool/v2   v2.1.2                 Apache-2.0
-  github.com/klippa-app/go-pdfium          v1.21.4                MIT
-  github.com/mfridman/interpolate          v0.0.2                 MIT
+  github.com/klippa-app/go-pdfium          v1.21.5                MIT
+  github.com/mfridman/interpolate          v0.2.0                 MIT
   github.com/munnerz/goautoneg             v0.0.0-20191010083416-a7dc8b61c822 BSD-3-Clause
-  github.com/pressly/goose/v3              v3.30.0                MIT
+  github.com/pressly/goose/v3              v3.30.1                MIT
   github.com/prometheus/client_golang      v1.25.0                Apache-2.0
   github.com/prometheus/client_model       v0.6.3                 Apache-2.0
   github.com/prometheus/common             v0.72.0                Apache-2.0
   github.com/prometheus/procfs             v0.23.0                Apache-2.0
-  github.com/redis/rueidis                 v1.0.79                Apache-2.0
+  github.com/redis/rueidis                 v1.0.80                Apache-2.0
   github.com/sethvargo/go-retry            v0.5.0                 Apache-2.0
   github.com/stripe/stripe-go/v86          v86.4.2                MIT
   github.com/tetratelabs/wazero            v1.12.0                Apache-2.0
   go.uber.org/multierr                     v1.11.0                MIT
-  golang.org/x/crypto                      v0.58.0                BSD-3-Clause
+  golang.org/x/crypto                      v0.59.0                BSD-3-Clause
   golang.org/x/image                       v0.48.0                BSD-3-Clause
-  golang.org/x/net                         v0.62.0                BSD-3-Clause
+  golang.org/x/net                         v0.63.0                BSD-3-Clause
   golang.org/x/oauth2                      v0.38.0                BSD-3-Clause
   golang.org/x/sync                        v0.25.0                BSD-3-Clause
   golang.org/x/sys                         v0.50.0                BSD-3-Clause
@@ -510,7 +510,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/credentials v1.21.0 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/credentials v1.21.3 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -717,7 +717,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.24 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.28 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -2373,7 +2373,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10 — Apache-2.0
+github.com/aws/aws-sdk-go-v2/service/s3 v1.116.0 — Apache-2.0
 ================================================================================
 
 --- LICENSE.txt ---
@@ -2580,7 +2580,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/aws/smithy-go v1.28.9 — Apache-2.0
+github.com/aws/smithy-go v1.28.10 — Apache-2.0
 ================================================================================
 
 --- LICENSE ---
@@ -3530,7 +3530,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-github.com/jackc/pgx/v5 v5.12.0 — MIT
+github.com/jackc/pgx/v5 v5.13.0 — MIT
 ================================================================================
 
 --- LICENSE ---
@@ -3793,7 +3793,7 @@ Apache License
    limitations under the License.
 
 ================================================================================
-github.com/klippa-app/go-pdfium v1.21.4 — MIT
+github.com/klippa-app/go-pdfium v1.21.5 — MIT
 ================================================================================
 
 --- LICENSE ---
@@ -6069,7 +6069,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ================================================================================
-github.com/mfridman/interpolate v0.0.2 — MIT
+github.com/mfridman/interpolate v0.2.0 — MIT
 ================================================================================
 
 --- LICENSE.txt ---
@@ -6136,7 +6136,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-github.com/pressly/goose/v3 v3.30.0 — MIT
+github.com/pressly/goose/v3 v3.30.1 — MIT
 ================================================================================
 
 --- LICENSE ---
@@ -7035,7 +7035,7 @@ This product includes software developed at
 SoundCloud Ltd. (http://soundcloud.com/).
 
 ================================================================================
-github.com/redis/rueidis v1.0.79 — Apache-2.0
+github.com/redis/rueidis v1.0.80 — Apache-2.0
 ================================================================================
 
 --- LICENSE ---
@@ -7716,7 +7716,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ================================================================================
-golang.org/x/crypto v0.58.0 — BSD-3-Clause
+golang.org/x/crypto v0.59.0 — BSD-3-Clause
 ================================================================================
 
 --- LICENSE ---
@@ -7782,7 +7782,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-golang.org/x/net v0.62.0 — BSD-3-Clause
+golang.org/x/net v0.63.0 — BSD-3-Clause
 ================================================================================
 
 --- LICENSE ---
