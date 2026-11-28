@@ -179,8 +179,8 @@ importers:
         specifier: ^3.5.0
         version: 3.5.0
       electron:
-        specifier: 44.11.4
-        version: 44.11.4
+        specifier: 44.11.6
+        version: 44.11.6
       electron-builder:
         specifier: ^26.18.0
         version: 26.18.0(electron-builder-squirrel-windows@26.15.3)
@@ -1026,8 +1026,8 @@ packages:
     peerDependencies:
       react: '>=16.8.0'
 
-  '@electron-internal/extract-zip@1.0.8':
-    resolution: {integrity: sha512-8iajeLFbzNwM0m3AsQZSZgYREWglAImyGvvFSWU34FgMW8sHlzdwj9QKvv9dgN7jMP591EFUF/sLOC3Jl9YIjQ==}
+  '@electron-internal/extract-zip@1.0.9':
+    resolution: {integrity: sha512-nNHsQ0Y/BoYEc8bN15oWAaTgjD99cuT7tYAYzyIk8zNTdq3/UbQtDmWVV2ZVb/zsELc4nl7aYvfT8YIeRWoTrQ==}
     engines: {node: '>=22.12.0'}
 
   '@electron/asar@3.4.1':
@@ -3726,8 +3726,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@44.11.4:
-    resolution: {integrity: sha512-AJRr0b0F+Kt+iqmdFGLNUhluVHhcNUfFCm6AFXY/l9TmUr+fE6hW4HWVaaJGdhKkZiiVJ7ZgbAo2vQqWJ1C4jQ==}
+  electron@44.11.6:
+    resolution: {integrity: sha512-ntR909wtKzZhmxmJXONDfoEC0rzVm1LPtC8TKhwPgpY9dhaET1eS1If7HseDo6ALbd2jyWxqgJ1QcQ67dhZNfw==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -7196,7 +7196,7 @@ snapshots:
       react: 19.3.1
       tslib: 2.8.1
 
-  '@electron-internal/extract-zip@1.0.8': {}
+  '@electron-internal/extract-zip@1.0.9': {}
 
   '@electron/asar@3.4.1':
     dependencies:
@@ -10212,9 +10212,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.11.4:
+  electron@44.11.6:
     dependencies:
-      '@electron-internal/extract-zip': 1.0.8
+      '@electron-internal/extract-zip': 1.0.9
       '@electron/get': 5.1.0
       '@types/node': 24.19.2
     transitivePeerDependencies:
