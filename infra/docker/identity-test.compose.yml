@@ -29,13 +29,13 @@ services:
   pg18:
     <<: *pg
     profiles: [core]
-    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    image: postgres:19-alpine@sha256:cac45fb483caee3668946088a1c0532db89d5285c28dbfeac889b4068296e06f
     ports: ["127.0.0.1:${IDENTITY_TEST_PG18_PORT}:5432"]
     volumes: [pg18:/var/lib/postgresql]
   pg17:
     <<: *pg
     profiles: [pg17]
-    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    image: postgres:19-alpine@sha256:cac45fb483caee3668946088a1c0532db89d5285c28dbfeac889b4068296e06f
     ports: ["127.0.0.1:${IDENTITY_TEST_PG17_PORT}:5432"]
     volumes: [pg17:/var/lib/postgresql/data]
   valkey-qa:
@@ -60,7 +60,7 @@ services:
     ports: ["127.0.0.1:${IDENTITY_TEST_REDIS_ENFORCEMENT_PORT}:6379"]
   oidc:
     profiles: [oidc]
-    image: quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3
     command: [start-dev, --import-realm, --http-enabled=false]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: fixture-admin

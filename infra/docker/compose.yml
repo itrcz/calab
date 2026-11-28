@@ -311,7 +311,7 @@ services:
     logging: *logging
 
   postgres:
-    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5   # PG 18: built-in uuidv7()
+    image: postgres:19-alpine@sha256:cac45fb483caee3668946088a1c0532db89d5285c28dbfeac889b4068296e06f   # PG 18: built-in uuidv7()
     restart: unless-stopped
     <<: *hardening
     user: "70:70"                  # run as postgres directly: no gosu, no capabilities needed
