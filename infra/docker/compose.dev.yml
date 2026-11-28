@@ -11,7 +11,7 @@ name: calaba-dev
 
 services:
   postgres:
-    image: postgres:18-alpine   # PG 18: built-in uuidv7()
+    image: postgres:19-alpine   # PG 18: built-in uuidv7()
     environment:
       - POSTGRES_USER=calaba
       - POSTGRES_PASSWORD=calaba
@@ -26,7 +26,7 @@ services:
   # Mail catcher (ADR-0023): the API sends to SMTP localhost:1025 (SMTP_TLS=none),
   # letters are read at http://localhost:8025. Nothing leaves the machine.
   mailpit:
-    image: axllent/mailpit:v1.33
+    image: axllent/mailpit:v1.34
     ports:
       - "1025:1025"
       - "8025:8025"
